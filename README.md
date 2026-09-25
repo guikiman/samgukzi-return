@@ -37,7 +37,7 @@ npm run test:e2e       # 빌드 + 브라우저 E2E 스모크 + SW 오프라인 �
 ```
 
 ### CI 파이프라인
-`.github/workflows/ci.yml` — push/PR 시 **타입 체크 → 1,135개 테스트 → 빌드 → E2E** 순차 실행 후, 기본 브랜치 푸시에 한해 GitHub Pages 자동 배포.
+`.github/workflows/ci.yml` — push/PR 시 **타입 체크 → 1,229개 테스트 → 빌드 → E2E** 순차 실행 후, 기본 브랜치 푸시에 한해 GitHub Pages 자동 배포.
 
 ## 🏗️ 아키텍처 요약
 

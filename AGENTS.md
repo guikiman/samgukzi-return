@@ -29,6 +29,73 @@
 
 ---
 
+## 🌿 2-1. 병렬 개발 worktree 구조 (Parallel Worktree Layout)
+
+```text
+master                ← 통합 전용. 직접 개발 금지
+├─ hippocamp          ← 장기 통합/백로그 (필요 시에만 유지)
+├─ feature/<name>    ← 기능 + 해당 테스트를 함께 포함
+├─ fix/<name>        ← 독립 버그 수정
+└── chore/harness     ← 전 기능 공용 E2E/성능/테스트 유틸
+```
+
+- 모든 자식은 **동일한 최신 master 커밋**에서 분기합니다.
+- `feature/<name>`은 구현과 그 테스트를 **같은 브랜치**에 둡니다.
+  → `tests/support/**` 같은 공용 fixture를 **production에 의존시키지 않을 때만**
+  별도 `chore/harness`로 분리합니다. 실제 auth 통합에서 분리 테스트 브랜치는
+  **충돌 0건**으로 병합되었으므로, "분리하면 충돌 난다"는 주장은 근거가 없습니다.
+- `hippocamp`는 master와 동일 커밋이면 유지 이유가 없습니다.
+  장기 작업 시에만 유지하고, 갱신은 **rebase 가 아니라 merge**로 합니다
+  (fast-forward 가능할 때만 ff).
+
+### 파일 소유권 분할 (충돌 회피의 실제 조건)
+
+브랜치 구조보다 **수정 파일의 중복 금지**가 병렬성의 전제입니다.
+같은 파일을 두 worker가 동시에 쓰면 어떤 구조에서도 충돌합니다.
+
+---
+
+## 🛑 2-2. 오케스트레이션 실행 규칙 (Multi-Agent Execution Rules)
+
+이 규칙은 실제 장애에서 도출되었습니다. 구조가 맞아도 아래를 지키지 않으면
+작업이 중단됩니다.
+
+1. **`orca worker-start`를 단독 경로로 쓰지 마세요.**
+   생성된 terminal이 60초 뒤 `operator_close`로 종료되며 `process_exited`가
+   기록됩니다. 대신:
+   - `orca terminal create --worktree <id> --command "cline"` 으로 terminal을 직접 만들고
+   - `orca terminal wait --for tui-idle` 로 준비를 확인한 뒤
+   - `orca orchestration dispatch --task <id> --to <handle> --inject` 로 주입합니다.
+   - Cline은 `--inject`이 `no_agent_detected`를 반환할 수 있으므로,
+     `dispatch --return-preamble` + `terminal send`로 대체합니다.
+
+2. **worker 보고는 독립 재현으로 확인하세요.**
+   "clean", "생성물 복원 완료" 같은 보고를 그대로 믿으면 안 됩니다.
+   실제로 auth 통합 worker가 "생성물 복원 완료"로 보고했으나
+   `dist/**`와 `sw-precache.json` untracked 20개가 잔존했습니다.
+   항상 `git status --porcelain`을 직접 실행해 확인합니다.
+
+3. **병합 직후 `npm ci`를 먼저 실행하세요.**
+   `package.json`이 병합돼도 각 worktree의 `node_modules`는 갱신되지 않습니다.
+   재현 실패하면 `TS2307 Cannot find module '@supabase/supabase-js'`로
+   타입체크가 먼저 깨집니다. lockfile이 바뀌었다면 `npm ci`가 필수입니다.
+
+4. **생성물은 커밋하지 않습니다.**
+   `dist/**`, `sw-precache.json`은 빌드 산출물입니다.
+   검증 후 `git checkout -- dist sw-precache.json` 으로 HEAD 기준으로 복원하고,
+   untracked 잔여물은 제거합니다.
+
+5. **free 모델의 일일 한도를 가정하지 마세요.**
+   Cline 기본 모델이 한도에 걸리면 작업이 그 자리에서 멈춥니다.
+   `/model` 로 여유 있는 모델을 **미리** 선택해 두세요. 유료 모델은 사용자 승인 없이 전환하지 않습니다.
+
+6. **Task 실패는 재시도 횟수로 판단합니다.**
+   동일 Task가 3회 연속 실패하면 circuit-break가 걸립니다.
+   그 이전에 원인을 진단하고, 병합 가능한 Task를 새로 생성하는 편이
+   circuit-break를 우회하지 않으면서도 안전합니다.
+
+---
+
 ## 📝 3. 개발 단계별 에이전트 지시 프롬프트 세트
 
 에이전트 구동 시 아래 태스크를 순차적으로 활성화하여 실행 명령을 내리십시오.
