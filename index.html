@@ -96,6 +96,14 @@
     </div>
 </div>
 
+<!-- Provider-neutral 인증 진입점: 실제 AuthClient 어댑터가 window.mountAuthFlow로 주입됩니다. -->
+<div id="auth-panel-container" class="auth-panel-container" aria-live="off">
+    <section id="auth-test-root" class="auth-panel-root" data-auth-state="loading" aria-busy="true" aria-labelledby="auth-test-title">
+        <h2 id="auth-test-title" data-auth-title="true" tabindex="-1">세션 확인 중</h2>
+        <p role="status" aria-live="polite">저장된 인증 세션을 확인하고 있습니다.</p>
+    </section>
+</div>
+
 <!-- 타이틀 스크린 오버레이 -->
 <div id="title-screen">
     <canvas id="title-particles"></canvas>
@@ -410,6 +418,16 @@
     </div>
 </div>
 <script type="module" src="dist/src/main.js"></script>
+<script type="module">
+    import { createAuthFlow } from './dist/src/ui/auth/auth-flow.js';
+
+    const container = document.getElementById('auth-panel-container');
+    const adapter = window.authClient;
+    if (container && adapter) {
+        window.authFlow = createAuthFlow({ container, client: adapter });
+        window.authFlow.mount();
+    }
+</script>
 <script>
     // [E43] PWA ServiceWorker 등록 — 오프라인 캐싱 플레이 지원
     if ('serviceWorker' in navigator) {
