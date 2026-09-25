@@ -59,13 +59,13 @@
  * 나머지 세 줄(trait/relation/career)은 `getBridgeDossierParagraphs()` 로 따로 열람한다.
  */
 
-import { OfficerBiographyStore } from './officer_biography_store';
-import type { OfficerBio } from './officer_biography_store';
-import { buildOfficerDossierFromProfile, dossierParagraphs } from './officer_dossier';
-import type { OfficerDossier } from './officer_dossier';
-import { OFFICER_PROFILES } from './officer_profile_schema';
-import type { OfficerProfile } from './officer_profile_schema';
-import type { OfficerID } from './types';
+import { OfficerBiographyStore } from './officer_biography_store.js';
+import type { OfficerBio } from './officer_biography_store.js';
+import { buildOfficerDossierFromProfile, dossierParagraphs } from './officer_dossier.js';
+import type { OfficerDossier } from './officer_dossier.js';
+import { OFFICER_PROFILES } from './officer_profile_schema.js';
+import type { OfficerProfile } from './officer_profile_schema.js';
+import type { OfficerID } from './types.js';
 
 // ---------------------------------------------------------------- 공개 타입
 
