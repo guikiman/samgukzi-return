@@ -19,6 +19,13 @@ Thumbs.db
 # 로컬 개인 설정 — 토큰 포함 가능성으로 원격 비추적
 opencode.json
 
+# 환경 변수 — 실제 값(Supabase 키 등)은 절대 커밋하지 않음
+.env
+.env.local
+.env.*.local
+# 단, 문서용 템플릿은 추적 유지
+!.env.example
+
 # Tauri 빌드 산출물 — 소스/배포 번들에 포함하지 않음
 tauri-assets/
 src-tauri/target/
