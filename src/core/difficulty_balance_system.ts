@@ -35,6 +35,68 @@ export const DIFFICULTY_MULTIPLIERS: DifficultyMultiplier[] = [
 /** 기본 난이도 (미지정 시 — 표준) */
 export const DEFAULT_DIFFICULTY = 3;
 
+/** 신규 게임 초기 12개월에 적용되는 AI 난이도 상승 곡선 [X-난이도][201]
+ * 각 값은 1개월(0~11개월차)부터 12개월까지의 목표 난이도 도달 비율이다.
+ * 0은 쉬움, 1은 시나리오 목표 난이도이며 중간 값은 완만한 상승이다.
+ * 테스트/콘텐츠 설정에서 배열을 교체할 수 있도록 readonly 상수로 노출한다.
+ */
+export const AI_DIFFICULTY_CURVE: readonly number[] = [
+    0, 0.08, 0.16, 0.24, 0.32, 0.40, 0.48, 0.56, 0.64, 0.72, 0.86, 1,
+];
+
+export interface AIDifficultyCurveConfig {
+    /** 1~12개월에 대응하는 목표 난이도 도달 비율. 길이 1~12 허용. */
+    readonly values: readonly number[];
+}
+
+/** 기본 초기 12개월 난이도 곡선 설정 */
+export const DEFAULT_AI_DIFFICULTY_CURVE_CONFIG: AIDifficultyCurveConfig = {
+    values: AI_DIFFICULTY_CURVE,
+};
+
+function clampDifficulty(value: number): number {
+    if (!Number.isFinite(value)) return DEFAULT_DIFFICULTY;
+    return Math.min(5, Math.max(1, Math.round(value)));
+}
+
+function normalizeCurve(config?: AIDifficultyCurveConfig): readonly number[] {
+    const values = config?.values?.length ? config.values : AI_DIFFICULTY_CURVE;
+    return values.map(value => Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0);
+}
+
+/**
+ * 신규 게임의 turnCount(0=첫 달)로부터 초기 12개월 AI 난이도를 계산한다.
+ * 12개월 이후에는 시나리오 난이도를 유지하고 잘못된 입력은 안전한 경계로 보정한다.
+ */
+export function resolveAIMonthlyDifficulty(
+    targetDifficulty: number,
+    turnCount: number,
+    config: AIDifficultyCurveConfig = DEFAULT_AI_DIFFICULTY_CURVE_CONFIG,
+): number {
+    const target = clampDifficulty(targetDifficulty);
+    const curve = normalizeCurve(config);
+    const monthIndex = Math.min(curve.length - 1, Math.max(0, Math.floor(Number.isFinite(turnCount) ? turnCount : 0)));
+    const progress = curve[monthIndex];
+    return 1 + (target - 1) * progress;
+}
+
+/** 스토어의 시나리오 난이도와 현재 턴을 사용해 유효 AI 난이도를 조회한다. */
+export function getAIMonthlyDifficulty(
+    store: GameStore,
+    config: AIDifficultyCurveConfig = DEFAULT_AI_DIFFICULTY_CURVE_CONFIG,
+): number {
+    const gs = store.getGlobalState();
+    return resolveAIMonthlyDifficulty(getDifficulty(store), gs.turnCount, config);
+}
+
+/** 기존 AI 행동 가중치에 곱할 배율. 표준 난이도·12개월 이후에는 1.0이다. */
+export function getAIMonthlyDifficultyMultiplier(
+    store: GameStore,
+    config: AIDifficultyCurveConfig = DEFAULT_AI_DIFFICULTY_CURVE_CONFIG,
+): number {
+    return getAIMonthlyDifficulty(store, config) / DEFAULT_DIFFICULTY;
+}
+
 /** 스토어에서 유효 난이도를 읽는다 (1~5 클램프, 구버전 세이브 undefined 허용) */
 export function getDifficulty(store: GameStore): number {
     const d = store.getGlobalState().difficulty;

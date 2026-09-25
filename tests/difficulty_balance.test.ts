@@ -3,8 +3,12 @@ import { GameStore } from '../src/core/game_store.js';
 import {
     DIFFICULTY_MULTIPLIERS,
     DEFAULT_DIFFICULTY,
+    AI_DIFFICULTY_CURVE,
     getDifficulty,
     getDifficultyMultiplier,
+    getAIMonthlyDifficulty,
+    getAIMonthlyDifficultyMultiplier,
+    resolveAIMonthlyDifficulty,
     scaleVisitChance,
     scaleRoamingCityCount,
 } from '../src/core/difficulty_balance_system.js';
@@ -80,4 +84,32 @@ describe('난이도 밸런싱 시스템 [X-난이도]', () => {
             // chance 필드는 accept 확률이므로 여기서는 visit 배열 존재 자체로 스모크
         }
     });
+
+    describe('초반 12개월 AI 난이도 곡선', () => {
+        it('1~12개월 경계와 단조 상승을 보존한다', () => {
+            expect(AI_DIFFICULTY_CURVE).toHaveLength(12);
+            for (let i = 1; i < AI_DIFFICULTY_CURVE.length; i++) {
+                expect(AI_DIFFICULTY_CURVE[i]).toBeGreaterThanOrEqual(AI_DIFFICULTY_CURVE[i - 1]);
+            }
+            expect(resolveAIMonthlyDifficulty(5, 0)).toBe(1);
+            expect(resolveAIMonthlyDifficulty(5, 11)).toBe(5);
+            expect(resolveAIMonthlyDifficulty(5, 99)).toBe(5);
+            expect(resolveAIMonthlyDifficulty(5, 0, { values: [1, 0.5, 0] })).toBe(5);
+            expect(resolveAIMonthlyDifficulty(5, 1, { values: [1, 0.5, 0] })).toBe(3);
+        });
+
+        it('설정 난이도와 초기 턴을 보존하고 12개월 이후에는 목표 난이도를 유지한다', () => {
+            const store = new GameStore();
+            store.initWorld([], [], [], []);
+            store.setGlobalState({ difficulty: 4, turnCount: 0 });
+            const first = getAIMonthlyDifficulty(store);
+            expect(first).toBe(1);
+            store.setGlobalState({ turnCount: 11 });
+            expect(getAIMonthlyDifficulty(store)).toBe(4);
+            expect(getAIMonthlyDifficultyMultiplier(store)).toBe(4 / DEFAULT_DIFFICULTY);
+            store.setGlobalState({ turnCount: 99 });
+            expect(getAIMonthlyDifficulty(store)).toBe(4);
+        });
+    });
+
 });

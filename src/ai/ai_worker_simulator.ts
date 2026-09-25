@@ -83,6 +83,10 @@ export interface AITurnPayload {
     year: number;
     month: number;
     turn: number;
+    /** 신규 게임 초기 12개월 AI 난이도 배율 (미지정 시 기존 동작 1.0) */
+    aiDifficultyMultiplier?: number;
+    /** 플레이어 세력 ID — AI 공격 대상에서 보호 */
+    protectedFactionId?: string | null;
     factions: Record<string, FactionSnapshot>;
     officers: OfficerSnapshot[];
     cities: Record<string, CitySnapshot>;
@@ -138,6 +142,7 @@ export function calculateOfficerDecision(
     officer: OfficerSnapshot,
     cities: Record<string, CitySnapshot>,
     factions: Record<string, FactionSnapshot>,
+    options: { aiDifficultyMultiplier?: number; protectedFactionId?: string | null } = {},
 ): AIDecision | null {
     if (officer.isPlayer) return null;
 
@@ -153,8 +158,10 @@ export function calculateOfficerDecision(
     }
 
     // ── 2. 정복 타겟팅 [123] — 공격성향 × 병량 여유 ──
-    const aggression = (officer.ambition / 100) * 0.6 + (officer.stats.leadership / 100) * 0.4;
-    const warTarget = findWeakestEnemyCity(faction, cities);
+    const baseAggression = (officer.ambition / 100) * 0.6 + (officer.stats.leadership / 100) * 0.4;
+    const difficultyMultiplier = options.aiDifficultyMultiplier ?? 1;
+    const aggression = Math.min(1, baseAggression * difficultyMultiplier);
+    const warTarget = findWeakestEnemyCity(faction, cities, options.protectedFactionId ?? null);
     if (warTarget && aggression > 0.62 && homeCity && homeCity.foodStores > 500) {
         const priority = Math.min(0.95, 0.7 + aggression * 0.25) * tw.CONQUEST;
         return makeDecision(officer, 'BATTLE', Math.min(0.99, priority),
@@ -228,12 +235,14 @@ function chooseDomesticAction(
 function findWeakestEnemyCity(
     faction: FactionSnapshot | null,
     cities: Record<string, CitySnapshot>,
+    protectedFactionId: string | null = null,
 ): CitySnapshot | null {
     if (!faction || faction.atWarWith.length === 0) return null;
     const warSet = new Set(faction.atWarWith);
     let weakest: CitySnapshot | null = null;
     for (const city of Object.values(cities)) {
         if (!city.ownerId || !warSet.has(city.ownerId)) continue;
+        if (protectedFactionId && city.ownerId === protectedFactionId) continue;
         if (!weakest || city.defense < weakest.defense) weakest = city;
     }
     return weakest;
@@ -294,7 +303,12 @@ export async function runAITurn(
         const decisions: AIDecision[] = [];
 
         for (const officer of officers) {
-            const decision = calculateOfficerDecision(officer, payload.cities, payload.factions);
+            const decision = calculateOfficerDecision(
+                officer,
+                payload.cities,
+                payload.factions,
+                { aiDifficultyMultiplier: payload.aiDifficultyMultiplier, protectedFactionId: payload.protectedFactionId },
+            );
             if (decision) decisions.push(decision);
         }
 

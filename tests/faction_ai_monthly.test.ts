@@ -12,6 +12,7 @@ describe('세력 AI 월간 자율 행동 [201]', () => {
         const scenario = (scenarioIndex as Array<{ id: string }>).find(s => s.id === '05')!;
         const world = buildWorld(scenario as never, 2); // 유비 = 플레이어
         engine.initWorld(world.officers, world.factions, world.cities, []);
+        engine['store'].setGlobalState({ playerFactionId: world.playerFactionId });
         return { store, engine, world };
     }
 
@@ -48,5 +49,15 @@ describe('세력 AI 월간 자율 행동 [201]', () => {
         await engine.executeTurn();
         // AI 세력(조오/손권)이 존재하므로 이벤트가 1개 이상 발생할 수 있음 (자금 여부에 따라)
         expect(events.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('초기 난이도 배율은 첫 달 AI 직접 공격에 적용되고 플레이어 도시는 표적으로 남지 않는다', () => {
+        const { store } = setupWorld();
+        const gs = store.getGlobalState();
+        const playerCity = store.getAllCities().find(c => c.ownerId === gs.playerFactionId)!;
+        const ai = new FactionAI(store);
+        const report = ai.runMonthly({ aiDifficultyMultiplier: 0.5 });
+        expect(report.every(r => r.factionId !== gs.playerFactionId)).toBe(true);
+        expect(store.getCity(playerCity.id)?.ownerId).toBe(gs.playerFactionId);
     });
 });
