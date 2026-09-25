@@ -6,12 +6,29 @@
  * 부분 [9] 시나리오 선택, [114] 시나리오 데이터 로딩
  */
 
-import type { Officer, Faction, City, Personality, OfficerStats } from './types.js';
+import type { Officer, Faction, City, Personality, OfficerStats, RelationshipEdge } from './types.js';
 import { OfficerStatus } from './types.js';
+import scenario07OfficerProfiles from '../data/scenarios/07_officers.json' with { type: 'json' };
+import scenarioRelationships from '../data/scenarios/relationships.json' with { type: 'json' };
 
 // ============================================================
 // 시나리오 데이터 구조
 // ============================================================
+
+export interface ScenarioCityProfile {
+    population?: number;
+    defense?: number;
+    gold_income?: number;
+    food_income?: number;
+    funds?: number;
+    development?: number;
+    commerce?: number;
+    farming?: number;
+    technology?: number;
+    public_order?: number;
+    loyalty?: number;
+    danger?: number;
+}
 
 export interface ScenarioFaction {
     name: string;
@@ -21,6 +38,16 @@ export interface ScenarioFaction {
     /** 중국 전도 상의 도시 위치 (정규화 0~1, x: 서→동, y: 북→남) */
     map_x?: number;
     map_y?: number;
+    /** 시나리오별 수도 도시의 내정/회복 프로필 [5][49] */
+    city_profile?: ScenarioCityProfile;
+}
+
+export interface ScenarioCityData {
+    name: string;
+    faction_index: number;
+    map_x?: number;
+    map_y?: number;
+    profile?: ScenarioCityProfile;
 }
 
 export interface ScenarioData {
@@ -31,6 +58,8 @@ export interface ScenarioData {
     description: string;
     difficulty: number;         // 1~5
     factions: ScenarioFaction[];
+    /** 수도 외 도시 데이터 [5][49] */
+    cities?: ScenarioCityData[];
     special_conditions: {
         victory: string;
         historical_mode: boolean;
@@ -96,9 +125,111 @@ export const CITY_MAP_COORDS: Record<string, { x: number; y: number }> = {
     '성도': { x: 0.28, y: 0.56 },
     '북평': { x: 0.68, y: 0.10 },
     '남양': { x: 0.53, y: 0.48 },
+    '청두': { x: 0.30, y: 0.57 },
+    '부경': { x: 0.77, y: 0.62 },
+    '진주': { x: 0.64, y: 0.68 },
+    '항양': { x: 0.62, y: 0.48 },
+    '강릉': { x: 0.47, y: 0.55 },
+    '동정': { x: 0.73, y: 0.60 },
+};
+
+/**
+ * [지도][1:1] 제공 全国地图 이미지의 실제 도시 성 아이콘 중심 좌표.
+ * 원본 이미지 1536×1024 기준 픽셀이며, 실행 시 contain 영역과 DPR에 맞춰 변환된다.
+ * mapX/mapY(전술 좌표)와 분리해 이미지 아이콘 클릭 좌표를 보존한다.
+ */
+export const CITY_IMAGE_ANCHORS: Record<string, { x: number; y: number }> = {
+    // [지도][1:1] 1536×1024 원본 이미지에서 확인한 도시 아이콘 중심점.
+    '장안': { x: 487 / 1536, y: 168 / 1024 },
+    '낙양': { x: 750 / 1536, y: 348 / 1024 },
+    '허창': { x: 758 / 1536, y: 251 / 1024 },
+    '업': { x: 688 / 1536, y: 254 / 1024 },
+    '한중': { x: 310 / 1536, y: 544 / 1024 },
+    '성도': { x: 344 / 1536, y: 495 / 1024 },
+    '건업': { x: 1080 / 1536, y: 551 / 1024 },
+    '장사': { x: 742 / 1536, y: 580 / 1024 },
+    '여남': { x: 862 / 1536, y: 357 / 1024 },
+    '서주': { x: 1120 / 1536, y: 469 / 1024 },
+    '항양': { x: 927 / 1536, y: 500 / 1024 },
+    '강릉': { x: 832 / 1536, y: 479 / 1024 },
+    '북평': { x: 1173 / 1536, y: 147 / 1024 },
+
+    // 현재 게임 데이터에는 있으나 제공 좌표표에서 위치가 아직 확정되지 않은 도시.
+    // 이미지 앵커와 전술 좌표를 분리해, 추후 좌표 확정 시 앵커만 교체할 수 있다.
+    '거록': { x: 0.615, y: 0.480 },
+    '진류': { x: 0.525, y: 0.308 },
+    '연주': { x: 0.525, y: 0.308 },
+    '하비': { x: 0.721, y: 0.332 },
+    '여강': { x: 0.525, y: 0.450 },
+    '수춘': { x: 0.585, y: 0.490 },
+    '오': { x: 0.735, y: 0.585 },
+    '신야': { x: 0.560, y: 0.430 },
+    // 표의 남양(751,348)은 낙양(750,348)과 사실상 같은 점이라 우선 충돌 방지값을 사용한다.
+    '남양': { x: 0.548, y: 0.420 },
+    '청두': { x: 0.228, y: 0.486 },
+    '부경': { x: 0.705, y: 0.632 },
+    '진주': { x: 0.640, y: 0.680 },
+    '동정': { x: 0.781, y: 0.635 },
+};
+
+/** [지도][1:1] 전략 관문·전장·요충지 앵커. 도시 생성이 활성화될 때 동일한 방식으로 사용한다. */
+export const MAP_FEATURE_ANCHORS: Record<string, { x: number; y: number; kind: 'PASS' | 'BATTLEFIELD' | 'PORT' }> = {
+    '호로관': { x: 634 / 1536, y: 145 / 1024, kind: 'PASS' },
+    '함곡관': { x: 648 / 1536, y: 293 / 1024, kind: 'PASS' },
+    '양관': { x: 245 / 1536, y: 226 / 1024, kind: 'PASS' },
+    '정관': { x: 495 / 1536, y: 301 / 1024, kind: 'PASS' },
+    '산관': { x: 430 / 1536, y: 379 / 1024, kind: 'PASS' },
+    '진관': { x: 585 / 1536, y: 227 / 1024, kind: 'PASS' },
+    '대방곡': { x: 159 / 1536, y: 563 / 1024, kind: 'PASS' },
+    '적벽': { x: 925 / 1536, y: 500 / 1024, kind: 'BATTLEFIELD' },
+    '한강': { x: 1174 / 1536, y: 617 / 1024, kind: 'PORT' },
+    '창오': { x: 1058 / 1536, y: 696 / 1024, kind: 'PORT' },
+    '한중협곡': { x: 310 / 1536, y: 544 / 1024, kind: 'PASS' },
 };
 
 /** 무장 이름표 (간이 사전 — 확장 가능) */
+interface ScenarioOfficerProfile {
+    name: string;
+    courtesy: string;
+    stats: OfficerStats;
+    personality: Personality;
+}
+
+/** 외부 콘텐츠 데이터 우선 적용 — 07 시나리오의 확장 능력치/성향 [5][11][27] */
+const OFFICER_PROFILE_OVERRIDES = scenario07OfficerProfiles as Record<string, ScenarioOfficerProfile>;
+
+interface ScenarioRelationshipFile {
+    version: number;
+    scenarios: Record<string, RelationshipEdge[]>;
+}
+
+const RELATIONSHIP_FILE = scenarioRelationships as ScenarioRelationshipFile;
+const VALID_RELATIONSHIP_TYPES = new Set<RelationshipEdge['type']>([
+    'FRIEND', 'RIVAL', 'SWORN_BROTHER', 'NEMESIS', 'FAMILY', 'SPOUSE', 'SUBORDINATE',
+]);
+
+/** 외부 관계 데이터의 잘못된 엣지를 걸러내는 fail-safe 검증기 [269][301] */
+export function getScenarioRelationships(scenarioId: string, validOfficerIds: ReadonlySet<string>): RelationshipEdge[] {
+    if (RELATIONSHIP_FILE.version !== 1 || !Array.isArray(RELATIONSHIP_FILE.scenarios?.[scenarioId])) return [];
+    const seen = new Set<string>();
+    return RELATIONSHIP_FILE.scenarios[scenarioId].filter((edge): edge is RelationshipEdge => {
+        const key = `${edge.source}:${edge.target}:${edge.type}`;
+        const valid = edge.source !== edge.target
+            && validOfficerIds.has(edge.source)
+            && validOfficerIds.has(edge.target)
+            && VALID_RELATIONSHIP_TYPES.has(edge.type)
+            && Number.isFinite(edge.affinity)
+            && edge.affinity >= -100
+            && edge.affinity <= 100
+            && !seen.has(key);
+        if (valid) seen.add(key);
+        return valid;
+    }).map(edge => ({
+        ...edge,
+        history: Array.isArray(edge.history) ? edge.history.map(item => ({ ...item })) : [],
+    }));
+}
+
 const OFFICER_NAME_TABLE: Record<string, { name: string; courtesy: string; stats: Partial<OfficerStats>; personality: Personality }> = {
     liu_bei:    { name: '유비',   courtesy: '현덕', stats: { leadership: 82, might: 74, intelligence: 76, politics: 80, charisma: 99 }, personality: 'RIGHTEOUS' },
     guan_yu:    { name: '관우',   courtesy: '운장', stats: { leadership: 96, might: 97, intelligence: 75, politics: 63, charisma: 93 }, personality: 'RIGHTEOUS' },
@@ -119,6 +250,14 @@ const OFFICER_NAME_TABLE: Record<string, { name: string; courtesy: string; stats
     xun_yu:     { name: '순욱',   courtesy: '문약', stats: { leadership: 44, might: 22, intelligence: 96, politics: 98, charisma: 88 }, personality: 'LOYAL' },
     zhou_yu:    { name: '주유',   courtesy: '공근', stats: { leadership: 94, might: 76, intelligence: 97, politics: 82, charisma: 96 }, personality: 'LOYAL' },
     sima_yi:    { name: '사마의', courtesy: '중달', stats: { leadership: 90, might: 60, intelligence: 98, politics: 94, charisma: 78 }, personality: 'CAUTIOUS' },
+    cao_pi:     { name: '사오필', courtesy: '종무', stats: { leadership: 78, might: 66, intelligence: 76, politics: 72, charisma: 82 }, personality: 'CALM' },
+    liu_shan:   { name: '유찬', courtesy: '공명', stats: { leadership: 58, might: 32, intelligence: 66, politics: 58, charisma: 76 }, personality: 'CALM' },
+    sun_hao:    { name: '손호', courtesy: '원종', stats: { leadership: 72, might: 58, intelligence: 78, politics: 70, charisma: 74 }, personality: 'CAUTIOUS' },
+    sima_zhao:  { name: '사마조', courtesy: '子上', stats: { leadership: 86, might: 62, intelligence: 94, politics: 88, charisma: 76 }, personality: 'CAUTIOUS' },
+    zhuge_ke:   { name: '제갈격', courtesy: '원도', stats: { leadership: 84, might: 44, intelligence: 90, politics: 86, charisma: 78 }, personality: 'CAUTIOUS' },
+    fei_yi:     { name: '비의', courtesy: '문상', stats: { leadership: 72, might: 40, intelligence: 88, politics: 84, charisma: 72 }, personality: 'RIGHTEOUS' },
+    zhang_zhao: { name: '장조', courtesy: '홍모', stats: { leadership: 70, might: 68, intelligence: 86, politics: 72, charisma: 74 }, personality: 'LOYAL' },
+    zhang_song: { name: '장송', courtesy: '문현', stats: { leadership: 82, might: 72, intelligence: 76, politics: 80, charisma: 72 }, personality: 'LOYAL' },
 
     // ── 위·조조 진영 ──
     xiahou_dun: { name: '하후돈', courtesy: '원양', stats: { leadership: 90, might: 92, intelligence: 64, politics: 76, charisma: 80 }, personality: 'LOYAL' },
@@ -178,27 +317,28 @@ const OFFICER_NAME_TABLE: Record<string, { name: string; courtesy: string; stats
 // 이름표에 없는 무장은 기본 스탯으로 생성
 function buildOfficer(id: string, cityId: string, factionId: string | null, year: number, isLeader: boolean): Officer {
     const known = OFFICER_NAME_TABLE[id];
-    const name = known?.name ?? ESCORT_NAME_FIXES[id] ?? id;
+    const external = OFFICER_PROFILE_OVERRIDES[id];
+    const name = external?.name ?? known?.name ?? ESCORT_NAME_FIXES[id] ?? id;
     return {
         id,
         name,
-        courtesyName: known?.courtesy ?? '',
+        courtesyName: external?.courtesy ?? known?.courtesy ?? '',
         gender: 'M',
         birthYear: year - 30,
         deathYear: null,
         stats: {
-            leadership: known?.stats.leadership ?? 60,
-            might: known?.stats.might ?? 60,
-            intelligence: known?.stats.intelligence ?? 60,
-            politics: known?.stats.politics ?? 60,
-            charisma: known?.stats.charisma ?? 60,
+            leadership: external?.stats.leadership ?? known?.stats.leadership ?? 60,
+            might: external?.stats.might ?? known?.stats.might ?? 60,
+            intelligence: external?.stats.intelligence ?? known?.stats.intelligence ?? 60,
+            politics: external?.stats.politics ?? known?.stats.politics ?? 60,
+            charisma: external?.stats.charisma ?? known?.stats.charisma ?? 60,
         },
         exp: { leadership: 0, might: 0, intelligence: 0, politics: 0, charisma: 0 },
         rank: isLeader ? 9 : 0,
         status: (isLeader ? 'LORD' : 'OFFICER') as Officer['status'],
         factionId,
         cityId,
-        personality: known?.personality ?? 'CALM',
+        personality: external?.personality ?? known?.personality ?? 'CALM',
         loyalty: isLeader ? 100 : 75 + (name.length % 20),
         ambition: 50,
         morality: 50,
@@ -242,6 +382,8 @@ export interface BuiltWorld {
     /** 시나리오 시작 연월 — GlobalState.time 주입용 [300] (누락 시 이벤트 연도 조건이 전부 어긋남) */
     startYear: number;
     startMonth: number;
+    /** 시나리오별 초기 인맥 — 관계망 시각화/AI social graph 초기화 [269][33] */
+    relationships: RelationshipEdge[];
 }
 
 /**
@@ -282,6 +424,11 @@ const SCENARIO_ROSTERS: Record<string, string[]> = {
     '06:0': ['liu_bei', 'zhuge_liang', 'jiang_wei', 'wei_yan', 'zhao_yun', 'fa_zheng'], // 촉 (한중) — 대관례상 유비 생존 가정 (게임적 배려)
     '06:1': ['cao_cao', 'sima_yi', 'zhang_he', 'xu_huang', 'cao_ren'],          // 위 (낙양) — 게임적 배려로 조조 생존
     '06:2': ['sun_quan', 'lu_xun', 'lu_meng', 'gan_ning', 'sun_shangxiang'],    // 오 (건업)
+
+    // 07 삼국鼎峙 (220년) — 유비·손권 사후의 안정화 탐색 시나리오 [5][106-114]
+    '07:0': ['cao_pi', 'sima_zhao', 'zhang_song', 'xiahou_dun', 'cao_ren'],       // 위 (낙양)
+    '07:1': ['liu_shan', 'jiang_wei', 'zhuge_ke', 'fei_yi', 'fa_zheng'],          //촉 (청두)
+    '07:2': ['sun_hao', 'lu_xun', 'zhang_zhao', 'gan_ning', 'sun_shangxiang'],   // 오 (부경)
 };
 
 /** 보조 무장들의 이름표 (이름표에 없으면 아이디 그대로 노출 방지) */
@@ -361,6 +508,14 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
         const mapCoord = sf.map_x !== undefined && sf.map_y !== undefined
             ? { x: sf.map_x, y: sf.map_y }
             : CITY_MAP_COORDS[sf.capital] ?? { x: 0.3 + (idx % 4) * 0.15, y: 0.3 + Math.floor(idx / 4) * 0.25 };
+        const imageCoord = CITY_IMAGE_ANCHORS[sf.capital] ?? mapCoord;
+        const cityProfile = sf.city_profile ?? {};
+        const population = cityProfile.population ?? 40000 + idx * 5000;
+        const development = cityProfile.development ?? 45 + (idx % 4) * 5;
+        const commerce = cityProfile.commerce ?? 40 + (idx % 3) * 8;
+        const farming = cityProfile.farming ?? 42 + (idx % 4) * 6;
+        const technology = cityProfile.technology ?? 28 + (idx % 3) * 7;
+        const publicOrder = cityProfile.public_order ?? 60 + (idx % 2) * 8;
 
         cities.push({
             id: cityId,
@@ -368,28 +523,77 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
             hexCoord: { q: Math.round(mapCoord.x * 8) - 4, r: Math.round(mapCoord.y * 8) - 4 },
             mapX: mapCoord.x,
             mapY: mapCoord.y,
-            population: 40000 + idx * 5000,
-            defense: 45 + (idx % 3) * 10,
+            mapImageX: imageCoord.x,
+            mapImageY: imageCoord.y,
+            mapIconType: 'CAPITAL',
+            population,
+            defense: cityProfile.defense ?? 45 + (idx % 3) * 10,
             maxDefense: 100,
-            goldIncome: 110 + idx * 10,
-            foodIncome: 280 + idx * 15,
-            funds: 600 + idx * 80,
+            goldIncome: cityProfile.gold_income ?? 110 + idx * 10,
+            foodIncome: cityProfile.food_income ?? 280 + idx * 15,
+            funds: cityProfile.funds ?? 600 + idx * 80,
             facilities: [],
             officerIds,
             ownerId: factionId,
             isCapital: true,
-            development: 45 + (idx % 4) * 5,
+            development,
             developmentStats: {
-                commerce: 40 + (idx % 3) * 8, maxCommerce: 100,
-                farming: 42 + (idx % 4) * 6, maxFarming: 100,
-                technology: 28 + (idx % 3) * 7, maxTechnology: 100,
-                publicOrder: 60 + (idx % 2) * 8, maxPublicOrder: 100,
+                commerce, maxCommerce: 100,
+                farming, maxFarming: 100,
+                technology, maxTechnology: 100,
+                publicOrder, maxPublicOrder: 100,
             },
-            loyalty: 78,
-            danger: 12,
+            loyalty: cityProfile.loyalty ?? 78,
+            danger: cityProfile.danger ?? 12,
             weather: 'SUNNY',
         });
     });
+
+    // 이차 도시 — 수도 외 도시를 정규화된 월드에 추가 [5][49]
+    for (const [cityIndex, cityData] of (scenario.cities ?? []).entries()) {
+        const faction = factions[cityData.faction_index];
+        if (!faction) continue; // 잘못된 세력 인덱스는 fail-safe로 건너뛴다.
+        let cityId = `city_${cityData.name}`;
+        if (usedCityIds.has(cityId)) cityId = `${cityId}_${cityIndex}`;
+        usedCityIds.add(cityId);
+        const mapCoord = cityData.map_x !== undefined && cityData.map_y !== undefined
+            ? { x: cityData.map_x, y: cityData.map_y }
+            : CITY_MAP_COORDS[cityData.name] ?? { x: 0.4 + (cityIndex % 3) * 0.12, y: 0.45 + Math.floor(cityIndex / 3) * 0.1 };
+        const imageCoord = CITY_IMAGE_ANCHORS[cityData.name] ?? mapCoord;
+        const profile = cityData.profile ?? {};
+        const development = profile.development ?? 38 + cityIndex * 4;
+        cities.push({
+            id: cityId,
+            name: cityData.name,
+            hexCoord: { q: Math.round(mapCoord.x * 8) - 4, r: Math.round(mapCoord.y * 8) - 4 },
+            mapX: mapCoord.x,
+            mapY: mapCoord.y,
+            mapImageX: imageCoord.x,
+            mapImageY: imageCoord.y,
+            mapIconType: 'CITY',
+            population: profile.population ?? 36000 + cityIndex * 4500,
+            defense: profile.defense ?? 35 + cityIndex * 5,
+            maxDefense: 100,
+            goldIncome: profile.gold_income ?? 85 + cityIndex * 8,
+            foodIncome: profile.food_income ?? 220 + cityIndex * 15,
+            funds: profile.funds ?? 420 + cityIndex * 70,
+            facilities: [],
+            officerIds: [],
+            ownerId: faction.id,
+            isCapital: false,
+            development,
+            developmentStats: {
+                commerce: profile.commerce ?? 35 + cityIndex * 5, maxCommerce: 100,
+                farming: profile.farming ?? 38 + cityIndex * 4, maxFarming: 100,
+                technology: profile.technology ?? 25 + cityIndex * 5, maxTechnology: 100,
+                publicOrder: profile.public_order ?? 55 + cityIndex * 3, maxPublicOrder: 100,
+            },
+            loyalty: profile.loyalty ?? 68 + cityIndex * 2,
+            danger: profile.danger ?? 16 + cityIndex * 3,
+            weather: 'SUNNY',
+        });
+        faction.cities.push(cityId);
+    }
 
     // (역사적 무장은 SCENARIO_ROSTERS로 배치되므로 추가 편성 불필요)
     const companionMap: Record<string, string[]> = {};
@@ -419,6 +623,7 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
         officers.push(freeOfficer);
     }
 
+    const validOfficerIds = new Set(officers.map(officer => officer.id));
     return {
         officers,
         factions,
@@ -427,5 +632,6 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
         scenario: { id: scenario.id, difficulty: scenario.difficulty },
         startYear: year,
         startMonth: parseStartDate(scenario.start_date).month,
+        relationships: getScenarioRelationships(scenario.id, validOfficerIds),
     };
 }

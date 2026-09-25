@@ -10,5 +10,29 @@
     "name": "관우",
     "stats": { "lea": 96, "str": 97, "int": 75, "pol": 63 },
     "city_id": "pyeong_won"
+  },
+  {
+    "id": "cao_pi",
+    "name": "사오필",
+    "stats": { "lea": 78, "str": 66, "int": 76, "pol": 72 },
+    "city_id": "pyeong_won"
+  },
+  {
+    "id": "liu_shan",
+    "name": "유찬",
+    "stats": { "lea": 58, "str": 32, "int": 66, "pol": 58 },
+    "city_id": "chengdu"
+  },
+  {
+    "id": "sun_hao",
+    "name": "손호",
+    "stats": { "lea": 72, "str": 58, "int": 78, "pol": 70 },
+    "city_id": "jianye"
+  },
+  {
+    "id": "zhuge_ke",
+    "name": "제갈격",
+    "stats": { "lea": 84, "str": 44, "int": 90, "pol": 86 },
+    "city_id": "chengdu"
   }
 ]

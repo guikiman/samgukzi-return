@@ -1,5 +1,3 @@
-use tauri::Manager;
-
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("환영합니다, {}!", name)

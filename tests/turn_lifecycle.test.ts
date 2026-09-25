@@ -113,6 +113,34 @@ describe('TurnScheduler - 청크 분할 실행', () => {
         expect(executed.length).toBe(50);
     });
 
+    it('비동기 태스크가 끝나기 전에는 완료를 알리지 않는다', async () => {
+        let releaseTask!: () => void;
+        const taskDone = new Promise<void>(resolve => { releaseTask = resolve; });
+        let completed = false;
+
+        const scheduler = new TurnScheduler(
+            () => taskDone,
+            { chunkSize: 10, maxFrameTimeMs: 50, useIdleCallback: false },
+        );
+        scheduler.setTasks([{
+            id: 'async_task',
+            officerId: 'off_async' as OfficerID,
+            execute: () => {},
+        }]);
+        scheduler.setOnComplete(() => { completed = true; });
+        scheduler.start();
+
+        await Promise.resolve();
+        expect(completed).toBe(false);
+        expect(scheduler.getProgress().completed).toBe(0);
+
+        releaseTask();
+        await taskDone;
+        await new Promise<void>(resolve => queueMicrotask(() => resolve()));
+        expect(completed).toBe(true);
+        expect(scheduler.getProgress().completed).toBe(1);
+    });
+
     it('10,000개 대량 태스크 메모리 안정성', async () => {
         const executed: string[] = [];
         const processor = async (task: ChunkTask) => {

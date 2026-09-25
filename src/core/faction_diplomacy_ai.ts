@@ -11,7 +11,16 @@
 
 import type { GameStore } from './game_store.js';
 import type { FactionID } from './types.js';
-import { DiplomacyEngine, FactionRelation } from './diplomacy_engine.js';
+import { DiplomacyEngine, FactionRelation, type DiplomacyResult } from './diplomacy_engine.js';
+import type { DiplomacyAction } from './command_system.js';
+
+/** 월간 AI가 선택할 수 있는 커맨드 기반 외교 액션 [341-360] */
+export type FactionDiplomacyAction = Extract<DiplomacyAction, 'DECLARE_WAR' | 'PEACE' | 'ALLIANCE'>;
+export type DiplomacyActionExecutor = (
+    factionId: FactionID,
+    targetFactionId: FactionID,
+    action: FactionDiplomacyAction,
+) => DiplomacyResult;
 
 /** 성향별 외교 공격성 (선전포고 확률 가중) */
 const DIPLO_AGGRESSION: Record<string, number> = {
@@ -46,7 +55,7 @@ export class FactionDiplomacyAI {
     }
 
     /** 월간 자율 외교 실행 — 플레이어 세력 제외 */
-    runMonthly(): FactionDiplomacyReport[] {
+    runMonthly(executor?: DiplomacyActionExecutor): FactionDiplomacyReport[] {
         const gs = this.store.getGlobalState();
         const reports: FactionDiplomacyReport[] = [];
         const factions = this.store.getAllFactions();
@@ -58,7 +67,7 @@ export class FactionDiplomacyAI {
 
         for (const faction of factions) {
             if (faction.id === gs.playerFactionId) continue;
-            const report = this.runFaction(faction.id, gs.playerFactionId);
+            const report = this.runFaction(faction.id, executor);
             if (report.messages.length > 0) {
                 reports.push(report);
             }
@@ -66,7 +75,7 @@ export class FactionDiplomacyAI {
         return reports;
     }
 
-    private runFaction(factionId: FactionID, playerFactionId: string | null | undefined): FactionDiplomacyReport {
+    private runFaction(factionId: FactionID, executor?: DiplomacyActionExecutor): FactionDiplomacyReport {
         const messages: string[] = [];
         const faction = this.store.getFaction(factionId);
         if (!faction) return { factionId, factionName: '?', messages };
@@ -82,7 +91,9 @@ export class FactionDiplomacyAI {
             const theirPower = this.factionPower(other.id);
             // 전력이 절반 이하면 휴전 시도 (TIMID/CAUTIOUS는 항상 시도)
             if (theirPower > 0 && myPower < theirPower * 0.5) {
-                const result = this.engine.makePeace(factionId, other.id);
+                const result = executor
+                    ? executor(factionId, other.id, 'PEACE')
+                    : this.engine.makePeace(factionId, other.id);
                 if (result.success) {
                     messages.push(`${other.name}과(와) 휴전 (전력 열세)`);
                 }
@@ -105,7 +116,9 @@ export class FactionDiplomacyAI {
 
             if (candidates.length > 0) {
                 const target = candidates[0].faction;
-                const result = this.engine.declareWar(factionId, target.id);
+                const result = executor
+                    ? executor(factionId, target.id, 'DECLARE_WAR')
+                    : this.engine.declareWar(factionId, target.id);
                 if (result.success) {
                     messages.push(`${target.name}에 선전포고!`);
                 }
@@ -122,8 +135,12 @@ export class FactionDiplomacyAI {
                 })
                 .sort((a, b) => this.factionPower(b.id) - this.factionPower(a.id));
 
-            if (stronger.length > 0 && this.engine.formAlliance(factionId, stronger[0].id).success) {
-                messages.push(`${stronger[0].name}과(와) 동맹 체결`);
+            if (stronger.length > 0) {
+                const target = stronger[0];
+                const result = executor
+                    ? executor(factionId, target.id, 'ALLIANCE')
+                    : this.engine.formAlliance(factionId, target.id);
+                if (result.success) messages.push(`${target.name}과(와) 동맹 체결`);
             }
         }
 

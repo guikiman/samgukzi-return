@@ -9,6 +9,7 @@ import { GameEngine, getGameEngine } from './core/game_engine.js';
 import { BootstrapContext, getBootstrap } from './core/bootstrap.js';
 import { HexMapCanvasRenderer, HexTile } from './core/hex_map_canvas_renderer.js';
 import { ChinaMapRenderer, MapCityView } from './core/china_map_renderer.js';
+import { City3DRenderer, type CityBuilding } from './core/city_3d_renderer.js';
 import { BattleFrontend, DeployableUnit, BattlePhase } from './core/battle_frontend.js';
 import { TitleScreen } from './core/title_screen.js';
 import { loadScenarios, getCachedScenarios, buildWorld, getKnownOfficerName } from './core/scenario_system.js';
@@ -20,13 +21,15 @@ import type { SlotId } from './core/save_slot_manager.js';
 import { FactionRelation } from './core/diplomacy_engine.js';
 import type { DiplomacyEngine } from './core/diplomacy_engine.js';
 import { processBattleSpoils } from './core/battle_spoils_system.js';
+import { BattleCommand } from './core/command_system.js';
 // [312] 전투 리플레이 URL 공유 / [309] 모드 창작 마당 / [303] 다중 탭 뮤텍스
 import { ReplayShareManager } from './core/replay_share_manager.js';
-import type { ReplayActionLog } from './core/replay_share_manager.js';
+import type { ReplayActionLog, ReplayCommandEvent } from './core/replay_share_manager.js';
 import { ReplayViewer } from './core/replay_viewer.js';
 import { RuntimeModLoader } from './core/runtime_mod_loader.js';
 import { MultiTabMutexCoordinator } from './core/multi_tab_mutex_coordinator.js';
-import { checkInteraction, executeInteraction, getAffinityBetween } from './core/officer_interaction_system.js';
+import { checkInteraction, executeInteraction, getAffinityBetween, GIFT_ITEMS, calculateGiftAffinity, type GiftItemId, type GiftOptions } from './core/officer_interaction_system.js';
+import { ConversationSystem } from './core/conversation_system.js';
 import { judgeVengeanceOnly, startVengeanceGame, finishVengeance, tryVengeanceOnEncounter, applyVengeanceToUnits } from './core/vengeance_system.js';
 import * as vengeance_system from './core/vengeance_system.js';
 import * as free_officer_visit_system from './core/free_officer_visit_system.js';
@@ -59,6 +62,8 @@ const engineRef: { current: import('./core/game_engine.js').GameEngine | null } 
 import type { DuelMinigame } from './core/duel_minigame.js';
 import type { DebateMinigame } from './core/debate_minigame.js';
 import { getCaptivesInCity } from './core/captive_escape_system.js';
+import { FacilityType, type CityBuildingState } from './core/types.js';
+import { DomesticTaskType } from './core/domestic_scheduler.js';
 
 // ============================================================
 // DOM References
@@ -79,6 +84,7 @@ const btnPause = document.getElementById('btn-pause') as HTMLButtonElement;
 const btnSave = document.getElementById('btn-save') as HTMLButtonElement;
 const btnSlots = document.getElementById('btn-slots') as HTMLButtonElement;
 const btnBattle = document.getElementById('btn-battle') as HTMLButtonElement;
+const btnMapVisibility = document.getElementById('btn-map-visibility') as HTMLButtonElement;
 const btnReport = document.getElementById('btn-report') as HTMLButtonElement;
 const btnDiplomacy = document.getElementById('btn-diplomacy') as HTMLButtonElement;
 const btnNextMonth = document.getElementById('btn-next-month') as HTMLButtonElement;
@@ -93,6 +99,7 @@ const btnGraph = document.getElementById('btn-graph') as HTMLButtonElement;
 let engine: GameEngine;
 let bootstrap: BootstrapContext;
 let isRunning = false;
+const conversationSystem = new ConversationSystem();
 
 // [312] 전투 리플레이 기록기 — 전투마다 초기화, 액션을 실시간 누적
 const replayManager = new ReplayShareManager();
@@ -114,8 +121,14 @@ let currentFps = 0;
 let hexRenderer: HexMapCanvasRenderer;
 let chinaMap: ChinaMapRenderer;
 let worldCities: MapCityView[] = [];
+/** [49] 방문한 도시와 현재 플레이어 세력 도시를 지도에서 발견 상태로 관리한다. */
+const visitedCityIds = new Set<string>();
+type CityVisibilityMode = 'all' | 'discovered';
+let cityVisibilityMode: CityVisibilityMode = 'all';
 let hexTiles: HexTile[] = [];
 let isDragging = false;
+let activePointerId: number | null = null;
+let dragMoved = false;
 let dragStartX = 0;
 let dragStartY = 0;
 let selectedHex: { q: number; r: number } | null = null;
@@ -434,6 +447,7 @@ function renderSettlementPanel(): void {
 /** 연대기 탭 렌더 — 최신순으로 아이콘+연도+문구 표시 */
 // 연대기 필터 상태 [Y-메타][441-460]
 let chronicleKindFilter: string | null = null;
+let chronicleFactionFilter: string | null = null;
 let chronicleCollapsedYears = new Set<number>();
 
 const CHRONICLE_FILTERS: Array<{ kind: string | null; label: string }> = [
@@ -442,6 +456,7 @@ const CHRONICLE_FILTERS: Array<{ kind: string | null; label: string }> = [
     { kind: 'FREE_VISIT', label: '🚶 출사' },
     { kind: 'PACT', label: '🤝 결의' },
     { kind: 'RESCUE', label: '🛡️ 구출' },
+    { kind: 'CAPTURE', label: '⛓️ 포로' },
     { kind: 'DESTROYED', label: '💀 멸망' },
 ];
 
@@ -453,8 +468,9 @@ function renderChronicle(): void {
         el.innerHTML = '<div class="chronicle-empty">아직 기록된 사건이 없다…</div>';
         return;
     }
-    // 종별 필터 적용
-    const entries = chronicleKindFilter ? all.filter(e => e.kind === chronicleKindFilter) : all;
+    // 종별·세력별 필터 적용
+    let entries = chronicleKindFilter ? all.filter(e => e.kind === chronicleKindFilter) : all;
+    if (chronicleFactionFilter) entries = entries.filter(e => e.factionId === chronicleFactionFilter);
     // 연도별 그룹화 (최신 연도가 위)
     const yearGroups = new Map<number, typeof entries>();
     for (const e of entries) {
@@ -465,6 +481,11 @@ function renderChronicle(): void {
     const filterChips = CHRONICLE_FILTERS.map(f =>
         `<button class="ch-filter${chronicleKindFilter === f.kind ? ' active' : ''}" data-kind="${f.kind ?? ''}">${f.label}</button>`
     ).join('');
+    const factionIds = [...new Set(all.map(e => e.factionId).filter((id): id is string => !!id))];
+    const factionChips = factionIds.map(id => {
+        const faction = engine?.['store'].getFaction(id);
+        return `<button class="ch-filter ch-faction-filter${chronicleFactionFilter === id ? ' active' : ''}" data-faction="${id}">${faction?.name ?? id}</button>`;
+    }).join('');
     const groupsHtml = Array.from(yearGroups.entries()).map(([year, list]) => {
         const collapsed = chronicleCollapsedYears.has(year);
         return `<div class="ch-year-group">` +
@@ -479,12 +500,20 @@ function renderChronicle(): void {
             `</div>`;
     }).join('');
     el.innerHTML = `<div class="ch-filters">${filterChips}</div>` +
-        (entries.length === 0 ? '<div class="chronicle-empty">해당 종류의 기록이 없다…</div>' : groupsHtml);
+        (factionChips ? `<div class="ch-filters ch-faction-filters">${factionChips}</div>` : '') +
+        (entries.length === 0 ? '<div class="chronicle-empty">해당 조건의 기록이 없다…</div>' : groupsHtml);
 }
 
 // 연대기 필터 칩 + 연도 토글 이벤트 위임
 document.getElementById('chronicle-content')?.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
+    const factionChip = target.closest('.ch-faction-filter') as HTMLElement | null;
+    if (factionChip) {
+        const factionId = factionChip.dataset.faction || null;
+        chronicleFactionFilter = chronicleFactionFilter === factionId ? null : factionId;
+        renderChronicle();
+        return;
+    }
     const chip = target.closest('.ch-filter') as HTMLElement | null;
     if (chip) {
         const kind = chip.dataset.kind || null;
@@ -676,27 +705,41 @@ function generateDemoHexTiles(): HexTile[] {
 }
 
 // ============================================================
-// Map Mouse Interaction — 월드: 중국 전도 / 전투: 헥사곤
+// Map Pointer Interaction — 월드: 중국 전도 / 전투: 헥사곤
+// Pointer Events를 사용해 마우스·터치·펜 입력을 하나의 경로로 처리한다.
+// [461-480] 모바일 터치 팬/도시 선택 대응
 // ============================================================
 
-canvas.addEventListener('mousedown', (e) => {
+/** 뷰포트 좌표를 캔버스 backing-store 좌표로 변환한다. */
+function clientToCanvasPoint(clientX: number, clientY: number): { px: number; py: number } {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        px: (clientX - rect.left) * canvas.width / Math.max(1, rect.width),
+        py: (clientY - rect.top) * canvas.height / Math.max(1, rect.height),
+    };
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+    if (activePointerId !== null) return;
     isDragging = true;
+    dragMoved = false;
+    activePointerId = e.pointerId;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* 구형 브라우저 무시 */ }
 });
 
-canvas.addEventListener('mousemove', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
+canvas.addEventListener('pointermove', (e) => {
+    if (activePointerId !== e.pointerId) return;
+    const { px, py } = clientToCanvasPoint(e.clientX, e.clientY);
 
     if (isDragging) {
         const dx = e.clientX - dragStartX;
         const dy = e.clientY - dragStartY;
-        if (isBattleMode) {
-            hexRenderer.pan(dx, dy);
-        } else {
-            chinaMap.pan(dx, dy);
+        if (Math.hypot(dx, dy) > 4) dragMoved = true;
+        if (dx !== 0 || dy !== 0) {
+            if (isBattleMode) hexRenderer.pan(dx, dy);
+            else chinaMap.pan(dx, dy);
         }
         dragStartX = e.clientX;
         dragStartY = e.clientY;
@@ -707,36 +750,68 @@ canvas.addEventListener('mousemove', (e) => {
     }
 });
 
-canvas.addEventListener('mouseup', () => {
-    isDragging = false;
-});
+function selectCityAtClientPoint(clientX: number, clientY: number): boolean {
+    if (isBattleMode) return false;
+    const { px, py } = clientToCanvasPoint(clientX, clientY);
+    const city = chinaMap.cityAt(px, py);
+    for (const c of worldCities) c.isSelected = (c.id === city?.id);
+    if (!city) return false;
+    // [49] 도시를 실제로 방문하면 이후 '발견 도시' 필터에서 계속 visible하다.
+    visitedCityIds.add(city.id);
+    // [49] 방문 기록을 GlobalState에 즉시 반영해 세이브/로드 후에도 복원한다.
+    engine['store'].setGlobalState({
+        ...engine['store'].getGlobalState(),
+        visitedCityIds: [...visitedCityIds],
+    });
+    syncChinaMapCities();
+    showCityInfo(city.id);
+    return true;
+}
 
-canvas.addEventListener('mouseleave', () => {
+function endPointerInteraction(e: PointerEvent): void {
+    if (activePointerId !== e.pointerId) return;
+    const wasDrag = dragMoved;
     isDragging = false;
-    chinaMap.setHoveredCity(null);
+    activePointerId = null;
+    try { canvas.releasePointerCapture(e.pointerId); } catch { /* 이미 해제됨 */ }
+    // pointerup에서 직접 선택한다. 일부 WebView/Tauri 터치에서는 click이
+    // 합성되지 않아 canvas click만으로는 도시 선택이 누락된다. [461-480]
+    if (!wasDrag) selectCityAtClientPoint(e.clientX, e.clientY);
+    dragMoved = false;
+}
+function cancelPointerInteraction(e: PointerEvent): void {
+    if (activePointerId !== e.pointerId) return;
+    isDragging = false;
+    activePointerId = null;
+    dragMoved = false;
+    try { canvas.releasePointerCapture(e.pointerId); } catch { /* 이미 해제됨 */ }
+}
+canvas.addEventListener('pointerup', endPointerInteraction);
+canvas.addEventListener('pointercancel', cancelPointerInteraction);
+
+canvas.addEventListener('pointerleave', (e) => {
+    if (activePointerId === e.pointerId && e.pointerType === 'mouse') {
+        isDragging = false;
+        activePointerId = null;
+        dragMoved = false;
+        chinaMap.setHoveredCity(null);
+    }
 });
 
 canvas.addEventListener('click', (e) => {
-    if (isBattleMode) return; // 전투 중 클릭은 battleFrontend가 처리
-    const rect = canvas.getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
-
-    // 드래그 종료 직후의 클릭은 무시 (이동 거리 작을 때만 선택)
-    if (Math.hypot(e.clientX - dragStartX, e.clientY - dragStartY) > 4) return;
-
-    const city = chinaMap.cityAt(px, py);
-    for (const c of worldCities) c.isSelected = (c.id === city?.id);
-    if (city) {
-        showCityInfo(city.id);
+    // 실제 포인터 입력은 pointerup에서 처리한다. click은 키보드/프로그래밍
+    // synthetic click(detail=0)만 보완 처리해 중복 로그를 막는다.
+    if (e.detail !== 0 || activePointerId !== null) return;
+    if (dragMoved) {
+        dragMoved = false;
+        return;
     }
+    selectCityAtClientPoint(e.clientX, e.clientY);
 });
 
 canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
+    const { px, py } = clientToCanvasPoint(e.clientX, e.clientY);
     const factor = e.deltaY < 0 ? 1.1 : 0.9;
     if (isBattleMode) {
         hexRenderer.zoomAt(factor, px, py);
@@ -750,7 +825,7 @@ function syncChinaMapCities(): void {
     try {
         const gs = engine['store'].getGlobalState();
         const store = engine['store'];
-        worldCities = store.getAllCities().map(c => {
+        const cityViews = store.getAllCities().map(c => {
             const fac = c.ownerId ? store.getFaction(c.ownerId) : null;
             const x = c.mapX ?? (c.hexCoord.q + 4) / 8;
             const y = c.mapY ?? (c.hexCoord.r + 4) / 8;
@@ -761,9 +836,14 @@ function syncChinaMapCities(): void {
                 id: c.id,
                 name: c.name,
                 x, y,
+                imageX: c.mapImageX ?? x,
+                imageY: c.mapImageY ?? y,
+                iconType: c.mapIconType ?? (c.isCapital ? 'CAPITAL' : 'CITY'),
+                hitRadius: c.isCapital ? 22 : 16,
                 ownerColor: factionColor(fac?.color),
                 factionName: fac?.name,
                 isPlayer: c.ownerId === gs.playerFactionId,
+                isDiscovered: c.ownerId === gs.playerFactionId || visitedCityIds.has(c.id),
                 garrison: c.development * 100,
                 isSelected: false,
                 weather: climate?.weather,
@@ -772,6 +852,15 @@ function syncChinaMapCities(): void {
                 factionPattern: colorPattern,
             } as MapCityView;
         });
+        const discoveredCities = cityViews.filter(city => city.isDiscovered === true || city.isPlayer);
+        for (const city of cityViews) {
+            if (city.isDiscovered === true || city.isPlayer) continue;
+            // [49] 발견 모드에서도 방문·소유 도시의 인접 도시는 실루엣으로 남긴다.
+            city.isAdjacentToDiscovered = discoveredCities.some(discovered =>
+                Math.hypot(discovered.x - city.x, discovered.y - city.y) <= 0.16,
+            );
+        }
+        worldCities = cityViews;
         chinaMap.setCities(worldCities);
     } catch {
         // 엔진 미초기화
@@ -779,6 +868,25 @@ function syncChinaMapCities(): void {
 }
 
 /** 현재 상세 패널에 열려 있는 도시 ID (전환 애니메이션 판단용) */
+function updateMapVisibilityButton(): void {
+    const discovered = cityVisibilityMode === 'discovered';
+    btnMapVisibility.textContent = discovered ? '🔎 발견 도시' : '🗺️ 전체 도시';
+    btnMapVisibility.setAttribute('aria-pressed', String(discovered));
+    btnMapVisibility.title = discovered
+        ? '방문했거나 플레이어 세력이 소유한 도시만 표시합니다'
+        : '전국 모든 도시를 표시합니다';
+}
+
+/** [49] 초기 전체 도시 표시와 방문·소유 도시만 표시하는 모드 전환. */
+function setCityVisibilityMode(mode: CityVisibilityMode): void {
+    cityVisibilityMode = mode;
+    chinaMap.setDiscoveredOnly(mode === 'discovered');
+    updateMapVisibilityButton();
+    addLog(mode === 'discovered'
+        ? '🔎 지도 표시: 방문·소유 도시만'
+        : '🗺️ 지도 표시: 전국 전체 도시');
+}
+
 let currentPanelCityId: string | null = null;
 
 /** 도시 클릭 시 사이드바 + 상세 패널에 정보 표시 [49] */
@@ -787,9 +895,9 @@ function showCityInfo(cityId: string): void {
         const store = engine['store'];
         const city = store.getCity(cityId);
         if (!city) return;
+        preserveCityNavigation(cityId);
         const faction = city.ownerId ? store.getFaction(city.ownerId) : null;
         officerDetail.textContent = `도시: ${city.name} (인구 ${city.population.toLocaleString()})`;
-        renderOfficerDetail(null); // 도시 전환 시 무장 상세 초기화
         renderOfficerDetail(null); // 도시 전환 시 무장 상세 초기화
         factionDetail.textContent = faction
             ? `${faction.name} — 병력 ${city.development} · 충성 ${city.loyalty}`
@@ -811,6 +919,176 @@ const cdpCityName = document.getElementById('cdp-city-name')!;
 const cdpFactionBadge = document.getElementById('cdp-faction-badge')!;
 const cdpStats = document.getElementById('cdp-stats')!;
 const cdpOfficers = document.getElementById('cdp-officers')!;
+const cdpFacilities = document.getElementById('cdp-facilities')!;
+const citySceneCanvas = document.getElementById('city-scene-canvas') as HTMLCanvasElement | null;
+const citySceneSummary = document.getElementById('city-scene-summary');
+const citySceneDetail = document.getElementById('city-building-detail');
+const citySceneRenderer = new City3DRenderer();
+let citySceneBuildings: CityBuilding[] = [];
+let citySceneCityId: string | null = null;
+let selectedCitySceneBuilding: CityBuilding | null = null;
+let lastCityView: ReturnType<ChinaMapRenderer['getView']> | null = null;
+
+/** 도시 전환 시 지도 카메라와 선택 상태를 보존한다. [49][D32] */
+function preserveCityNavigation(cityId: string): void {
+    lastCityView = chinaMap.getView();
+    worldCities = worldCities.map(city => ({ ...city, isSelected: city.id === cityId }));
+    chinaMap.setCities(worldCities);
+}
+
+// === 범용 선택형 대화 모달 [24][49][441-460] ===
+type DialogueChoice = {
+    id: string;
+    label: string;
+    description: string;
+    disabled?: boolean;
+    onSelect?: () => string;
+};
+
+type DialoguePage = {
+    title: string;
+    subtitle?: string;
+    speaker: string;
+    text: string;
+    detail?: string[];
+    choices?: DialogueChoice[];
+    giftComposer?: {
+        actorId: string;
+        targetId: string;
+        currentAffinity: number;
+    };
+};
+
+type DialogueState = {
+    pages: DialoguePage[];
+    index: number;
+    onClose?: () => void;
+};
+
+let dialogueState: DialogueState | null = null;
+const dialogueModal = document.getElementById('dialogue-modal')!;
+const dialogueTitle = document.getElementById('dialogue-title')!;
+const dialogueSubtitle = document.getElementById('dialogue-subtitle')!;
+const dialogueProgress = document.getElementById('dialogue-progress')!;
+const dialogueSpeaker = document.getElementById('dialogue-speaker')!;
+const dialogueText = document.getElementById('dialogue-text')!;
+const dialogueDetail = document.getElementById('dialogue-detail')!;
+const dialogueChoices = document.getElementById('dialogue-choices')!;
+const dialogueResult = document.getElementById('dialogue-result')!;
+const dialoguePrev = document.getElementById('dialogue-prev') as HTMLButtonElement;
+const dialogueNext = document.getElementById('dialogue-next') as HTMLButtonElement;
+const dialoguePageLabel = document.getElementById('dialogue-page')!;
+
+function renderDialoguePage(): void {
+    if (!dialogueState) return;
+    const state = dialogueState;
+    const page = state.pages[state.index];
+    if (!page) return;
+    dialogueTitle.textContent = page.title;
+    dialogueSubtitle.textContent = page.subtitle ?? '';
+    dialogueSpeaker.textContent = page.speaker;
+    dialogueText.textContent = page.text;
+    dialogueDetail.innerHTML = (page.detail ?? []).map(line => `<span>${line}</span>`).join('');
+    dialogueDetail.style.display = page.detail && page.detail.length > 0 ? 'grid' : 'none';
+    dialogueChoices.innerHTML = (page.choices ?? []).map(choice =>
+        `<button class="dialogue-choice" data-choice="${choice.id}" ${choice.disabled ? 'disabled' : ''}>
+            <span class="dialogue-choice-label">${choice.label}</span>
+            <span class="dialogue-choice-desc">${choice.description}</span>
+        </button>`).join('');
+    if (page.giftComposer) {
+        const gift = page.giftComposer;
+        const items = Object.values(GIFT_ITEMS);
+        dialogueChoices.insertAdjacentHTML('beforeend', `
+            <div class="gift-composer" data-gift-composer>
+                <div class="gift-composer-title">🎁 선물 구성</div>
+                <label>아이템 <select data-gift-item>
+                    ${items.map(item => `<option value="${item.id}">${item.name} · ${item.gradeLabel} (+${item.affinity})</option>`).join('')}
+                </select></label>
+                <label>금화 <input data-gift-gold type="number" min="0" step="100" value="200" inputmode="numeric" />金</label>
+                <div class="gift-preview" data-gift-preview aria-live="polite"></div>
+                <button class="dialogue-choice gift-send-choice" data-gift-send>
+                    <span class="dialogue-choice-label">선물 보내기</span>
+                    <span class="dialogue-choice-desc">선택한 구성으로 우호도 상승</span>
+                </button>
+            </div>`);
+        const updatePreview = () => {
+            const root = dialogueChoices.querySelector('[data-gift-composer]');
+            if (!root) return;
+            const itemId = (root.querySelector('[data-gift-item]') as HTMLSelectElement).value as GiftItemId;
+            const gold = Math.max(0, Math.floor(Number((root.querySelector('[data-gift-gold]') as HTMLInputElement).value) || 0));
+            const item = GIFT_ITEMS[itemId];
+            const delta = calculateGiftAffinity({ itemId, gold });
+            const after = Math.max(-100, Math.min(100, gift.currentAffinity + delta));
+            (root.querySelector('[data-gift-preview]') as HTMLElement).innerHTML =
+                `<span>${item.name} · ${item.gradeLabel}</span><b>금화 +${delta - item.affinity}</b><strong>예상 우호도 ${gift.currentAffinity >= 0 ? '+' : ''}${gift.currentAffinity} → ${after >= 0 ? '+' : ''}${after} (+${delta})</strong>`;
+        };
+        dialogueChoices.querySelectorAll('[data-gift-item], [data-gift-gold]').forEach(input => input.addEventListener('input', updatePreview));
+        updatePreview();
+    }
+    dialogueResult.style.display = 'none';
+    dialogueResult.textContent = '';
+    dialoguePrev.disabled = state.index <= 0;
+    dialogueNext.disabled = state.index >= state.pages.length - 1;
+    dialoguePageLabel.textContent = `${state.index + 1} / ${state.pages.length}`;
+    dialogueProgress.innerHTML = `<span style="width:${((state.index + 1) / state.pages.length) * 100}%"></span>`;
+}
+
+function openDialogue(state: DialogueState): void {
+    if (state.pages.length === 0) return;
+    dialogueState = state;
+    renderDialoguePage();
+    dialogueModal.style.display = 'flex';
+    dialogueModal.focus({ preventScroll: true });
+}
+
+function closeDialogue(): void {
+    const onClose = dialogueState?.onClose;
+    dialogueState = null;
+    dialogueModal.style.display = 'none';
+    onClose?.();
+}
+
+dialoguePrev.addEventListener('click', () => {
+    if (!dialogueState || dialogueState.index <= 0) return;
+    dialogueState.index -= 1;
+    renderDialoguePage();
+});
+dialogueNext.addEventListener('click', () => {
+    if (!dialogueState || dialogueState.index >= dialogueState.pages.length - 1) return;
+    dialogueState.index += 1;
+    renderDialoguePage();
+});
+document.getElementById('dialogue-close')!.addEventListener('click', closeDialogue);
+dialogueChoices.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement;
+    const giftSend = target.closest('[data-gift-send]') as HTMLButtonElement | null;
+    if (giftSend && dialogueState) {
+        const page = dialogueState.pages[dialogueState.index];
+        const composer = page?.giftComposer;
+        if (!composer) return;
+        const root = giftSend.closest('[data-gift-composer]') as HTMLElement | null;
+        if (!root) return;
+        const itemId = (root.querySelector('[data-gift-item]') as HTMLSelectElement).value as GiftItemId;
+        const gold = Math.max(0, Math.floor(Number((root.querySelector('[data-gift-gold]') as HTMLInputElement).value) || 0));
+        const result = executeInteraction(engine!['store'], composer.actorId, composer.targetId, 'GIFT', { itemId, gold } satisfies GiftOptions);
+        dialogueResult.textContent = result.message;
+        dialogueResult.style.display = 'block';
+        if (result.success) {
+            addLog(result.message);
+            renderOfficerDetail(composer.targetId);
+        }
+        return;
+    }
+    const button = target.closest('.dialogue-choice') as HTMLButtonElement | null;
+    if (!button || button.disabled || !dialogueState) return;
+    const page = dialogueState.pages[dialogueState.index];
+    const choice = page.choices?.find(item => item.id === button.dataset.choice);
+    if (!choice?.onSelect) return;
+    const message = choice.onSelect();
+    dialogueResult.textContent = message;
+    dialogueResult.style.display = 'block';
+    button.disabled = true;
+});
 
 // === 무장 상세 표시 [27][11] ===
 
@@ -900,11 +1178,116 @@ function renderOfficerDetail(officerId: string | null): void {
     `;
 }
 
-// 무장 목록 클릭 → 상세 정보 표시 [27]
+function openOfficerDialogue(officerId: string): void {
+    if (!engine) return;
+    const store = engine['store'];
+    const target = store.getOfficer(officerId);
+    if (!target) return;
+    const gs = store.getGlobalState();
+    const playerFaction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
+    const playerOfficers = playerFaction
+        ? store.getOfficersByFaction(playerFaction.id).filter(o => o.id !== target.id)
+        : [];
+    const selectedActor = store.getOfficer(gs.selectedOfficerId ?? '');
+    const actor = selectedActor && selectedActor.id !== target.id
+        ? selectedActor
+        : playerOfficers[0] ?? (playerFaction ? store.getOfficer(playerFaction.leaderId) : null);
+    if (!actor || actor.id === target.id) {
+        openDialogue({
+            pages: [{
+                title: `${target.name} — 무장 기록`,
+                subtitle: target.factionId ? store.getFaction(target.factionId)?.name ?? '무소속' : '재야',
+                speaker: target.name,
+                text: '대화를 시작할 행위자를 먼저 선택하세요.',
+                detail: [
+                    `統率 ${target.stats.leadership} · 武力 ${target.stats.might}`,
+                    `智力 ${target.stats.intelligence} · 政治 ${target.stats.politics} · 魅力 ${target.stats.charisma}`,
+                ],
+            }],
+            index: 0,
+        });
+        return;
+    }
+
+    const affinity = getAffinityBetween(store, actor.id, target.id);
+    const conversationBranch = conversationSystem.getDialogueBranch(
+        target,
+        affinity >= 30 ? 'personal' : target.stats.might >= target.stats.intelligence ? 'military' : 'strategy',
+        affinity,
+    );
+    const status = target.status === 'FREE' ? '재야 무장' : store.getFaction(target.factionId!)?.name ?? '무소속';
+    const chooseInteraction = (kind: 'CHAT' | 'GIFT' | 'DEBATE' | 'DUEL'): DialogueChoice => {
+        const gate = checkInteraction(store, actor.id, target.id, kind);
+        return {
+            id: kind,
+            label: kind === 'CHAT' ? '교대 인사를 건넨다' : kind === 'GIFT' ? '선물을 보낸다' : kind === 'DEBATE' ? '설전을 요청한다' : '일기토를 요청한다',
+            description: gate.ok ? (kind === 'GIFT' ? '200金 · 우호도 상승' : '즉시 결과 확인') : gate.reason ?? '선택 불가',
+            disabled: !gate.ok,
+            onSelect: () => {
+                const result = executeInteraction(store, actor.id, target.id, kind);
+                if (result.success) addLog(result.message);
+                renderOfficerDetail(target.id);
+                return result.message;
+            },
+        };
+    };
+
+    openDialogue({
+        pages: [
+            {
+                title: conversationBranch.title,
+                subtitle: `${status} · 우호도 ${affinity >= 0 ? '+' : ''}${affinity} · ${conversationBranch.id}`,
+                speaker: `${actor.name} → ${target.name}`,
+                text: conversationBranch.text,
+                detail: [
+                    `현재 우호도 ${affinity >= 0 ? '+' : ''}${affinity}`,
+                    `장기 ${target.personality} · 충성도 ${target.loyalty} · 명성 ${target.fame}`,
+                ],
+                choices: [chooseInteraction('CHAT')],
+                giftComposer: {
+                    actorId: actor.id,
+                    targetId: target.id,
+                    currentAffinity: affinity,
+                },
+            },
+            {
+                title: `${target.name}의 능력과 경력`,
+                subtitle: '상세 정보를 확인하고 행동 방침을 선택하세요',
+                speaker: `${actor.name}의 판단`,
+                text: `${target.name}의 기질과 경험을 읽으면 어떤 임무를 맡길지 더 나은 판단을 내릴 수 있습니다.`,
+                detail: [
+                    `統率 ${target.stats.leadership} · 武力 ${target.stats.might} · 智力 ${target.stats.intelligence}`,
+                    `政治 ${target.stats.politics} · 魅力 ${target.stats.charisma} · 야망 ${target.ambition}`,
+                    `상호작용 기록 ${store.getRelationships(target.id).reduce((sum, edge) => sum + edge.history.length, 0)}건`,
+                    `상태 ${status} · 위치 ${target.cityId ? store.getCity(target.cityId)?.name ?? '미상' : '미상'}`,
+                ],
+            },
+            {
+                title: `${target.name}에게 어떤 말을 건넬까?`,
+                subtitle: '선택한 행동은 즉시 우호도와 기록에 반영됩니다',
+                speaker: actor.name,
+                text: '관계는 한 번의 선택이 아니라 계속된 대화로 만들어집니다.',
+                choices: [chooseInteraction('DEBATE'), chooseInteraction('DUEL')],
+            },
+        ],
+        index: 0,
+    });
+}
+
+// 무장 목록 클릭 → 상세 정보 + 선택형 대화 [24][27]
 cdpOfficers.addEventListener('click', (e) => {
     const row = (e.target as HTMLElement).closest('.cdp-officer-clickable') as HTMLElement | null;
     if (!row) return;
-    renderOfficerDetail(row.dataset.officerId ?? null);
+    const officerId = row.dataset.officerId ?? null;
+    renderOfficerDetail(officerId);
+    if (officerId) openOfficerDialogue(officerId);
+});
+
+// 도시 시설 클릭 → 시설별 선택형 대화/투자 [49]
+cdpFacilities.addEventListener('click', (e) => {
+    const button = (e.target as HTMLElement).closest('.cdp-facility') as HTMLElement | null;
+    if (!button || !currentPanelCityId) return;
+    openFacilityDialogue(currentPanelCityId, button.dataset.facility as FacilityType);
 });
 
 // 상호작용 버튼 클릭 → 대화/증정/설전/일기토 실행 [24][32][33]
@@ -928,7 +1311,15 @@ officerDetail.addEventListener('click', (e) => {
 });
 
 document.getElementById('cdp-close')!.addEventListener('click', () => {
+    cityDetailPanel.classList.remove('city-entry-mode');
     cityDetailPanel.style.display = 'none';
+    citySceneCanvas?.classList.remove('is-active');
+    if (lastCityView) chinaMap.setView(lastCityView);
+    if (currentPanelCityId) {
+        worldCities = worldCities.map(city => ({ ...city, isSelected: city.id === currentPanelCityId }));
+        chinaMap.setCities(worldCities);
+    }
+    canvas.focus({ preventScroll: true });
 });
 
 /** 내정치 바 한 줄 생성 */
@@ -941,15 +1332,328 @@ function statBar(label: string, value: number, max: number, color: string): stri
     </div>`;
 }
 
+const FACILITY_INFO: Record<FacilityType, { label: string; effect: string; icon: string }> = {
+    [FacilityType.PALACE]: { label: '저택', effect: '도시 충성 +2', icon: '🏛️' },
+    [FacilityType.WALL]: { label: '성벽', effect: '방어력 +3', icon: '🧱' },
+    [FacilityType.MARKET]: { label: '시장', effect: '상업 +3', icon: '🏪' },
+    [FacilityType.FARM]: { label: '농장', effect: '농업 +3', icon: '🌾' },
+    [FacilityType.TAVERN]: { label: '주막', effect: '치안 +2', icon: '🍶' },
+    [FacilityType.BLACKSMITH]: { label: '대장간', effect: '기술 +2', icon: '⚒️' },
+    [FacilityType.GRANARY]: { label: '창고', effect: '월 식량 수입 +10', icon: '🏚️' },
+    [FacilityType.BARRACKS]: { label: '훈련장', effect: '도시 병력 +2', icon: '🎯' },
+};
+
+function getFacilityRows(city: import('./core/types.js').City): Array<{ type: FacilityType; level: number; maxLevel: number; investment: number }> {
+    const existing = new Map(city.facilities.map(f => [f.type, f]));
+    // Koei식 도시 운영面板: 모든 핵심 시설을 선택 가능하게 하되,
+    // 아직 건설되지 않은 시설은 Lv.0으로 표시해 실제 건설 상태를 구분한다. [49]
+    const defaults: FacilityType[] = [
+        FacilityType.PALACE, FacilityType.WALL, FacilityType.MARKET, FacilityType.FARM,
+        FacilityType.TAVERN, FacilityType.BLACKSMITH, FacilityType.GRANARY, FacilityType.BARRACKS,
+    ];
+    const types = new Set<FacilityType>([...existing.keys(), ...defaults]);
+    return [...types].map(type => existing.get(type) ?? { type, level: 0, maxLevel: 3, investment: 0 });
+}
+
+function renderFacilityList(city: import('./core/types.js').City, isPlayerCity: boolean): void {
+    cdpFacilities.innerHTML = getFacilityRows(city).map(facility => {
+        const info = FACILITY_INFO[facility.type];
+        return `<button class="cdp-facility" data-facility="${facility.type}" title="${isPlayerCity ? '클릭하여 상세 대화와 투자' : '클릭하여 상세 대화'}">
+            <span class="cdp-facility-name">${info.icon} ${info.label}</span>
+            <span class="cdp-facility-level">Lv.${facility.level}/${facility.maxLevel}</span>
+        </button>`;
+    }).join('');
+}
+
+function applyFacilityInvestment(city: import('./core/types.js').City, type: FacilityType): { success: boolean; message: string } {
+    const store = engine['store'];
+    const existing = city.facilities.find(f => f.type === type);
+    const level = existing?.level ?? 0;
+    const maxLevel = existing?.maxLevel ?? 3;
+    const cost = 100 + level * 50;
+    if (level >= maxLevel) return { success: false, message: `${FACILITY_INFO[type].label}은(는) 이미 최대 단계입니다.` };
+    if (city.funds < cost) return { success: false, message: `도시 자금이 부족합니다 (${cost}金 필요).` };
+
+    const nextLevel = level + 1;
+    const facilities = existing
+        ? city.facilities.map(f => f.type === type ? { ...f, level: nextLevel, investment: f.investment + cost } : f)
+        : [...city.facilities, { type, level: nextLevel, maxLevel, investment: cost }];
+    const updates: Partial<import('./core/types.js').City> = {
+        funds: city.funds - cost,
+        facilities,
+    };
+    const ds = { ...city.developmentStats };
+    switch (type) {
+        case FacilityType.PALACE: updates.loyalty = Math.min(100, city.loyalty + 2); break;
+        case FacilityType.WALL: updates.defense = Math.min(city.maxDefense, city.defense + 3); break;
+        case FacilityType.MARKET: ds.commerce = Math.min(ds.maxCommerce, ds.commerce + 3); break;
+        case FacilityType.FARM: ds.farming = Math.min(ds.maxFarming, ds.farming + 3); break;
+        case FacilityType.TAVERN: ds.publicOrder = Math.min(ds.maxPublicOrder, ds.publicOrder + 2); break;
+        case FacilityType.BLACKSMITH: ds.technology = Math.min(ds.maxTechnology, ds.technology + 2); break;
+        case FacilityType.GRANARY: updates.foodIncome = city.foodIncome + 10; break;
+        case FacilityType.BARRACKS: updates.development = city.development + 2; break;
+    }
+    updates.developmentStats = ds;
+    store.updateCity(city.id, updates);
+    return { success: true, message: `${FACILITY_INFO[type].label} Lv.${nextLevel} 개량 완료 (${cost}金) · ${FACILITY_INFO[type].effect}` };
+}
+
+function openFacilityDialogue(cityId: string, type: FacilityType): void {
+    if (!engine) return;
+    const store = engine['store'];
+    const city = store.getCity(cityId);
+    if (!city) return;
+    const isPlayerCity = city.ownerId === store.getGlobalState().playerFactionId;
+    const row = getFacilityRows(city).find(item => item.type === type);
+    if (!row) return;
+    const info = FACILITY_INFO[type];
+    const cost = 100 + row.level * 50;
+    openDialogue({
+        pages: [
+            {
+                title: `${city.name} · ${info.label}`,
+                subtitle: `도시 시설 Lv.${row.level}/${row.maxLevel}`,
+                speaker: `${info.icon} ${info.label}`,
+                text: `${info.label}은(는) ${city.name}의 운영 능력을 보여줍니다. 현재 투자는 ${row.investment}金, 다음 단계 투자는 ${cost}金입니다.`,
+                detail: [
+                    `현재 효과 ${info.effect}`,
+                    `도시 자금 ${city.funds}金 · 인구 ${city.population.toLocaleString()}`,
+                    `충성 ${city.loyalty} · 치안 ${city.developmentStats.publicOrder}`,
+                ],
+                choices: isPlayerCity ? [{
+                    id: 'invest',
+                    label: `${cost}金 투자하여 개량한다`,
+                    description: info.effect,
+                    disabled: row.level >= row.maxLevel || city.funds < cost,
+                    onSelect: () => {
+                        const result = applyFacilityInvestment(city, type);
+                        addLog(result.message);
+                        const updated = store.getCity(cityId);
+                        if (updated) renderCityDetailPanel(updated, updated.ownerId ? store.getFaction(updated.ownerId) : null, false);
+                        return result.message;
+                    },
+                }] : [],
+            },
+            {
+                title: `${info.label} 상세 기록`,
+                subtitle: '시설 운영 정보를 직접 확인합니다',
+                speaker: '도시 운영 기록',
+                text: '시설의 단계와 효과는 도시 패널과 세이브에 함께 보존됩니다.',
+                detail: [
+                    `단계 Lv.${row.level}/${row.maxLevel}`,
+                    `누적 투자 ${row.investment}金`,
+                    `다음 개량 비용 ${cost}金`,
+                ],
+            },
+        ],
+        index: 0,
+    });
+}
+
+/** 도시 진입 화면의 등각투영 건물 배치도를 렌더링한다. [49][D32] */
+function playCitySceneTone(kind: 'enter' | 'invest' | 'toggle'): void {
+    try {
+        const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioCtor) return;
+        const context = new AudioCtor();
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = kind === 'invest' ? 520 : kind === 'toggle' ? 330 : 220;
+        gain.gain.setValueAtTime(0.0001, context.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.045, context.currentTime + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.18);
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start();
+        oscillator.stop(context.currentTime + 0.2);
+        oscillator.addEventListener('ended', () => void context.close(), { once: true });
+    } catch {
+        // 오디오 권한/브라우저 제약이 있어도 도시 기능은 계속 동작한다.
+    }
+}
+
+function renderCityScene(city: import('./core/types.js').City): void {
+    if (!citySceneCanvas) return;
+    const ctx = citySceneCanvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = 480;
+    const height = 240;
+    citySceneCanvas.width = width;
+    citySceneCanvas.height = height;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = '#26382c';
+    ctx.fillRect(0, 0, width, height);
+
+    // 지도 위에 도시가 놓인 느낌을 주는 가벼운 격자
+    ctx.strokeStyle = 'rgba(220, 210, 170, 0.10)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= width; x += 32) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+    }
+    for (let y = 0; y <= height; y += 24) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+    }
+
+    const season = engine?.['store'].getGlobalState().season ?? 'SPRING';
+    const developmentLevel = Math.max(1, Math.min(5, city.development / 20));
+    const buildingStates = engine?.['store'].getGlobalState().cityBuildingStates?.[city.id] ?? {};
+    const buildings = citySceneRenderer.generateCityLayout(city.id, developmentLevel, season, buildingStates);
+    citySceneBuildings = buildings;
+    citySceneCityId = city.id;
+    const sorted = [...buildings].sort((a, b) => (a.x + a.y) - (b.x + b.y));
+
+    ctx.save();
+    ctx.translate(width / 2, height / 2 + 28);
+    for (const building of sorted) {
+        citySceneRenderer.renderBuilding(ctx, building, 42, 21);
+        const point = citySceneRenderer.worldToScreen(building.x, building.y, 42, 21);
+        ctx.fillStyle = 'rgba(255, 248, 210, 0.9)';
+        ctx.font = '9px "Malgun Gothic", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(building.label, point.sx, point.sy + 14);
+    }
+    ctx.restore();
+
+    selectedCitySceneBuilding = null;
+    if (citySceneSummary) {
+        const counts = new Map<string, number>();
+        for (const building of buildings) counts.set(building.label, (counts.get(building.label) ?? 0) + 1);
+        citySceneSummary.innerHTML = Array.from(counts.entries())
+            .map(([label, count]) => `<span class="city-building-chip">${label} × ${count}</span>`)
+            .join('');
+    }
+    showCitySceneBuildingDetail(null);
+    citySceneCanvas.classList.add('is-active');
+    playCitySceneTone('enter');
+}
+
+/** 선택한 건물의 정보와 투자 버튼을 표시한다. */
+function showCitySceneBuildingDetail(building: CityBuilding | null): void {
+    selectedCitySceneBuilding = building;
+    if (!citySceneDetail) return;
+    if (!building) {
+        citySceneDetail.textContent = '건물을 클릭하면 상세 정보가 표시됩니다.';
+        return;
+    }
+    const role = building.type === 'GOVERNMENT' ? '치안·내정 중심'
+        : building.type === 'BARRACKS' ? '병력·훈련 중심'
+        : building.type === 'MARKET' ? '상업·교역 중심'
+        : building.type === 'FARM' ? '농업·식량 중심'
+        : building.type === 'TEMPLE' ? '안정·민심 중심'
+        : building.type === 'WORKSHOP' ? '기술·개발 중심'
+        : building.type === 'WALL' ? '방어·도시 보호 중심' : '주거·인구 중심';
+    citySceneDetail.innerHTML = `<strong>${building.label}</strong> · Lv.${building.level} · ${role} · ${building.active ? '운영 중' : '휴업'} · 누적 투자 ${building.investment}金 <button id="city-building-invest" class="city-building-invest" type="button">투자</button><button id="city-building-toggle" class="city-building-toggle" type="button">${building.active ? '휴업' : '운영'}</button>`;
+}
+
+/** 도시 전경의 건물을 클릭했을 때 선택 정보를 표시한다. */
+function selectCitySceneBuilding(clientX: number, clientY: number): void {
+    if (!citySceneCanvas || !citySceneCityId || citySceneBuildings.length === 0) return;
+    const rect = citySceneCanvas.getBoundingClientRect();
+    const x = (clientX - rect.left) * citySceneCanvas.width / rect.width;
+    const y = (clientY - rect.top) * citySceneCanvas.height / rect.height;
+    const originX = citySceneCanvas.width / 2;
+    const originY = citySceneCanvas.height / 2 + 28;
+    const sorted = [...citySceneBuildings].sort((a, b) => (b.x + b.y) - (a.x + a.y));
+    for (const building of sorted) {
+        const point = citySceneRenderer.worldToScreen(building.x, building.y, 42, 21);
+        const sx = originX + point.sx;
+        const sy = originY + point.sy;
+        if (Math.abs(x - sx) <= building.width / 2 + 4 && y >= sy - building.height * 1.5 && y <= sy + 8) {
+            showCitySceneBuildingDetail(building);
+            addLog(`도시 건물 선택: ${building.label} (Lv.${building.level})`);
+            return;
+        }
+    }
+    showCitySceneBuildingDetail(null);
+}
+
+/** 건물에 투자하여 도시 자금과 해당 운영 지표를 실제로 변경한다. */
+function investInSelectedCityBuilding(): void {
+    const building = selectedCitySceneBuilding;
+    if (!building || !engine || !citySceneCityId) return;
+    const store = engine['store'];
+    const city = store.getCity(citySceneCityId);
+    if (!city) return;
+    const gs = store.getGlobalState();
+    if (city.ownerId !== gs.playerFactionId) {
+        if (citySceneDetail) citySceneDetail.textContent = '이 도시는 현재 투자할 수 없습니다.';
+        return;
+    }
+    const cost = 120 + building.level * 80;
+    if (city.funds < cost) {
+        if (citySceneDetail) citySceneDetail.textContent = `투자금이 부족합니다. 필요 ${cost}金 · 보유 ${city.funds}金`;
+        return;
+    }
+    const stats = { ...city.developmentStats };
+    let development = city.development;
+    let defense = city.defense;
+    let population = city.population;
+    switch (building.type) {
+        case 'GOVERNMENT': stats.publicOrder = Math.min(stats.maxPublicOrder, stats.publicOrder + 2); break;
+        case 'BARRACKS': development = Math.min(1000, development + 50); break;
+        case 'MARKET': stats.commerce = Math.min(stats.maxCommerce, stats.commerce + 2); break;
+        case 'FARM': stats.farming = Math.min(stats.maxFarming, stats.farming + 2); break;
+        case 'TEMPLE': stats.publicOrder = Math.min(stats.maxPublicOrder, stats.publicOrder + 1); break;
+        case 'WORKSHOP': stats.technology = Math.min(stats.maxTechnology, stats.technology + 2); break;
+        case 'WALL': defense = Math.min(city.maxDefense, defense + 5); break;
+        case 'HOUSE': population += 500; break;
+    }
+    store.updateCity(city.id, { funds: city.funds - cost, developmentStats: stats, development, defense, population });
+    const nextBuilding = building.level < 5
+        ? { ...building, level: building.level + 1, investment: building.investment + cost, active: true }
+        : building;
+    persistCityBuildingState(city.id, nextBuilding);
+    playCitySceneTone('invest');
+    const updated = store.getCity(city.id);
+    if (updated) renderCityScene(updated);
+    selectedCitySceneBuilding = nextBuilding;
+    showCitySceneBuildingDetail(selectedCitySceneBuilding);
+    addLog(`${city.name} ${building.label} 투자 완료 — ${cost}金 사용`);
+}
+
+citySceneCanvas?.addEventListener('click', event => selectCitySceneBuilding(event.clientX, event.clientY));
+citySceneDetail?.addEventListener('click', event => {
+    const target = event.target as HTMLElement;
+    if (target.closest('#city-building-invest')) investInSelectedCityBuilding();
+    if (target.closest('#city-building-toggle')) toggleSelectedCityBuilding();
+});
+
+/** 건물 운영 상태를 GlobalState에 기록해 압축 세이브에도 보존한다. [49][D32] */
+function persistCityBuildingState(cityId: string, building: CityBuilding): void {
+    if (!engine) return;
+    const store = engine['store'];
+    const gs = store.getGlobalState();
+    const cityStates = { ...(gs.cityBuildingStates?.[cityId] ?? {}) };
+    const state: CityBuildingState = {
+        buildingId: building.id,
+        level: building.level,
+        investment: building.investment,
+        active: building.active,
+    };
+    cityStates[building.id] = state;
+    store.setGlobalState({ cityBuildingStates: { ...(gs.cityBuildingStates ?? {}), [cityId]: cityStates } });
+}
+
+function toggleSelectedCityBuilding(): void {
+    if (!selectedCitySceneBuilding || !citySceneCityId || !engine) return;
+    const next = { ...selectedCitySceneBuilding, active: !selectedCitySceneBuilding.active };
+    persistCityBuildingState(citySceneCityId, next);
+    playCitySceneTone('toggle');
+    selectedCitySceneBuilding = next;
+    showCitySceneBuildingDetail(next);
+    addLog(`${next.label} ${next.active ? '운영 시작' : '휴업 전환'}`);
+}
+
 /** 도시 상세 패널 렌더링 (switched: 다른 도시에서 전환 시 콘텐츠 페이드) */
 function renderCityDetailPanel(city: import('./core/types.js').City, faction: import('./core/types.js').Faction | null, switched: boolean): void {
     cdpCityName.textContent = city.name;
+    renderCityScene(city);
 
     // 세력 배지 (세력색 테두리 + 군주 평판 등급 [11][27])
     if (faction) {
         const leader = faction.leaderId ? store_getOfficerSafe(faction.leaderId) : null;
         const repVis = getLeaderReputationVisual(leader);
-        cdpFactionBadge.innerHTML = `${faction.name} <span class="rep-badge" style="color:${repVis.color}" title="${repVis.title}">${repVis.icon} ${repVis.label}</span>`;
         cdpFactionBadge.innerHTML = `${faction.name} <span class="rep-badge" style="color:${repVis.color}" title="${repVis.title}">${repVis.icon} ${repVis.label}</span>`;
         cdpFactionBadge.style.display = 'inline-block';
         cdpFactionBadge.style.setProperty('--faction-color', factionColor(faction.color));
@@ -970,6 +1674,10 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
         statBar('기술', ds.technology, ds.maxTechnology, '#5fb5e8') +
         statBar('치안', ds.publicOrder, ds.maxPublicOrder, '#e9865a') +
         statBar('충성', city.loyalty, 100, '#b06ae8');
+
+    // 도시 시설 목록 — 건설 상태와 상위 효과를 확인하고 직접 운영할 수 있다. [49]
+    const playerCity = engine['store'].getGlobalState().playerFactionId === city.ownerId;
+    renderFacilityList(city, playerCity);
 
     // 무장 목록 (능력치 합 순)
     const officers = city.officerIds
@@ -1001,6 +1709,16 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
         </div>`).join('')
         : '');
 
+    const captiveHistory = engine.chronicle.list()
+        .filter(entry => entry.kind === 'CAPTURE' && entry.cityId === city.id)
+        .slice(0, 5);
+    const captiveHistoryEl = document.getElementById('cdp-captive-history');
+    if (captiveHistoryEl) {
+        captiveHistoryEl.innerHTML = captiveHistory.length > 0
+            ? captiveHistory.map(entry => `<div class="cdp-history-row">${entry.icon} ${entry.text}<span>${entry.year}년 ${entry.month}월</span></div>`).join('')
+            : '도시의 포로 처분 기록이 없습니다.';
+    }
+
     // 내정 명령 섹션은 플레이어 자기 도시에서만 활성
     const gs = engine['store'].getGlobalState();
     const isPlayerCity = faction !== null && city.ownerId === gs.playerFactionId;
@@ -1029,6 +1747,7 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
         });
     }
 
+    cityDetailPanel.classList.add('city-entry-mode');
     cityDetailPanel.style.display = 'block';
 }
 
@@ -1295,6 +2014,34 @@ function runCityAction(cityId: string, action: string): void {
             resultMsg = `순찰 완료 — 치안 ${ds.publicOrder} (골드 -100)`;
             break;
         }
+        case 'auto-domestic': {
+            // [49][76-85] 능력치 기반 자동 내정 배정 — 등록된 임무는 다음 턴 종료 시 실행된다.
+            const scheduler = engine['domesticScheduler'];
+            const excluded = new Set<string>();
+            const taskTypes = [
+                { task: 'agriculture' as const, type: DomesticTaskType.FARMING, label: '농업' },
+                { task: 'commerce' as const, type: DomesticTaskType.COMMERCE, label: '상업' },
+                { task: 'public_order' as const, type: DomesticTaskType.PUBLIC_ORDER, label: '치안' },
+            ];
+            let assigned = 0;
+            for (const task of taskTypes) {
+                const currentCity = store.getCity(city.id);
+                if (!currentCity || currentCity.funds < 100) break;
+                const recommendation = scheduler.autoAssign(city.id, [task.task], excluded)[0];
+                if (!recommendation) break;
+                scheduler.registerAssignment(city.id, {
+                    taskType: task.type,
+                    officerIds: [recommendation.officerId],
+                    allocatedFunds: 100,
+                });
+                excluded.add(recommendation.officerId);
+                assigned++;
+            }
+            resultMsg = assigned > 0
+                ? `자동 내정 ${assigned}개 배정 — 다음 턴 종료 시 결과가 반영됩니다`
+                : '배정 가능한 무장 또는 도시 자금이 부족합니다';
+            break;
+        }
         case 'develop': {
             // 개발: 골드 250 소모 → 상업+3, 농업+3
             if (city.funds < 250) { resultMsg = '골드가 부족합니다 (250 필요)'; break; }
@@ -1374,11 +2121,22 @@ function gameLoop(timestamp: number): void {
 
 function resizeCanvas(): void {
     const rect = canvas.parentElement!.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    const nextWidth = Math.max(1, Math.round(rect.width * dpr));
+    const nextHeight = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width === nextWidth && canvas.height === nextHeight) return;
+    // CSS 크기는 유지하고 backing-store만 DPI에 맞춰 확대한다.
+    canvas.width = nextWidth;
+    canvas.height = nextHeight;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 }
 
-window.addEventListener('resize', resizeCanvas);
+const mapResizeObserver = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => resizeCanvas())
+    : null;
+if (mapResizeObserver && canvas.parentElement) mapResizeObserver.observe(canvas.parentElement);
+window.addEventListener('resize', resizeCanvas, { passive: true });
 
 // ============================================================
 // Render Frame
@@ -1473,7 +2231,10 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
 
         // 시나리오 기반 월드 구성
         try {
-            engine.initWorld(world.officers, world.factions, world.cities, []);
+            engine.initWorld(world.officers, world.factions, world.cities, [], world.scenario?.id);
+            // [269][33] 시나리오 데이터에 포함된 초기 인맥을 정규화 스토어와 그래프 인덱스에 주입
+            for (const relationship of world.relationships) engine['store'].addRelationship(relationship);
+            engine['store'].rebuildGraphIndex();
             addLog(`월드 생성 완료 — ${world.factions.length}세력, ${world.cities.length}도시, ${world.officers.length}무장`);
             // 플레이어 세력/군주 지정 (개인 행동 페이즈용) + 시나리오 난이도 주입 [X-난이도]
             const difficulty = world.scenario?.difficulty ?? 3;
@@ -1485,6 +2246,8 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
                 // 시나리오 시작 연월 주입 [300] — 누락 시 기본값(192년)으로 남아
                 // 연의전 이벤트의 연도 조건이 전부 어긋난다
                 time: { year: world.startYear, month: world.startMonth },
+                visitedCityIds: [],
+                cityBuildingStates: {},
             });
         } catch (err) {
             addLog(`월드 초기화 실패: ${err}`);
@@ -1498,6 +2261,14 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
             addLog(`세이브 복원 — ${Object.keys(engine['store'].getState().factions).length}세력, ${loadedCities.length}도시, ${Object.keys(engine['store'].getState().officers).length}무장`);
         }
     }
+
+    // 신규 시작은 모든 도시를 먼저 보여주고, 발견 모드는 버튼으로 전환한다. [49]
+    if (world) {
+        visitedCityIds.clear();
+        cityVisibilityMode = 'all';
+        chinaMap.setDiscoveredOnly(false);
+    }
+    updateMapVisibilityButton();
 
     // 신규/이어하기 공통: 중국 전도에 도시 배치 (소속/영토 포함) [9][17]
     syncChinaMapCities();
@@ -1517,6 +2288,7 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
     btnDiplomacy.disabled = false;
     btnNextMonth.disabled = false;
     btnGraph.disabled = false;
+    btnMapVisibility.disabled = false;
     statusText.textContent = '게임 실행 중';
     lastFrameTime = 0;
 
@@ -1525,6 +2297,10 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
 }
 
 btnStart.addEventListener('click', () => { openScenarioScreen(); });
+
+btnMapVisibility.addEventListener('click', () => {
+    setCityVisibilityMode(cityVisibilityMode === 'all' ? 'discovered' : 'all');
+});
 
 btnPause.addEventListener('click', () => {
     if (!isRunning) return;
@@ -1897,6 +2673,64 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// [461-480] 키보드 조작·오버레이 접근성
+// 단축키: N 다음 달, S 저장, G 관계망, H 도움말, D 외교, R 보고, P 일시정지, Escape 최상위 패널 닫기.
+const shortcutButtons: Record<string, HTMLButtonElement> = {
+    n: btnNextMonth,
+    s: btnSave,
+    g: btnGraph,
+    h: btnHelp,
+    d: btnDiplomacy,
+    r: btnReport,
+    p: btnPause,
+};
+
+function closeTopOverlay(): boolean {
+    const overlays: Array<[string, HTMLElement, HTMLElement]> = [
+        ['dialogue-modal', dialogueModal, document.getElementById('dialogue-close')!],
+        ['roaming-modal', document.getElementById('roaming-modal')!, btnHelp],
+        ['replay-panel', document.getElementById('replay-panel')!, btnBattleReplay],
+        ['vengeance-modal', document.getElementById('vengeance-modal')!, btnBattle],
+        ['tutorial-panel', tutorialPanel, btnHelp],
+        ['a11y-panel', a11yPanel, btnSettings],
+        ['graph-panel', graphPanel, btnGraph],
+        ['save-slots-panel', saveSlotsPanel, btnSlots],
+        ['diplomacy-panel', diplomacyPanel, btnDiplomacy],
+        ['monthly-report-panel', document.getElementById('monthly-report-panel')!, btnReport],
+        ['city-detail-panel', cityDetailPanel, canvas],
+    ];
+    for (const [id, panel, trigger] of overlays) {
+        if (panel.style.display !== 'none' && panel.style.display !== '') {
+            if (id === 'roaming-modal' && !rmState?.resolved) return true;
+            if (id === 'dialogue-modal') closeDialogue();
+            else if (id === 'tutorial-panel') closeTutorial(false);
+            else if (id === 'roaming-modal') document.getElementById('rm-close')?.click();
+            else if (id === 'replay-panel') document.getElementById('rp-close')?.dispatchEvent(new Event('click'));
+            else if (id === 'vengeance-modal') document.getElementById('vm-close')?.click();
+            else panel.style.display = 'none';
+            if (trigger instanceof HTMLElement) trigger.focus({ preventScroll: true });
+            addLog(`⌨ 단축키로 닫음: ${id}`);
+            return true;
+        }
+    }
+    return false;
+}
+
+document.addEventListener('keydown', (e) => {
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+    if (e.key === 'Escape') {
+        if (closeTopOverlay()) e.preventDefault();
+        return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    const button = shortcutButtons[e.key.toLowerCase()];
+    if (button && !button.disabled) {
+        e.preventDefault();
+        button.click();
+    }
+});
+
 btnBattle.addEventListener('click', () => {
     enterBattleMode();
 });
@@ -2005,6 +2839,14 @@ function setupModDragDrop(): void {
     });
 }
 
+/** [49] 세이브의 방문 도시 기록을 지도 필터 상태로 복원한다. */
+function restoreVisitedCitiesFromGlobalState(): void {
+    visitedCityIds.clear();
+    for (const cityId of engine['store'].getGlobalState().visitedCityIds ?? []) {
+        visitedCityIds.add(cityId);
+    }
+}
+
 /** 지정 슬롯에서 불러와 게임 재시작 */
 function loadFromSlot(slot: SlotId): void {
     const data = slotManager.load(slot);
@@ -2014,6 +2856,9 @@ function loadFromSlot(slot: SlotId): void {
         addLog('불러오기 실패: 세이브 데이터가 손상되었습니다.');
         return;
     }
+    // [49] 방문 도시 기록 복원 — 구버전 세이브에는 필드가 없으므로 빈 목록으로 시작한다.
+    restoreVisitedCitiesFromGlobalState();
+
     // [461-480] UI 설정 복원 — 세이브 시점의 접근성·색약 모드·튜토리얼 상태
     restoreUiSettings(slotManager.getUiSettings(slot));
     saveSlotsPanel.style.display = 'none';
@@ -2548,6 +3393,9 @@ function init(): void {
             for (const action of event.payload.actions) {
                 addLog(`🤖 [${factionName}] ${action}`);
             }
+            for (const outcome of event.payload.captiveOutcomes ?? []) {
+                chronicle.add('CAPTURE', outcome.message as string);
+            }
         }
         if (!engine) return;
         // [303] 자동 저장도 뮤텍스로 보호 — 경합 시 이번 달은 건너뜀
@@ -2568,6 +3416,20 @@ function init(): void {
         } finally {
             mutexCoordinator.releaseLock();
         }
+    });
+
+    engine.subscribe('COMMAND_REPLAY', (event: any) => {
+        if (!event?.payload) return;
+        replayManager.recordCommandEvent(event.payload as ReplayCommandEvent);
+    });
+
+    // AI 스트리밍 BattleCommand 결과 — 전리품과 포로 처분을 즉시 로그/연대기에 반영 [121-130][131-145]
+    engine.subscribe('COMMAND_EXECUTED', (event: any) => {
+        if (event?.payload?.commandType !== 'BATTLE' || !event.payload.success) return;
+        for (const message of event.payload.logMessages ?? []) {
+            addLog(message);
+        }
+        // 연대기 기록은 BattleCommand가 undo 가능한 원자 경계에서 직접 추가한다.
     });
 
     engine.subscribe('OFFICER_DEATH', (event: any) => {
@@ -2800,6 +3662,11 @@ function renderMonthlyPortedSection(ported: import('./core/monthly_report.js').P
     for (const r of ported.retired) {
         rows.push(`<div class="mr-row"><span class="mr-name">🌾 은퇴</span><span class="mr-val">${r.officerName} (${r.age}세) — 전장을 떠났습니다</span></div>`);
     }
+    for (const c of ported.captives ?? []) {
+        const label = c.decision === 'RECRUIT' ? '등용' : c.decision === 'EXECUTE' ? '처형' : '석방';
+        const icon = c.decision === 'RECRUIT' ? '🤝' : c.decision === 'EXECUTE' ? '⚔️' : '🕊️';
+        rows.push(`<div class="mr-row"><span class="mr-name">${icon} 포로 ${label}</span><span class="mr-val">${c.message}</span></div>`);
+    }
     el.innerHTML = rows.join('') || '<div class="mr-row">이번 달 주요 동향 없음</div>';
 }
 document.getElementById('mr-close')!.addEventListener('click', () => {
@@ -2836,6 +3703,8 @@ const titleScreen = new TitleScreen({
                 return;
             }
             addLog(latest ? `슬롯 ${latest.slot === 'auto' ? '자동' : latest.slot}에서 불러오기 완료` : '세이브 불러오기 완료');
+            // [49] 타이틀의 '이어하기' 경로도 방문 도시 기록을 복원한다.
+            restoreVisitedCitiesFromGlobalState();
             void startGame(null);
         } catch (err) {
             addLog(`불러오기 실패: ${err}`);
@@ -2979,8 +3848,28 @@ declare global {
 window.__game = {
     getChinaMap: () => chinaMap,
     getWorldCities: () => worldCities,
+    getVisibleCityIds: () => chinaMap?.getVisibleCityIds() ?? [],
+    getFactionLabels: () => chinaMap?.getFactionLabels() ?? [],
+    getCityVisibilityMode: () => cityVisibilityMode,
+    getCityScreenPosition: (cityId: string) => chinaMap?.getCityScreenPosition(cityId) ?? null,
     getEngine: () => engine,
     getStore: () => engine?.['store'] ?? null,
+    openCity: (cityId: string) => { showCityInfo(cityId); return true; },
+    getCitySceneBuildings: () => citySceneBuildings.map(building => ({
+        id: building.id, type: building.type, level: building.level,
+        investment: building.investment, active: building.active, label: building.label,
+    })),
+    selectCitySceneBuildingByIndex: (index: number) => {
+        const building = citySceneBuildings[index];
+        if (!building) return false;
+        showCitySceneBuildingDetail(building);
+        return true;
+    },
+    investSelectedCityBuilding: () => { investInSelectedCityBuilding(); return true; },
+    toggleSelectedCityBuilding: () => { toggleSelectedCityBuilding(); return true; },
+    getCityBuildingStates: () => engine?.['store'].getGlobalState().cityBuildingStates ?? {},
+    getMapView: () => chinaMap.getView(),
+    closeCity: () => { document.getElementById('cdp-close')?.dispatchEvent(new Event('click')); return true; },
     /** 포팅 시스템 접근자 [76-85][213-214][321-340][341-360][421-438][431-432][441-460] */
     getPortedSystems: () => engine ? {
         strategicCommand: engine.strategicCommand,
@@ -3009,6 +3898,58 @@ window.__game = {
             return true;
         });
         return true;
+    },
+    /** E2E 테스트용: AI BattleCommand로 포로 후처리까지 강제 실행 */
+    runTestBattle: () => {
+        if (!engine) return { success: false, reason: 'engine not ready' };
+        try {
+        const store = engine['store'];
+        const gs = store.getGlobalState();
+        const playerFactionId = gs.playerFactionId;
+        const attackerFaction = store.getAllFactions().find(f =>
+            f.id !== playerFactionId && store.getCitiesByFaction(f.id).length > 0,
+        );
+        const defenderFaction = attackerFaction
+            ? store.getAllFactions().find(f => f.id !== playerFactionId && f.id !== attackerFaction.id)
+            : undefined;
+        const attacker = attackerFaction
+            ? store.getAllOfficers().find(o => o.factionId === attackerFaction.id && o.cityId)
+            : undefined;
+        const source = attacker?.cityId ? store.getCity(attacker.cityId) : null;
+        const target = defenderFaction
+            ? store.getAllCities().find(c => c.ownerId === defenderFaction.id
+                && c.id !== source?.id
+                && store.getOfficersByCity(c.id).some(o => o.factionId === defenderFaction.id))
+            : undefined;
+        if (!attackerFaction || !defenderFaction || !attacker || !source || !target) {
+            return { success: false, reason: 'battle fixture unavailable' };
+        }
+
+        store.updateOfficer(attacker.id, { actionPoints: 100 });
+        store.updateCity(source.id, { development: 99_999, defense: 100 });
+        store.updateCity(target.id, { development: 1, defense: 1, loyalty: 30 });
+        engine.diplomacyEngine.declareWar(attackerFaction.id, defenderFaction.id);
+        const originalRandom = Math.random;
+        Math.random = () => 0;
+        try {
+            engine.enqueueCommand(new BattleCommand(attacker.id, source.id, target.id, gs.turnCount));
+            const result = engine.executeAllCommands()[0];
+            engine['processEventQueue']();
+            return {
+                success: result?.success ?? false,
+                commandType: result?.commandType ?? null,
+                captiveOutcomes: result?.captiveOutcomes ?? [],
+                targetCityId: target.id,
+                logMessages: result?.logMessages ?? [],
+                logText: document.getElementById('log-content')?.textContent ?? '',
+                chronicleText: engine.chronicle.listByKind('CAPTURE').map(entry => entry.text),
+            };
+        } finally {
+            Math.random = originalRandom;
+        }
+        } catch (error) {
+            return { success: false, reason: error instanceof Error ? error.stack ?? error.message : String(error) };
+        }
     },
     /** E2E 테스트용: 세이브 수행 */
     saveGame: () => {

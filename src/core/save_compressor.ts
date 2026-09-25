@@ -68,6 +68,9 @@ export class SaveCompressor {
 
     const body = compressed.slice(LZ2_PREFIX.length);
     if (body.length === 0) return '';
+    if (body.length % 2 !== 0) {
+      throw new Error('Invalid compressed save: truncated code unit');
+    }
 
     // 2 코드 단위 → 1 코드 복원
     const codes: number[] = [];
@@ -90,9 +93,11 @@ export class SaveCompressor {
         entry = String.fromCharCode(code);
       } else if (dictionary.has(code)) {
         entry = dictionary.get(code)!;
-      } else {
-        // KwKwK 케이스: 방금 추가된 코드
+      } else if (code === dictSize) {
+        // KwKwK 케이스: 직전 문자열의 첫 문자를 붙인 코드
         entry = prev + prev[0];
+      } else {
+        throw new Error(`Invalid compressed save: unknown code ${code}`);
       }
       result.push(entry);
       dictionary.set(dictSize++, prev + entry[0]);

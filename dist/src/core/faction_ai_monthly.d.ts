@@ -9,11 +9,18 @@
  * 성향(군주 personality)에 따라 공격성이 달라진다.
  */
 import type { GameStore } from './game_store.js';
+import { type CaptiveOutcome } from './ai_captive_system.js';
+export interface FactionAIMonthlyOptions {
+    /** 스트리밍 AI가 이미 커맨드 큐로 내정/징병을 처리한 경우 직접 처리 중복을 방지한다. [201] */
+    skipCityDevelopment?: boolean;
+}
 export interface FactionAIReport {
     factionId: string;
     factionName: string;
     actions: string[];
     conqueredCityId: string | null;
+    /** UI/연대기에 전달할 포로 처분 결과 [121-130][131-145] */
+    captiveOutcomes?: CaptiveOutcome[];
 }
 export declare class FactionAI {
     private store;
@@ -21,7 +28,7 @@ export declare class FactionAI {
     diplomacy: import('./diplomacy_engine.js').DiplomacyEngine | null;
     constructor(store: GameStore);
     /** 월간 세력 AI 실행 — 플레이어 세력 제외 */
-    runMonthly(): FactionAIReport[];
+    runMonthly(options?: FactionAIMonthlyOptions): FactionAIReport[];
     private runFaction;
 }
 //# sourceMappingURL=faction_ai_monthly.d.ts.map

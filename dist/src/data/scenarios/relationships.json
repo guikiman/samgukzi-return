@@ -1,0 +1,15 @@
+{
+    "version": 1,
+    "scenarios": {
+        "07": [
+            { "source": "cao_pi", "target": "sima_zhao", "type": "SUBORDINATE", "affinity": 45, "history": [{ "year": 220, "month": 1, "event": "위나라 수립", "delta": 45 }] },
+            { "source": "cao_pi", "target": "zhang_song", "type": "SUBORDINATE", "affinity": 35, "history": [{ "year": 220, "month": 1, "event": "위나라 수립", "delta": 35 }] },
+            { "source": "liu_shan", "target": "zhuge_ke", "type": "SUBORDINATE", "affinity": 55, "history": [{ "year": 221, "month": 1, "event": "상도 원정", "delta": 55 }] },
+            { "source": "liu_shan", "target": "jiang_wei", "type": "SUBORDINATE", "affinity": 60, "history": [{ "year": 228, "month": 1, "event": "북벌 개시", "delta": 60 }] },
+            { "source": "sun_hao", "target": "lu_xun", "type": "SUBORDINATE", "affinity": 50, "history": [{ "year": 222, "month": 1, "event": "오나라 재건", "delta": 50 }] },
+            { "source": "sun_hao", "target": "zhang_zhao", "type": "SUBORDINATE", "affinity": 48, "history": [{ "year": 228, "month": 1, "event": "夷陵 전투", "delta": 48 }] },
+            { "source": "cao_pi", "target": "liu_shan", "type": "RIVAL", "affinity": -65, "history": [{ "year": 221, "month": 1, "event": "한중 관계 단절", "delta": -65 }] },
+            { "source": "liu_shan", "target": "sun_hao", "type": "RIVAL", "affinity": -45, "history": [{ "year": 222, "month": 1, "event": "夷陵의 적", "delta": -45 }] }
+        ]
+    }
+}

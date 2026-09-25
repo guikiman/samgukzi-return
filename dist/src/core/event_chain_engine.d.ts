@@ -64,6 +64,8 @@ export interface EvaluationContext {
     getAffinity?: (officerId: string) => number;
     /** 무장 ID → 현재 도시 ID (LOCATION 조건용) */
     getOfficerCity?: (officerId: string) => string | null;
+    /** 세력 ID → 군주 ID (데이터의 leader_id 표기 조건 지원) */
+    factionLeaders?: ReadonlyMap<string, string>;
     /** [0..1) 난수 공급자 (테스트 주입 가능) */
     rng?: () => number;
 }

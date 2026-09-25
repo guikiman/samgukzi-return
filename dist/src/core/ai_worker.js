@@ -5,6 +5,8 @@
  * Web Worker 기반 1,000명 AI 의사결정 엔진
  * 메인 스레드와 분리되어 백그라운드에서 AI 턴 연산 수행
  */
+import { simulateAutoBattle } from './auto_battle_simulator.js';
+import { AStarHexPathfinder } from './astar_hex_pathfinder.js';
 // ============================================================
 // AI 의사결정 코어 로직 (Worker 내부에서 실행)
 // ============================================================
@@ -12,6 +14,8 @@ class AIDecisionEngine {
     constructor(state, globalState) {
         this.state = state;
         this.globalState = globalState;
+        this.officers = Object.values(state.officers);
+        this.cities = Object.values(state.cities);
     }
     processOfficer(officer) {
         if (officer.hasActedThisTurn)
@@ -43,7 +47,7 @@ class AIDecisionEngine {
             : null;
         if (!faction || !city)
             return null;
-        const nearbyCities = Object.values(this.state.cities)
+        const nearbyCities = this.cities
             .filter(c => c.id !== city.id &&
             Math.abs(c.hexCoord.q - city.hexCoord.q) +
                 Math.abs(c.hexCoord.r - city.hexCoord.r) <= 3)
@@ -138,7 +142,7 @@ class AIDecisionEngine {
             case 'TRAINING':
                 return { statKey: officer.stats.might > officer.stats.intelligence ? 'might' : 'intelligence' };
             case 'RECRUITMENT': {
-                const freeOfficers = Object.values(this.state.officers)
+                const freeOfficers = this.officers
                     .filter(o => o.factionId === null && o.cityId === officer.cityId)
                     .slice(0, 1);
                 return freeOfficers.length > 0 ? { targetOfficerId: freeOfficers[0].id } : {};
@@ -218,12 +222,56 @@ function handleAIDecision(request) {
     workerSelf.postMessage({ id: request.id, success: true, result });
 }
 function handleBattleSim(request) {
-    const result = { winner: 'ATTACKER', casualties: { attacker: 500, defender: 1200 }, turns: 12 };
+    const payload = request.payload;
+    if (!payload.sides?.attacker || !payload.sides?.defender) {
+        workerSelf.postMessage({ id: request.id, success: false, error: 'Invalid battle simulation payload' });
+        return;
+    }
+    // [295] 고정된 더미 결과 대신 전투력·지형·보급·사기 규칙을 실제 적용한다.
+    const result = simulateAutoBattle(payload.sides);
     workerSelf.postMessage({ id: request.id, success: true, result });
+}
+function readHexCoord(value) {
+    if (typeof value !== 'object' || value === null)
+        return null;
+    const record = value;
+    if (typeof record.q !== 'number' || typeof record.r !== 'number' ||
+        !Number.isFinite(record.q) || !Number.isFinite(record.r)) {
+        return null;
+    }
+    return { q: Math.trunc(record.q), r: Math.trunc(record.r) };
 }
 function handlePathfind(request) {
-    const result = { path: [], distance: 0, found: false };
-    workerSelf.postMessage({ id: request.id, success: true, result });
+    const payload = request.payload;
+    const start = readHexCoord(payload.start);
+    const end = readHexCoord(payload.end);
+    if (!start || !end) {
+        workerSelf.postMessage({ id: request.id, success: false, error: 'Invalid pathfinding payload' });
+        return;
+    }
+    const blocked = new Set();
+    if (Array.isArray(payload.blocked)) {
+        for (const value of payload.blocked) {
+            const coord = readHexCoord(value);
+            if (coord)
+                blocked.add(`${coord.q},${coord.r}`);
+        }
+    }
+    const moveCosts = payload.moveCosts && typeof payload.moveCosts === 'object'
+        ? payload.moveCosts
+        : {};
+    const maxSteps = typeof payload.maxSteps === 'number' && Number.isFinite(payload.maxSteps)
+        ? Math.max(1, Math.trunc(payload.maxSteps))
+        : 100;
+    const pathfinder = new AStarHexPathfinder();
+    const path = pathfinder.findPath(start, end, coord => !blocked.has(`${coord.q},${coord.r}`), coord => {
+        const raw = moveCosts[`${coord.q},${coord.r}`];
+        return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0.1, raw) : 1;
+    }, maxSteps);
+    workerSelf.postMessage({
+        id: request.id,
+        success: true,
+        result: { path, distance: Math.max(0, path.length - 1), found: path.length > 0 },
+    });
 }
-export {};
 //# sourceMappingURL=ai_worker.js.map

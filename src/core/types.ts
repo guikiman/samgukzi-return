@@ -233,6 +233,11 @@ export interface City {
     /** 중국 전도 상의 위치 (정규화 0~1). 미지정 시 hexCoord 기반으로 계산 */
     mapX?: number;
     mapY?: number;
+    /** [지도][1:1] 전국지도 이미지 속 성 아이콘의 정규화 앵커 좌표 */
+    mapImageX?: number;
+    mapImageY?: number;
+    /** [지도][1:1] 이미지에서 사용하는 도시 아이콘 유형 */
+    mapIconType?: 'CAPITAL' | 'CITY' | 'PASS' | 'BATTLEFIELD' | 'PORT';
     population: number;
     defense: number;
     maxDefense: number;
@@ -322,6 +327,18 @@ export interface CommandResult {
     success: boolean;
     message: string;
     sideEffects: SideEffect[];
+    /** 실행된 커맨드 종류 — UI 이벤트 라우팅용 [201] */
+    commandType?: CommandType;
+    /** 전투 후처리 로그 — 포획·약탈·포로 처분 결과를 UI에 전달 [121-130][131-145] */
+    logMessages?: string[];
+    /** 전투 커맨드의 포로 처분 결과 — 연대기 기록용 [121-130][131-145] */
+    captiveOutcomes?: Array<{
+        officerId: string;
+        officerName: string;
+        decision: 'RECRUIT' | 'EXECUTE' | 'RELEASE';
+        success: boolean;
+        message: string;
+    }>;
 }
 
 export interface SideEffect {
@@ -335,6 +352,19 @@ export interface SideEffect {
 export interface CommandContext {
     store: IGameStore;
     logger: (msg: string) => void;
+    /** [341-360] 커맨드 기반 외교 실행 컨텍스트 — 단위 테스트에서는 선택 주입 */
+    diplomacy?: import('./diplomacy_engine.js').DiplomacyEngine;
+    /** 전투 후처리의 연대기 기록을 undo 경계까지 포함하기 위한 선택 컨텍스트 */
+    chronicle?: {
+        serialize(): import('./chronicle_system.js').ChronicleEntry[];
+        load(entries: import('./chronicle_system.js').ChronicleEntry[]): void;
+        add(
+            kind: import('./chronicle_system.js').ChronicleKind,
+            text: string,
+            at?: { year: number; month: number; turn: number },
+            details?: { factionId?: string | null; cityId?: string | null },
+        ): void;
+    };
 }
 
 // ============================================================
@@ -387,6 +417,14 @@ export interface NormalizedState {
     };
 }
 
+/** [49][D32] 도시 건물 운영 상태 — 도시 화면의 투자·운영 설정을 세이브에 보존한다. */
+export interface CityBuildingState {
+    buildingId: string;
+    level: number;
+    investment: number;
+    active: boolean;
+}
+
 export interface GlobalState {
     phase: GamePhase;
     time: GameTime;
@@ -397,6 +435,10 @@ export interface GlobalState {
     playerFactionId: FactionID | null;
     /** 시나리오 난이도 1~5 (구버전 세이브 호환: optional) [X-난이도] */
     difficulty?: number;
+    /** [49][D32] 도시별 건물 운영 상태 — 투자·운영 상태를 세이브/로드에서 복원한다. */
+    cityBuildingStates?: Record<CityID, Record<string, CityBuildingState>>;
+    /** [49] 플레이어가 방문한 도시 ID — 세이브/로드 후에도 지도 발견 상태를 복원한다. */
+    visitedCityIds?: CityID[];
 }
 
 // ============================================================

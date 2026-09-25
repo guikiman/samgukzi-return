@@ -98,7 +98,7 @@ export declare class AIStreamManager {
     startMonthlyTurn(payload: AITurnPayload): Promise<void>;
     /** AI 턴 진행 여부 */
     isBusy(): boolean;
-    /** 워커를 종료하고 자원을 해제한다 */
+    /** 워커를 종료하고 대기 중인 턴을 안전하게 해제한다. */
     terminate(): void;
 }
 //# sourceMappingURL=ai_stream_manager.d.ts.map

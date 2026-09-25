@@ -85,6 +85,16 @@ describe('WarlordConditionEvaluator [300]', () => {
         expect(evaluator.evaluateCondition({ type: ConditionType.CITY_OWNER, targetId: 'liu_bei', targetCity: 'xuchang' }, ctx)).toBe(false);
     });
 
+    it('FACTION 조건 — targetId 생략 시 세력 존재 여부를 검사한다', () => {
+        const ctx = makeCtx({
+            warlords: new Map([
+                ['cao_cao', { factionId: 'wei', cityId: 'xuchang' }],
+            ]),
+        });
+        expect(evaluator.evaluateCondition({ type: ConditionType.FACTION, targetFaction: 'wei' }, ctx)).toBe(true);
+        expect(evaluator.evaluateCondition({ type: ConditionType.FACTION, targetFaction: 'dong_zhuo' }, ctx)).toBe(false);
+    });
+
     it('AFFINITY 조건 — getAffinity 콜백 연동 (관계망 [C-인간관계])', () => {
         const ctx = makeCtx({ getAffinity: (id) => (id === 'guan_yu' ? 80 : 0) });
         expect(evaluator.evaluateCondition({ type: ConditionType.AFFINITY, targetId: 'guan_yu', minValue: 50 }, ctx)).toBe(true);
@@ -196,13 +206,18 @@ describe('EventEngine [300]', () => {
         expect(engine.queueMgr.queueSize).toBe(0);
     });
 
-    it('체인 연쇄 — 다음 이벤트 조회 후 큐에 적재 가능', () => {
+    it('체인 연쇄 — 첫 이벤트 발동 후에만 다음 이벤트를 적재한다', () => {
         const engine = new EventEngine(new EventChainQueueManager(), new WarlordConditionEvaluator());
         engine.queueMgr.enqueueChain('chain', [makeNode('a', []), makeNode('b', [])]);
-        engine.scanAndActivate(makeCtx());
+
+        const firstBatch = engine.scanAndActivate(makeCtx());
+        expect(firstBatch.map(n => n.eventId)).toEqual(['a']);
+        expect(engine.queueMgr.queueSize).toBe(0);
 
         const next = engine.getNextChainEvent('a');
         expect(next?.eventId).toBe('b');
+        engine.queueMgr.enqueue(next!);
+        expect(engine.scanAndActivate(makeCtx()).map(n => n.eventId)).toEqual(['b']);
     });
 });
 
@@ -229,7 +244,7 @@ describe('ScenarioBranchManager [106-114]', () => {
 
         expect(mgr.activateBranch('hist_guandu', engine)).toBe(true);
         expect(mgr.getActiveBranchId()).toBe('hist_guandu');
-        expect(engine.queueMgr.queueSize).toBe(2);
+        expect(engine.queueMgr.queueSize).toBe(1);
         expect(mgr.activateBranch('unknown', engine)).toBe(false);
     });
 

@@ -16,22 +16,23 @@
             <span id="date-display" class="stat-chip">184년 1월</span>
             <span id="phase-display" class="stat-chip">TITLE</span>
         </div>
-        <div id="controls">
+        <div id="controls" aria-label="게임 제어">
             <button id="btn-start" class="game-btn">게임 시작</button>
-            <button id="btn-pause" class="game-btn" disabled>일시정지</button>
-            <button id="btn-save" class="game-btn" disabled>저장</button>
+            <button id="btn-pause" class="game-btn" aria-keyshortcuts="P" title="일시정지/재개 (P)" disabled>일시정지</button>
+            <button id="btn-save" class="game-btn" aria-keyshortcuts="S" title="저장 (S)" disabled>저장</button>
             <button id="btn-slots" class="game-btn" disabled>💾 슬롯</button>
-            <button id="btn-help" class="game-btn">❓ 도움말</button>
+            <button id="btn-help" class="game-btn" aria-keyshortcuts="H" title="도움말 (H)">❓ 도움말</button>
             <button id="btn-settings" class="game-btn">⚙️ 설정</button>
-            <button id="btn-graph" class="game-btn" disabled>🕸️ 人脈</button>
-            <button id="btn-diplomacy" class="game-btn" disabled>🕊️ 외교</button>
-            <button id="btn-report" class="game-btn" disabled>📊 보고</button>
+            <button id="btn-graph" class="game-btn" aria-keyshortcuts="G" title="인맥 관계망 (G)" disabled>🕸️ 人脈</button>
+            <button id="btn-diplomacy" class="game-btn" aria-keyshortcuts="D" title="외교 (D)" disabled>🕊️ 외교</button>
+            <button id="btn-report" class="game-btn" aria-keyshortcuts="R" title="월간 보고 (R)" disabled>📊 보고</button>
             <button id="btn-battle" class="game-btn" disabled>⚔️ 전투</button>
-            <button id="btn-next-month" class="game-btn" disabled>▸ 다음 月</button>
+            <button id="btn-map-visibility" class="game-btn" disabled title="전체 도시 / 방문·소유 도시 전환">🗺️ 전체 도시</button>
+            <button id="btn-next-month" class="game-btn" aria-keyshortcuts="N" title="다음 달 진행 (N)" disabled>▸ 다음 月</button>
         </div>
     </div>
     <div id="main-area">
-        <canvas id="game-canvas"></canvas>
+        <canvas id="game-canvas" aria-label="중국 전도. 도시를 탭하면 상세 정보가 열립니다." role="img"></canvas>
         <div id="sidebar">
             <div id="officer-panel" class="panel">
                 <h3>무장 정보</h3>
@@ -66,7 +67,7 @@
         </div>
     </div>
     <div id="bottom-bar">
-        <div id="status-text">초기화 중...</div>
+        <div id="status-text" role="status" aria-live="polite">초기화 중...</div>
         <div id="fps-display">FPS: --</div>
     </div>
 </div>
@@ -94,13 +95,24 @@
 </div>
 
 <!-- 도시 상세 패널 (전도 클릭 시) -->
-<div id="city-detail-panel" style="display:none;">
+<div id="city-detail-panel" role="dialog" aria-labelledby="cdp-city-name" tabindex="-1" style="display:none;">
     <div class="cdp-header">
         <div class="cdp-title-wrap">
             <span id="cdp-city-name" class="cdp-city-name">-</span>
             <span id="cdp-faction-badge" class="cdp-faction-badge">-</span>
         </div>
         <button id="cdp-close" class="cdp-close" title="닫기">✕</button>
+    </div>
+    <div class="cdp-section city-scene-section">
+        <div class="cdp-section-title">都市 — 도시 진입</div>
+        <div class="city-scene-stage">
+            <canvas id="city-scene-canvas" class="city-scene-canvas" width="480" height="240" aria-label="선택한 도시의 건물 배치도"></canvas>
+            <div id="city-scene-particles" class="city-scene-particles" aria-hidden="true">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+        </div>
+        <div id="city-building-detail" class="city-building-detail">건물을 클릭하면 상세 정보가 표시됩니다.</div>
+        <div id="city-scene-summary" class="city-scene-summary"></div>
     </div>
     <div class="cdp-section">
         <div class="cdp-section-title">內政 — 내정치</div>
@@ -110,12 +122,21 @@
         <div class="cdp-section-title">武將 — 무장 목록</div>
         <div id="cdp-officers" class="cdp-officers"></div>
     </div>
+    <div class="cdp-section" id="cdp-captive-history-section">
+        <div class="cdp-section-title">史記 — 포로 처분 기록</div>
+        <div id="cdp-captive-history" class="cdp-expedition-info">도시의 포로 처분 기록이 없습니다.</div>
+    </div>
+    <div class="cdp-section" id="cdp-facilities-section">
+        <div class="cdp-section-title">施設 — 도시 시설</div>
+        <div id="cdp-facilities" class="cdp-facilities"></div>
+    </div>
     <div class="cdp-section" id="cdp-actions-section">
         <div class="cdp-section-title">命令 — 내정 명령</div>
         <div id="cdp-actions" class="cdp-actions">
             <button class="cdp-action-btn" data-action="recruit" title="골드를 소모해 병사를 모집합니다">징병</button>
             <button class="cdp-action-btn" data-action="train" title="골드를 소모해 병사 사기를 높입니다">훈련</button>
             <button class="cdp-action-btn" data-action="patrol" title="치안을 높여 반란 위험을 낮춥니다">순찰</button>
+            <button class="cdp-action-btn" data-action="auto-domestic" title="담당 무장을 능력치에 따라 내정 임무에 자동 배정합니다">자동 내정 배정</button>
             <button class="cdp-action-btn" data-action="develop" title="상업·농업을 동시에 개발합니다">개발</button>
         </div>
         <div id="cdp-action-result" class="cdp-action-result"></div>
@@ -140,8 +161,32 @@
     </div>
 </div>
 
+<!-- 범용 선택형 대화 모달: 무장·도시 시설·사건 상세 [24][49][441-460] -->
+<div id="dialogue-modal" role="dialog" aria-modal="true" aria-labelledby="dialogue-title" tabindex="-1" style="display:none;">
+    <div class="dialogue-frame">
+        <div class="dialogue-header">
+            <div>
+                <div id="dialogue-title" class="dialogue-title">대화</div>
+                <div id="dialogue-subtitle" class="dialogue-subtitle"></div>
+            </div>
+            <button id="dialogue-close" class="cdp-close" title="닫기">✕</button>
+        </div>
+        <div id="dialogue-progress" class="dialogue-progress"></div>
+        <div id="dialogue-speaker" class="dialogue-speaker"></div>
+        <div id="dialogue-text" class="dialogue-text"></div>
+        <div id="dialogue-detail" class="dialogue-detail"></div>
+        <div id="dialogue-choices" class="dialogue-choices"></div>
+        <div id="dialogue-result" class="dialogue-result" style="display:none;"></div>
+        <div class="dialogue-footer">
+            <button id="dialogue-prev" class="game-btn">◀ 이전</button>
+            <span id="dialogue-page" class="dialogue-page"></span>
+            <button id="dialogue-next" class="game-btn">다음 ▶</button>
+        </div>
+    </div>
+</div>
+
 <!-- 월간 보고서 패널 -->
-<div id="monthly-report-panel" style="display:none;">
+<div id="monthly-report-panel" role="dialog" aria-labelledby="mr-title" tabindex="-1" style="display:none;">
     <div class="cdp-header">
         <span class="cdp-city-name" id="mr-title">月報 — 월간 보고</span>
         <button id="mr-close" class="cdp-close" title="닫기">✕</button>
@@ -165,7 +210,7 @@
 </div>
 
 <!-- 세이브 슬롯 패널 [17][212] -->
-<div id="save-slots-panel" style="display:none;">
+<div id="save-slots-panel" role="dialog" aria-label="세이브 슬롯" tabindex="-1" style="display:none;">
     <div class="cdp-header">
         <span class="cdp-city-name">存檔 — 세이브 슬롯</span>
         <button id="ss-close" class="cdp-close" title="닫기">✕</button>
@@ -175,7 +220,7 @@
 </div>
 
 <!-- 튜토리얼 패널 [461-480] -->
-<div id="tutorial-panel" style="display:none;">
+<div id="tutorial-panel" role="dialog" aria-label="게임 안내" tabindex="-1" style="display:none;">
     <div class="cdp-header">
         <span class="cdp-city-name">指南 — 게임 안내</span>
         <button id="tut-close" class="cdp-close" title="닫기">✕</button>
@@ -191,7 +236,7 @@
 </div>
 
 <!-- 접근성 설정 패널 [461-480] -->
-<div id="a11y-panel" style="display:none;">
+<div id="a11y-panel" role="dialog" aria-label="화면 설정" tabindex="-1" style="display:none;">
     <div class="cdp-header">
         <span class="cdp-city-name">設定 — 화면 설정</span>
         <button id="a11y-close" class="cdp-close" title="닫기">✕</button>
@@ -200,7 +245,7 @@
 </div>
 
 <!-- 인맥 그래프 패널 [269][33] -->
-<div id="graph-panel" style="display:none;">
+<div id="graph-panel" role="dialog" aria-label="인맥 관계망" tabindex="-1" style="display:none;">
     <div class="cdp-header">
         <span class="cdp-city-name">人脈 — 관계망</span>
         <button id="gp-close" class="cdp-close" title="닫기">✕</button>
@@ -214,7 +259,7 @@
 </div>
 
 <!-- 외교 패널 [341-360] -->
-<div id="diplomacy-panel" style="display:none;">
+<div id="diplomacy-panel" role="dialog" aria-label="세력 외교" tabindex="-1" style="display:none;">
     <div class="cdp-header">
         <span class="cdp-city-name">外交 — 세력 외교</span>
         <button id="dp-close" class="cdp-close" title="닫기">✕</button>
@@ -240,7 +285,7 @@
 </div>
 
 <!-- 로밍 이벤트 대화 모달 [25][461-480] — 방문객 응대 선택지 -->
-<div id="roaming-modal" style="display:none;">
+<div id="roaming-modal" role="dialog" aria-modal="true" aria-labelledby="rm-title" tabindex="-1" style="display:none;">
     <div class="rm-frame">
         <div class="rm-header">
             <span id="rm-title" class="rm-title">방문객</span>
@@ -255,7 +300,7 @@
 </div>
 
 <!-- 리플레이 공유 패널 [312] — 전투 기록 URL 내보내기/가져오기 -->
-<div id="replay-panel" style="display:none;">
+<div id="replay-panel" role="dialog" aria-modal="true" aria-label="전투 리플레이 공유" tabindex="-1" style="display:none;">
     <div class="rm-frame">
         <div class="rm-header">
             <span class="rm-title">🎬 전투 리플레이 공유 [312]</span>
@@ -276,7 +321,7 @@
 <div id="mod-result-toast" style="display:none;"></div>
 
 <!-- 복수 미니게임 모달 [32][33] — 플레이어 관여 일기토/설전 -->
-<div id="vengeance-modal" style="display:none;">
+<div id="vengeance-modal" role="dialog" aria-modal="true" aria-labelledby="vm-title" tabindex="-1" style="display:none;">
     <div class="vm-frame">
         <div class="vm-header">
             <span id="vm-title" class="vm-title">復讐 — 복수의 순간</span>

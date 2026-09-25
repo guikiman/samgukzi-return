@@ -35,10 +35,12 @@ export class ChronicleManager {
         this.store = store;
     }
     /** 연대기 항목 추가 — 시각 미지정 시 스토어 시각 자동 수집 */
-    add(kind, text, at) {
+    add(kind, text, at, details) {
         const gs = this.store?.getGlobalState();
         const entry = {
             kind,
+            factionId: details?.factionId,
+            cityId: details?.cityId,
             year: at?.year ?? gs?.time.year ?? 0,
             month: at?.month ?? gs?.time.month ?? 1,
             turn: at?.turn ?? gs?.turnCount ?? 0,

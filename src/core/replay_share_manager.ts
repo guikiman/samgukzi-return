@@ -100,13 +100,35 @@ async function gzipDecompress(bytes: Uint8Array): Promise<string> {
 // 3. ReplayShareManager
 // ============================================================
 
+/** 전투·포로·외교 커맨드 실행/복구 이벤트 [312][131-145][341-360] */
+export interface ReplayCommandEvent {
+    readonly id: string;
+    readonly commandType: string;
+    readonly action: 'EXECUTE' | 'UNDO' | 'REDO';
+    readonly turn: number;
+    readonly timestamp: number;
+    readonly success: boolean;
+    readonly message: string;
+    readonly logMessages: string[];
+    readonly captiveOutcomes: Array<{
+        officerId: string;
+        officerName: string;
+        decision: 'RECRUIT' | 'EXECUTE' | 'RELEASE';
+        success: boolean;
+        message: string;
+    }>;
+}
+
 export class ReplayShareManager {
     /** 내부 저장은 항상 미니피케이션 형식 (URL 크기 최적화 단일 소스) */
     private currentBattleLogs: MinifiedLogEntry[] = [];
+    /** 커맨드 실행/undo/redo 로그 — 전투 리플레이와 세이브 델타 양쪽에서 재사용 */
+    private currentCommandEvents: ReplayCommandEvent[] = [];
 
     /** 새로운 전투 시작 시 기존 로그 초기화 */
     clearLogs(): void {
         this.currentBattleLogs = [];
+        this.currentCommandEvents = [];
     }
 
     get logCount(): number {
@@ -127,6 +149,23 @@ export class ReplayShareManager {
         return this.currentBattleLogs.map(deminify);
     }
 
+    /** 전투·포로·외교 커맨드 이벤트를 리플레이에 기록한다. */
+    recordCommandEvent(event: ReplayCommandEvent): void {
+        this.currentCommandEvents.push({
+            ...event,
+            logMessages: [...event.logMessages],
+            captiveOutcomes: event.captiveOutcomes.map(outcome => ({ ...outcome })),
+        });
+    }
+
+    getCommandEvents(): ReplayCommandEvent[] {
+        return this.currentCommandEvents.map(event => ({
+            ...event,
+            logMessages: [...event.logMessages],
+            captiveOutcomes: event.captiveOutcomes.map(outcome => ({ ...outcome })),
+        }));
+    }
+
     /**
      * [312] 100-kB 가압축 파이프라인
      * 1. 전체 전투 로그 → JSON 문자열
@@ -137,7 +176,11 @@ export class ReplayShareManager {
         try {
             if (this.currentBattleLogs.length === 0) return '';
 
-            const jsonStr = JSON.stringify(this.currentBattleLogs);
+            // 커맨드 이벤트가 있으면 버전된 envelope를 사용해 구버전 전투 로그와도 호환한다.
+            const payload = this.currentCommandEvents.length > 0
+                ? { v: 2, battle: this.currentBattleLogs, commands: this.currentCommandEvents }
+                : this.currentBattleLogs;
+            const jsonStr = JSON.stringify(payload);
             const compressed = await gzipCompress(jsonStr);
             return base64UrlEncode(compressed);
         } catch (err) {
@@ -152,9 +195,12 @@ export class ReplayShareManager {
             if (!compressedStr) return [];
             const bytes = base64UrlDecode(compressedStr);
             const jsonStr = await gzipDecompress(bytes);
-            const raw = JSON.parse(jsonStr) as MinifiedLogEntry[];
-            if (!Array.isArray(raw)) return [];
-            return raw.map(deminify);
+            const raw = JSON.parse(jsonStr) as MinifiedLogEntry[] | { v: 2; battle: MinifiedLogEntry[]; commands: ReplayCommandEvent[] };
+            if (Array.isArray(raw)) return raw.map(deminify);
+            if (!raw || raw.v !== 2 || !Array.isArray(raw.battle)) return [];
+            this.currentBattleLogs = raw.battle;
+            this.currentCommandEvents = Array.isArray(raw.commands) ? raw.commands : [];
+            return this.currentBattleLogs.map(deminify);
         } catch {
             return [];
         }

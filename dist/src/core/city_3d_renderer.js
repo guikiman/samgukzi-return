@@ -25,13 +25,13 @@ const SEASON_COLORS = {
 };
 export class City3DRenderer {
     /** 도시 건물 배치 생성 */
-    generateCityLayout(cityId, developmentLevel, season) {
+    generateCityLayout(cityId, developmentLevel, season, savedStates = {}) {
         const buildings = [];
         const colors = SEASON_COLORS[season];
         const buildingCount = Math.max(5, Math.floor(developmentLevel * 2));
         // 건물 타입 가중치
         const typePool = [];
-        for (const t of ['HOUSE', 'HOUSE', 'HOUSE', 'HOUSE', 'FARM', 'FARM', 'MARKET', 'WORKSHOP', 'GOVERNMENT', 'BARRACKS', 'TEMPLE', 'WALL']) {
+        for (const t of ['GOVERNMENT', 'BARRACKS', 'MARKET', 'FARM', 'TEMPLE', 'WORKSHOP', 'WALL', 'HOUSE', 'HOUSE', 'HOUSE', 'HOUSE']) {
             typePool.push(t);
         }
         // 타일 배치 (등각투영 그리드)
@@ -40,10 +40,13 @@ export class City3DRenderer {
             const gx = i % gridSize;
             const gy = Math.floor(i / gridSize);
             const type = typePool[i % typePool.length];
-            const level = Math.min(5, Math.max(1, Math.floor(developmentLevel / 2) + (i % 3)));
+            const buildingId = `${cityId}:${i}`;
+            const saved = savedStates[buildingId];
+            const level = Math.min(5, Math.max(1, saved?.level ?? Math.floor(developmentLevel / 2) + (i % 3)));
             const def = BUILDING_DEFS[type];
             const sizeMultiplier = 1 + (level - 1) * 0.15;
             buildings.push({
+                id: buildingId,
                 type,
                 level,
                 x: gx - gy,
@@ -53,6 +56,8 @@ export class City3DRenderer {
                 color: this.getBuildingColor(type, level, season).wall,
                 roofColor: this.getBuildingColor(type, level, season).roof,
                 label: def.label,
+                investment: saved?.investment ?? 0,
+                active: saved?.active ?? true,
             });
         }
         return buildings;

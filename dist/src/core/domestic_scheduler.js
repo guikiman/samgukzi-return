@@ -106,7 +106,8 @@ export class DomesticScheduler {
                 throw new Error(`[Scheduler] 무장(${officer.name})의 행동력(${officer.actionPoints})이 ${DomesticScheduler.AP_COST} 미만입니다.`);
             }
         }
-        this.assignments.set(`${cityId}_${assignment.taskType}`, assignment);
+        // 도시 ID 자체에 underscore가 포함될 수 있으므로 task 구분자는 분리 unambiguous한 '::'를 사용한다. [49]
+        this.assignments.set(`${cityId}::${assignment.taskType}`, assignment);
     }
     // ============================================================
     // [1] 내정 임무 일괄 실행
@@ -125,7 +126,7 @@ export class DomesticScheduler {
     executeAll() {
         const results = [];
         for (const [key, assignment] of this.assignments.entries()) {
-            const cityId = key.split('_')[0];
+            const cityId = key.slice(0, key.indexOf('::'));
             const city = this.store.getCity(cityId);
             if (!city)
                 continue;

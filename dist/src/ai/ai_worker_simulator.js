@@ -68,7 +68,7 @@ export function calculateOfficerDecision(officer, cities, factions) {
     }
     // ── 6. 외교 성향 무장 — 동맹 세력 친선 강화 ──
     if (faction && faction.alliedWith.length > 0 && officer.stats.politics > 70) {
-        return makeDecision(officer, 'DIPLOMACY', Math.min(0.7, 0.5 * tw.DIPLOMACY), `동맹 세력 친선 강화 (정치 ${officer.stats.politics})`, {});
+        return makeDecision(officer, 'DIPLOMACY', Math.min(0.7, 0.5 * tw.DIPLOMACY), `동맹 세력 친선 강화 (정치 ${officer.stats.politics})`, { targetFactionId: faction.alliedWith[0], action: 'GIFT' });
     }
     // ── 7. 기본: 휴식 ──
     return makeDecision(officer, 'REST', 0.2, '특별한 이슈 없음 — 휴식', {});

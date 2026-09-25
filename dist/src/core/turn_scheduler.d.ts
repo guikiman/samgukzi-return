@@ -25,6 +25,9 @@ export declare class TurnScheduler {
     private idleHandle;
     private isRunning;
     private completedCount;
+    /** 비동기 processor가 끝날 때까지 완료로 간주하지 않기 위한 카운터 [201][295] */
+    private inFlightCount;
+    private completionNotified;
     private totalTaskCount;
     private currentChunk;
     private onComplete;
@@ -39,7 +42,10 @@ export declare class TurnScheduler {
     stop(): void;
     private runChunk;
     private runChunkSync;
+    private processTask;
     private onTaskComplete;
+    /** 큐와 비동기 작업이 모두 비었을 때만 완료 알림을 한 번 발생시킨다. */
+    private finishIfDrained;
     private emitProgress;
 }
 export declare class AITurnProcessor {

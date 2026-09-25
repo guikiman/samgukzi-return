@@ -61,6 +61,22 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
         targetHint: '지도 도시 클릭',
     },
     {
+        id: 'city-buildings',
+        title: ' 도시 건설 — 都市',
+        body: '도시 진입 화면의 등각투영 배치를 확인하세요. 건물을 선택하면 운영 정보와 누적 투자가 보이며, 「투자」로 단계와 도시 지표를 높일 수 있습니다. 운영/휴업 상태는 세이브에 보존됩니다.',
+        targetHint: '도시 화면의 건물 배치도',
+        spotlightSelector: '#city-scene-canvas',
+        spotlightFallback: '도시 클릭 후 opened city panel의 都市 배치도',
+    },
+    {
+        id: 'accessibility',
+        title: ' 접근성과 편의 — 便利',
+        body: '상단 「⚙️ 설정」에서 글자 크기·명도·색약 모드·화면 흔들림을 조절할 수 있습니다. 「❓ 도움말」에서 이 안내를 다시 볼 수 있습니다.',
+        targetHint: 'btn-settings',
+        spotlightSelector: '#btn-settings',
+        spotlightFallback: '화면 상단 도구바의 「⚙️ 설정」 버튼',
+    },
+    {
         id: 'diplomacy',
         title: ' 외교 — 外交',
         body: '「🕊️ 외교」에서 타세력과 관계를 확인하고 증정·동맹을 제안할 수 있습니다. 주변 세력과의 관계가 전쟁 리스크를 좌우합니다.',

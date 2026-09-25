@@ -109,5 +109,28 @@
       "historical_mode": true
     },
     "status": "active"
+  },
+  {
+    "id": "07",
+    "title_kr": "삼국鼎峙",
+    "title_en": "Three Kingdoms at the Crossroads",
+    "start_date": "220-01",
+    "description": "사자오의 삼국 정립 이후, 유비와 손권의 죽음으로 바뀐 균형 속에서 각 세력은 새로운 생존 수단을 찾습니다.",
+    "difficulty": 4,
+    "factions": [
+      { "name": "위", "capital": "낙양", "leader_id": "cao_pi", "color": "#2a5a8a", "city_profile": { "population": 128000, "defense": 78, "gold_income": 165, "food_income": 390, "funds": 1450, "development": 68, "commerce": 64, "farming": 52, "technology": 72, "public_order": 68, "loyalty": 74, "danger": 18 } },
+      { "name": "촉", "capital": "청두", "leader_id": "liu_shan", "color": "#4a9a5a", "city_profile": { "population": 96000, "defense": 72, "gold_income": 142, "food_income": 420, "funds": 1180, "development": 61, "commerce": 55, "farming": 68, "technology": 65, "public_order": 76, "loyalty": 82, "danger": 12 } },
+      { "name": "오", "capital": "부경", "leader_id": "sun_hao", "color": "#b04a2a", "city_profile": { "population": 88000, "defense": 69, "gold_income": 151, "food_income": 448, "funds": 1260, "development": 58, "commerce": 70, "farming": 61, "technology": 58, "public_order": 71, "loyalty": 79, "danger": 15 } }
+    ],
+    "cities": [
+      { "name": "항양", "faction_index": 0, "map_x": 0.62, "map_y": 0.48, "profile": { "population": 74000, "defense": 76, "gold_income": 128, "food_income": 330, "funds": 980, "development": 57, "commerce": 60, "farming": 48, "technology": 58, "public_order": 66, "loyalty": 72, "danger": 24 } },
+      { "name": "강릉", "faction_index": 1, "map_x": 0.47, "map_y": 0.55, "profile": { "population": 68000, "defense": 64, "gold_income": 112, "food_income": 360, "funds": 860, "development": 52, "commerce": 48, "farming": 63, "technology": 54, "public_order": 70, "loyalty": 76, "danger": 18 } },
+      { "name": "동정", "faction_index": 2, "map_x": 0.73, "map_y": 0.60, "profile": { "population": 62000, "defense": 61, "gold_income": 119, "food_income": 372, "funds": 910, "development": 49, "commerce": 64, "farming": 55, "technology": 49, "public_order": 64, "loyalty": 73, "danger": 21 } }
+    ],
+    "special_conditions": {
+      "victory": "사육의 재정의와 안정된 국경을 수립한다",
+      "historical_mode": true
+    },
+    "status": "active"
   }
 ]

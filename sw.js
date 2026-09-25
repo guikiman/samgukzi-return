@@ -4,7 +4,7 @@
  * CacheStrategy:
  *   1. 프리캐시: 앱 셸(index.html, style.css, 메인 번들) 설치 시 캐싱
  *   2. Network-First: 내비게이션 요청은 네트워크 우선 → 오프라인 시 캐시 폴백
- *   3. Cache-First: 동일 오리진 정적 리소스(/dist/, js/css/img/font)는 캐시 우선
+ *   3. Network-First + Cache Fallback: 정적 리소스는 새 배포본을 우선 사용하고, 오프라인에서만 캐시 사용
  *   4. 그 외: 네트워크 우선, 실패 시 캐시 → 최종 503
  *
  * 스코프 상대 경로 사용 — GitHub Pages 서브경로(/REPO/) 배포와 루트 배포 모두 호환.
@@ -12,7 +12,8 @@
  *  오프라인 폴백이 동작하지 않아, 실제 번들 경로에 맞춰 본 파일로 대체)
  */
 
-const CACHE_NAME = 'rtk8-v2';
+// [E43] 배포 후 이전 Tauri/WebView 자산이 남지 않도록 캐시 버전 관리
+const CACHE_NAME = 'rtk8-v6';
 
 /** 스코프 기준 상대 경로 → 절대 URL (서브경로 배포 호환) */
 function scoped(path) {
@@ -24,6 +25,7 @@ const PRECACHE_PATHS = [
     '.',
     'index.html',
     'style.css',
+    'assets/china-national-map.png',
     'src/data/scenarios/index.json',
 ];
 
@@ -81,7 +83,8 @@ self.addEventListener('fetch', (event) => {
             new URL(self.registration.scope).pathname + 'dist/',
         ) || url.pathname.startsWith('/dist/');
         if (underDist || /\.(js|css|png|jpg|jpeg|svg|woff2?|json)$/.test(url.pathname)) {
-            event.respondWith(cacheFirst(event.request));
+            // [E43] 최신 배포 자산을 우선하되, 오프라인에서는 v6 캐시로 부트스트랩한다.
+            event.respondWith(networkFirstWithCache(event.request));
             return;
         }
     }
@@ -116,16 +119,17 @@ async function networkFirstWithFallback(request) {
     return new Response('오프라인 — 네트워크 연결 필요', { status: 503 });
 }
 
-/** 정적 리소스: 캐시 우선, 없으면 네트워크에서 받아 캐시 */
-async function cacheFirst(request) {
-    const cached = await caches.match(request);
-    if (cached) return cached;
+/** 정적 리소스: 네트워크 우선, 오프라인이면 현재 버전 캐시 사용 */
+async function networkFirstWithCache(request) {
     try {
         const response = await fetch(request);
         if (response.ok) {
             const cache = await caches.open(CACHE_NAME);
-            cache.put(request, response.clone());
+            await cache.put(request, response.clone());
+            return response;
         }
+        const cached = await caches.match(request);
+        if (cached && cached.status === 200) return cached;
         return response;
     } catch {
         const cached = await caches.match(request);

@@ -12,6 +12,9 @@ import {
     OfficerID, NormalizedState, GlobalState, CommandType, RelationType,
     GamePhase,
 } from './types.js';
+import { simulateAutoBattle, type AutoBattleSides } from './auto_battle_simulator.js';
+import { AStarHexPathfinder } from './astar_hex_pathfinder.js';
+import type { HexCoord } from './render_queue_types.js';
 
 // ============================================================
 // AI 의사결정 코어 로직 (Worker 내부에서 실행)
@@ -19,10 +22,15 @@ import {
 class AIDecisionEngine {
     private state: NormalizedState;
     private globalState: GlobalState;
+    /** Worker 턴 동안 반복 Object.values 할당을 피하기 위한 읽기 전용 스냅샷 [201][202] */
+    private readonly officers: Officer[];
+    private readonly cities: City[];
 
     constructor(state: NormalizedState, globalState: GlobalState) {
         this.state = state;
         this.globalState = globalState;
+        this.officers = Object.values(state.officers);
+        this.cities = Object.values(state.cities);
     }
 
     processOfficer(officer: Officer): AIDecision | null {
@@ -54,7 +62,7 @@ class AIDecisionEngine {
             : null;
         if (!faction || !city) return null;
 
-        const nearbyCities = Object.values(this.state.cities)
+        const nearbyCities = this.cities
             .filter(c => c.id !== city.id &&
                 Math.abs(c.hexCoord.q - city.hexCoord.q) +
                 Math.abs(c.hexCoord.r - city.hexCoord.r) <= 3)
@@ -159,7 +167,7 @@ class AIDecisionEngine {
             case 'TRAINING':
                 return { statKey: officer.stats.might > officer.stats.intelligence ? 'might' : 'intelligence' };
             case 'RECRUITMENT': {
-                const freeOfficers = Object.values(this.state.officers)
+                const freeOfficers = this.officers
                     .filter(o => o.factionId === null && o.cityId === officer.cityId)
                     .slice(0, 1);
                 return freeOfficers.length > 0 ? { targetOfficerId: freeOfficers[0].id } : {};
@@ -246,13 +254,71 @@ function handleAIDecision(request: WorkerRequest): void {
 }
 
 function handleBattleSim(request: WorkerRequest): void {
-    const result = { winner: 'ATTACKER', casualties: { attacker: 500, defender: 1200 }, turns: 12 };
+    const payload = request.payload as { sides?: AutoBattleSides };
+    if (!payload.sides?.attacker || !payload.sides?.defender) {
+        workerSelf.postMessage({ id: request.id, success: false, error: 'Invalid battle simulation payload' });
+        return;
+    }
+    // [295] 고정된 더미 결과 대신 전투력·지형·보급·사기 규칙을 실제 적용한다.
+    const result = simulateAutoBattle(payload.sides);
     workerSelf.postMessage({ id: request.id, success: true, result });
 }
 
+function readHexCoord(value: unknown): HexCoord | null {
+    if (typeof value !== 'object' || value === null) return null;
+    const record = value as Record<string, unknown>;
+    if (typeof record.q !== 'number' || typeof record.r !== 'number' ||
+        !Number.isFinite(record.q) || !Number.isFinite(record.r)) {
+        return null;
+    }
+    return { q: Math.trunc(record.q), r: Math.trunc(record.r) };
+}
+
 function handlePathfind(request: WorkerRequest): void {
-    const result = { path: [], distance: 0, found: false };
-    workerSelf.postMessage({ id: request.id, success: true, result });
+    const payload = request.payload as {
+        start?: unknown;
+        end?: unknown;
+        blocked?: unknown;
+        moveCosts?: unknown;
+        maxSteps?: unknown;
+    };
+    const start = readHexCoord(payload.start);
+    const end = readHexCoord(payload.end);
+    if (!start || !end) {
+        workerSelf.postMessage({ id: request.id, success: false, error: 'Invalid pathfinding payload' });
+        return;
+    }
+
+    const blocked = new Set<string>();
+    if (Array.isArray(payload.blocked)) {
+        for (const value of payload.blocked) {
+            const coord = readHexCoord(value);
+            if (coord) blocked.add(`${coord.q},${coord.r}`);
+        }
+    }
+
+    const moveCosts = payload.moveCosts && typeof payload.moveCosts === 'object'
+        ? payload.moveCosts as Record<string, unknown>
+        : {};
+    const maxSteps = typeof payload.maxSteps === 'number' && Number.isFinite(payload.maxSteps)
+        ? Math.max(1, Math.trunc(payload.maxSteps))
+        : 100;
+    const pathfinder = new AStarHexPathfinder();
+    const path = pathfinder.findPath(
+        start,
+        end,
+        coord => !blocked.has(`${coord.q},${coord.r}`),
+        coord => {
+            const raw = moveCosts[`${coord.q},${coord.r}`];
+            return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0.1, raw) : 1;
+        },
+        maxSteps,
+    );
+    workerSelf.postMessage({
+        id: request.id,
+        success: true,
+        result: { path, distance: Math.max(0, path.length - 1), found: path.length > 0 },
+    });
 }
 
 export {};

@@ -19,8 +19,41 @@ import { DebateMinigame, type DebateState, type DebateCardType } from './debate_
 
 export type InteractionKind = 'CHAT' | 'GIFT' | 'DEBATE' | 'DUEL';
 
-/** 증정 비용 (金) */
+/** 증정 비용 기본값 (金) — 구버전 호출과 증정 버튼의 기본 수량 */
 export const GIFT_COST = 200;
+
+export type GiftItemId = 'NONE' | 'SILK' | 'JADE' | 'BOOK' | 'TREASURE';
+export type GiftItemGrade = 'NONE' | 'COMMON' | 'FINE' | 'RARE' | 'LEGENDARY';
+
+export interface GiftItemDefinition {
+    readonly id: GiftItemId;
+    readonly name: string;
+    readonly grade: GiftItemGrade;
+    readonly gradeLabel: string;
+    readonly affinity: number;
+    readonly description: string;
+}
+
+/** 선물 아이템 등급과 아이템 자체 우호도 효과 [24][C-인간관계] */
+export const GIFT_ITEMS: Record<GiftItemId, GiftItemDefinition> = {
+    NONE: { id: 'NONE', name: '아이템 없음', grade: 'NONE', gradeLabel: '없음', affinity: 0, description: '금화만 보냅니다.' },
+    SILK: { id: 'SILK', name: '비단', grade: 'COMMON', gradeLabel: '보통', affinity: 2, description: '실용적인 비단 선물' },
+    BOOK: { id: 'BOOK', name: '병서', grade: 'FINE', gradeLabel: '고급', affinity: 5, description: '지식과 성의의象征' },
+    JADE: { id: 'JADE', name: '옥비', grade: 'RARE', gradeLabel: '희귀', affinity: 9, description: '품격 높은 옥制成的 선물' },
+    TREASURE: { id: 'TREASURE', name: '보물', grade: 'LEGENDARY', gradeLabel: '전설', affinity: 15, description: '가치 극히 높은 왕실 선물' },
+};
+
+export interface GiftOptions {
+    readonly itemId?: GiftItemId;
+    readonly gold?: number;
+}
+
+/** 금화 100金당 우호도 +1, 최대 +30. 아이템 효과는 별도로 더한다. */
+export function calculateGiftAffinity(options: GiftOptions = {}): number {
+    const item = GIFT_ITEMS[options.itemId ?? 'NONE'] ?? GIFT_ITEMS.NONE;
+    const gold = Math.max(0, Math.floor(options.gold ?? GIFT_COST));
+    return item.affinity + Math.min(30, Math.floor(gold / 100));
+}
 
 /** 같은 대상과의 대화 월 1회 제한 */
 export const CHAT_MONTHLY_LIMIT = 1;
@@ -55,6 +88,7 @@ export function checkInteraction(
     actorId: string,
     targetId: string,
     kind: InteractionKind,
+    options: GiftOptions = {},
 ): { ok: boolean; reason?: string } {
     if (actorId === targetId) return { ok: false, reason: '자기 자신과는 상호작용할 수 없습니다.' };
     const actor = store.getOfficer(actorId);
@@ -65,7 +99,13 @@ export function checkInteraction(
     if (kind === 'GIFT') {
         const faction = actor.factionId ? store.getFaction(actor.factionId) : null;
         if (!faction) return { ok: false, reason: '소속 세력이 없어 증정할 수 없습니다.' };
-        if (faction.gold < GIFT_COST) return { ok: false, reason: `국고가 부족합니다 (증정 비용 ${GIFT_COST}金).` };
+        const customGift = options.itemId !== undefined || options.gold !== undefined;
+        const requestedGold = options.gold ?? (customGift ? 0 : GIFT_COST);
+        if (!Number.isFinite(requestedGold) || !Number.isInteger(requestedGold) || requestedGold < 0) {
+            return { ok: false, reason: '금화 수량은 0 이상의 정수여야 합니다.' };
+        }
+        const gold = customGift ? requestedGold : GIFT_COST;
+        if (faction.gold < gold) return { ok: false, reason: `국고가 부족합니다 (증정 비용 ${gold}金).` };
     }
 
     if (kind === 'CHAT') {
@@ -146,8 +186,9 @@ export function executeInteraction(
     actorId: string,
     targetId: string,
     kind: InteractionKind,
+    options: GiftOptions = {},
 ): InteractionOutcome {
-    const gate = checkInteraction(store, actorId, targetId, kind);
+    const gate = checkInteraction(store, actorId, targetId, kind, options);
     if (!gate.ok) {
         return {
             kind, actorId, targetId,
@@ -172,11 +213,16 @@ export function executeInteraction(
             break;
         }
         case 'GIFT': {
-            goldCost = GIFT_COST;
+            const itemId = options.itemId ?? 'NONE';
+            const item = GIFT_ITEMS[itemId] ?? GIFT_ITEMS.NONE;
+            const customGift = options.itemId !== undefined || options.gold !== undefined;
+            const requestedGold = options.gold ?? (customGift ? 0 : GIFT_COST);
+            goldCost = requestedGold;
             const faction = store.getFaction(actor.factionId!)!;
-            store.updateFaction(faction.id, { gold: faction.gold - GIFT_COST });
-            affinityDelta = AFFINITY_DELTAS.GIFT;
-            message = `🎁 ${actor.name}이(가) ${target.name}에게 선물을 보냈습니다. (−${GIFT_COST}金, 우호도 +${affinityDelta})`;
+            store.updateFaction(faction.id, { gold: faction.gold - goldCost });
+            affinityDelta = customGift ? calculateGiftAffinity(options) : AFFINITY_DELTAS.GIFT;
+            const itemText = itemId === 'NONE' ? '아이템 없음' : `${item.name}(${item.gradeLabel})`;
+            message = `🎁 ${actor.name}이(가) ${target.name}에게 선물을 보냈습니다. (${itemText}, −${goldCost}金, 우호도 +${affinityDelta})`;
             break;
         }
         case 'DEBATE': {

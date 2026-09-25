@@ -11,6 +11,9 @@ export class TurnScheduler {
         this.idleHandle = null;
         this.isRunning = false;
         this.completedCount = 0;
+        /** 비동기 processor가 끝날 때까지 완료로 간주하지 않기 위한 카운터 [201][295] */
+        this.inFlightCount = 0;
+        this.completionNotified = true;
         this.totalTaskCount = 0;
         this.currentChunk = 0;
         this.onComplete = null;
@@ -27,6 +30,8 @@ export class TurnScheduler {
         this.totalTaskCount = tasks.length;
         this.completedCount = 0;
         this.currentChunk = 0;
+        this.inFlightCount = 0;
+        this.completionNotified = this.totalTaskCount === 0;
     }
     setOnComplete(callback) {
         this.onComplete = callback;
@@ -50,6 +55,8 @@ export class TurnScheduler {
             return;
         this.isRunning = true;
         this.completedCount = 0;
+        this.inFlightCount = 0;
+        this.completionNotified = false;
         if (this.options.useIdleCallback && typeof requestIdleCallback !== 'undefined') {
             this.idleHandle = requestIdleCallback((deadline) => this.runChunk(deadline), { timeout: 100 });
         }
@@ -75,13 +82,7 @@ export class TurnScheduler {
                 break;
             const task = this.tasks.shift();
             if (task) {
-                const result = this.processor(task);
-                if (result instanceof Promise) {
-                    result.then(() => this.onTaskComplete()).catch(() => this.onTaskComplete());
-                }
-                else {
-                    this.onTaskComplete();
-                }
+                this.processTask(task);
                 processed += 1;
             }
         }
@@ -91,42 +92,61 @@ export class TurnScheduler {
             this.idleHandle = requestIdleCallback((d) => this.runChunk(d), { timeout: this.options.maxFrameTimeMs });
         }
         else {
-            this.isRunning = false;
-            this.idleHandle = null;
-            if (this.onComplete)
-                this.onComplete();
+            this.finishIfDrained();
         }
     }
     runChunkSync() {
+        if (!this.isRunning)
+            return;
         const chunkSize = this.options.chunkSize;
         const frameStart = performance.now();
         while (this.tasks.length > 0) {
             const task = this.tasks.shift();
             if (task) {
-                const result = this.processor(task);
-                if (result instanceof Promise) {
-                    result.then(() => this.onTaskComplete()).catch(() => this.onTaskComplete());
-                }
-                else {
-                    this.onTaskComplete();
-                }
+                this.processTask(task);
             }
             if (this.completedCount % chunkSize === 0 &&
                 performance.now() - frameStart >= this.options.maxFrameTimeMs) {
                 this.currentChunk += 1;
                 this.emitProgress();
-                setTimeout(() => this.runChunkSync(), 0);
+                setTimeout(() => {
+                    if (this.isRunning)
+                        this.runChunkSync();
+                }, 0);
                 return;
             }
         }
         this.currentChunk += 1;
         this.emitProgress();
-        this.isRunning = false;
-        if (this.onComplete)
-            this.onComplete();
+        this.finishIfDrained();
+    }
+    processTask(task) {
+        const result = this.processor(task);
+        if (result instanceof Promise) {
+            this.inFlightCount += 1;
+            result.then(() => this.onTaskComplete(), () => this.onTaskComplete());
+        }
+        else {
+            this.onTaskComplete();
+        }
     }
     onTaskComplete() {
+        this.inFlightCount = Math.max(0, this.inFlightCount - 1);
         this.completedCount += 1;
+        this.emitProgress();
+        this.finishIfDrained();
+    }
+    /** 큐와 비동기 작업이 모두 비었을 때만 완료 알림을 한 번 발생시킨다. */
+    finishIfDrained() {
+        if (!this.isRunning || this.tasks.length > 0 ||
+            this.inFlightCount > 0 || this.completionNotified) {
+            return;
+        }
+        this.isRunning = false;
+        this.idleHandle = null;
+        this.completionNotified = true;
+        if (this.onComplete)
+            this.onComplete();
     }
     emitProgress() {
         if (this.onProgress) {
@@ -213,8 +233,9 @@ export class TurnLifecycleManager {
         this.store = store;
         this.aiProcessor = new AITurnProcessor(store, 50);
         this.scheduler = new TurnScheduler(async (task) => {
-            const proc = new AITurnProcessor(this.store, 1);
-            await proc.processSingleOfficer(task.officerId);
+            // 태스크마다 새 processor를 만들면 결정이 임시 객체에 사라진다.
+            // 턴 단위 collector를 공유해야 executeAITurn이 실제 결과를 반환한다.
+            await this.aiProcessor.processSingleOfficer(task.officerId);
         }, { chunkSize: 50 });
     }
     async executeAITurn(onProgress) {

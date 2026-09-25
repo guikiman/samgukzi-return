@@ -18,3 +18,8 @@ Thumbs.db
 
 # 로컬 개인 설정 — 토큰 포함 가능성으로 원격 비추적
 opencode.json
+
+# Tauri 빌드 산출물 — 소스/배포 번들에 포함하지 않음
+tauri-assets/
+src-tauri/target/
+src-tauri/gen/

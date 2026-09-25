@@ -10,10 +10,10 @@
  * 순수 판정 함수 + 스토어 적용 분리로 테스트 용이성 확보.
  */
 
-import type { GameStore } from './game_store.js';
+import type { IGameStore } from './types.js';
 import { OfficerStatus } from './types.js';
 import { applyCaptiveRecruitPenalty, applyCaptiveReleaseDiplomacy } from './captive_recruit_penalty_system.js';
-import { isCaptive, getCapturedOriginFaction } from './captive_escape_system.js';
+import { isCaptive, getCapturedOriginFaction, releaseCaptive } from './captive_escape_system.js';
 import type { DiplomacyEngine } from './diplomacy_engine.js';
 
 export type CaptiveDecision = 'RECRUIT' | 'EXECUTE' | 'RELEASE';
@@ -80,7 +80,7 @@ function isAtWarWith(diplomacy: DiplomacyEngine | null | undefined, aId: string,
  * @param capturedOfficerIds processBattleSpoils가 반환한 포획 무장 ID 목록
  */
 export function processCaptives(
-    store: GameStore,
+    store: IGameStore,
     factionId: string,
     capturedOfficerIds: string[],
     diplomacy?: DiplomacyEngine,
@@ -165,6 +165,8 @@ export function processCaptives(
             messages.push(outcomes[outcomes.length - 1].message);
         } else {
             // 실패/기피: 재야 석방 (충성도 0 유지 — 플레이어 등용 대상으로 전환)
+            // 포로 마커를 해제해야 수용 기간/탈출 판정에서 즉시 제외된다. [131-145]
+            releaseCaptive(store, officer.id);
             const releaseMessages: string[] = [`🕊️ ${officer.name} 포로를 풀어주었다`];
             // 석방 외교 효과 [341-360]: 원소속 세력이 살아있으면 관계 개선 (전쟁 중이면 휴전 시도)
             if (diplomacy) {

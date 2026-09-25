@@ -10,8 +10,7 @@
  * 순수 함수형 계산 + 스토어 적용 분리로 테스트 용이성 확보.
  */
 
-import type { GameStore } from './game_store.js';
-import type { Officer, OfficerID, FactionID } from './types.js';
+import type { Officer, OfficerID, FactionID, IGameStore } from './types.js';
 import { OfficerStatus } from './types.js';
 import { imprisonCaptive, releaseCaptivesInCity } from './captive_escape_system.js';
 
@@ -58,7 +57,7 @@ export function judgeCapture(officer: Officer, roll: number): boolean {
  * @param rolls 포획 판정용 난수 (무장별 0~1, 테스트 주입용 — 없으면 Math.random)
  */
 export function processBattleSpoils(
-    store: GameStore,
+    store: IGameStore,
     attackerCityId: string,
     defenderCityId: string,
     rolls?: Array<{ officerId: OfficerID; roll: number }>,

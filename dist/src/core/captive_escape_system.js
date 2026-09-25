@@ -128,6 +128,12 @@ export function processMonthlyCaptiveEvents(store) {
     }
     return { escaped, messages };
 }
+/** 개별 포로 석방 — 포로 마커를 해제해 AI 처분 후 즉시 수용 기간에서 제외한다. [121-130] */
+export function releaseCaptive(store, officerId) {
+    if (!isCaptive(store, officerId))
+        return;
+    releaseMarker(store, officerId, RELEASE_EVENT);
+}
 /**
  * 구출(석방) — 수용 도시가 함락됐을 때 그 도시의 포로를 모두 석방한다.
  * 함락 소유권 변경 직후(플레이어 원정 승리 / AI 공성 승리)에 호출.
@@ -138,7 +144,7 @@ export function releaseCaptivesInCity(store, cityId) {
     for (const o of store.getOfficersByCity(cityId)) {
         if (!isCaptive(store, o.id))
             continue;
-        releaseMarker(store, o.id, RELEASE_EVENT);
+        releaseCaptive(store, o.id);
         released.push({
             officerId: o.id,
             officerName: o.name,

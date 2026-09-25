@@ -12,7 +12,7 @@
  * (Officer 인터페이스 변경 없이 세이브 호환성 유지)
  */
 
-import type { GameStore } from './game_store.js';
+import type { IGameStore } from './types.js';
 import { OfficerStatus } from './types.js';
 
 export const CAPTURE_MARKER_EVENT = 'CAPTURED';
@@ -30,7 +30,7 @@ const MAX_ESCAPE_CHANCE = 0.5;
 
 /** 마지막 포로 관련 마커 이벤트 조회 (자기-엣지 history 기준)
  *  CAPTURED 마커는 `CAPTURED@<세력ID>` 접미사를 가질 수 있으므로 startsWith로 매칭 */
-function lastCaptiveEvent(store: GameStore, officerId: string): string | null {
+function lastCaptiveEvent(store: IGameStore, officerId: string): string | null {
     const edge = store.getRelationships(officerId).find(e => e.source === officerId && e.target === officerId);
     if (!edge) return null;
     const markers = edge.history.filter(h =>
@@ -41,7 +41,7 @@ function lastCaptiveEvent(store: GameStore, officerId: string): string | null {
 }
 
 /** 포로 여부 판별 — FREE + 무소속 + 충성도 0 + 마지막 마커가 CAPTURED(@접미사 포함) */
-export function isCaptive(store: GameStore, officerId: string): boolean {
+export function isCaptive(store: IGameStore, officerId: string): boolean {
     const o = store.getOfficer(officerId);
     if (!o) return false;
     if (o.status !== OfficerStatus.FREE || o.factionId !== null || o.loyalty !== 0) return false;
@@ -53,7 +53,7 @@ export function isCaptive(store: GameStore, officerId: string): boolean {
  *  마커 이벤트는 `CAPTURED@<원소속세력ID>` 형태로 원소속 세력을 함께 기록한다
  *  (무소속 재야 출신이면 접미사 없음) — 등용 시 원소속 세력 원수화 페널티용 [24]
  */
-export function imprisonCaptive(store: GameStore, officerId: string, holdingCityId: string, originFactionId?: string | null): void {
+export function imprisonCaptive(store: IGameStore, officerId: string, holdingCityId: string, originFactionId?: string | null): void {
     const officer = store.getOfficer(officerId);
     if (!officer || !store.getCity(holdingCityId)) return;
 
@@ -85,7 +85,7 @@ export function imprisonCaptive(store: GameStore, officerId: string, holdingCity
  * 마지막 CAPTURED 마커의 `@<세력ID>` 접미사를 파싱한다.
  * 접미사가 없거나 세력이 이미 멸망(스토어 제거)했으면 null을 반환한다.
  */
-export function getCapturedOriginFaction(store: GameStore, officerId: string): string | null {
+export function getCapturedOriginFaction(store: IGameStore, officerId: string): string | null {
     const edge = store.getRelationships(officerId).find(e => e.source === officerId && e.target === officerId);
     if (!edge) return null;
     const markers = edge.history.filter(h => h.event.startsWith(CAPTURE_MARKER_EVENT));
@@ -99,7 +99,7 @@ export function getCapturedOriginFaction(store: GameStore, officerId: string): s
 }
 
 /** 마커 해제 — 탈출/석방 시점에 이력을 남긴다 */
-function releaseMarker(store: GameStore, officerId: string, event: string): void {
+function releaseMarker(store: IGameStore, officerId: string, event: string): void {
     const selfEdge = store.getRelationships(officerId).find(e => e.source === officerId && e.target === officerId);
     if (!selfEdge) return;
     const { year, month } = store.getGlobalState().time;
@@ -128,7 +128,7 @@ export interface CaptiveMonthlyReport {
  * 월간 포로 이벤트 — 자의 탈출 판정.
  * 엔진의 월간 주기(배신 판정 근처)에서 호출한다.
  */
-export function processMonthlyCaptiveEvents(store: GameStore): CaptiveMonthlyReport {
+export function processMonthlyCaptiveEvents(store: IGameStore): CaptiveMonthlyReport {
     const escaped: CaptiveEscapeRecord[] = [];
     const messages: string[] = [];
 
@@ -151,16 +151,22 @@ export function processMonthlyCaptiveEvents(store: GameStore): CaptiveMonthlyRep
     return { escaped, messages };
 }
 
+/** 개별 포로 석방 — 포로 마커를 해제해 AI 처분 후 즉시 수용 기간에서 제외한다. [121-130] */
+export function releaseCaptive(store: IGameStore, officerId: string): void {
+    if (!isCaptive(store, officerId)) return;
+    releaseMarker(store, officerId, RELEASE_EVENT);
+}
+
 /**
  * 구출(석방) — 수용 도시가 함락됐을 때 그 도시의 포로를 모두 석방한다.
  * 함락 소유권 변경 직후(플레이어 원정 승리 / AI 공성 승리)에 호출.
  * 석방된 포로는 그 도시에 재야로 남는다 (새 소유자가 등용 가능).
  */
-export function releaseCaptivesInCity(store: GameStore, cityId: string): CaptiveEscapeRecord[] {
+export function releaseCaptivesInCity(store: IGameStore, cityId: string): CaptiveEscapeRecord[] {
     const released: CaptiveEscapeRecord[] = [];
     for (const o of store.getOfficersByCity(cityId)) {
         if (!isCaptive(store, o.id)) continue;
-        releaseMarker(store, o.id, RELEASE_EVENT);
+        releaseCaptive(store, o.id);
         released.push({
             officerId: o.id,
             officerName: o.name,
@@ -172,7 +178,7 @@ export function releaseCaptivesInCity(store: GameStore, cityId: string): Captive
 }
 
 /** 특정 도시에 수용 중인 포로 목록 (UI 배지용) */
-export function getCaptivesInCity(store: GameStore, cityId: string): Array<{ id: string; name: string }> {
+export function getCaptivesInCity(store: IGameStore, cityId: string): Array<{ id: string; name: string }> {
     return store.getOfficersByCity(cityId)
         .filter(o => isCaptive(store, o.id))
         .map(o => ({ id: o.id, name: o.name }));

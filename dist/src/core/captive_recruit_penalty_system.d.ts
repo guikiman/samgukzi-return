@@ -10,7 +10,7 @@
  * 마커는 imprisonCaptive가 기록한 `CAPTURED@<세력ID>` self-edge 이력에서
  * 원소속 세력을 조회한다 (세이브 호환 — Officer 인터페이스 변경 없음).
  */
-import type { GameStore } from './game_store.js';
+import type { IGameStore } from './types.js';
 import { DiplomacyEngine } from './diplomacy_engine.js';
 /** 등용당한 무장에 대한 동료의 원수화 우호도 감소량 */
 export declare const NEMESIS_AFFINITY_DROP = -60;
@@ -36,7 +36,7 @@ export interface CaptiveRecruitPenaltyResult {
  * @param recruitedFactionId 등용시킨 세력 ID
  * @param recruitedOfficerId 등용당한 무장 ID
  */
-export declare function applyCaptiveRecruitPenalty(store: GameStore, diplomacy: DiplomacyEngine, recruitedFactionId: string, recruitedOfficerId: string): CaptiveRecruitPenaltyResult;
+export declare function applyCaptiveRecruitPenalty(store: IGameStore, diplomacy: DiplomacyEngine, recruitedFactionId: string, recruitedOfficerId: string): CaptiveRecruitPenaltyResult;
 /** 석방 시 우호도/외교 개선량 */
 export declare const RELEASE_GOODWILL_PEACE_CHANCE = 0.5;
 /** 석방 선포 결과 */
@@ -56,5 +56,5 @@ export interface CaptiveReleaseDiplomacyResult {
  *
  * processCaptives의 RELEASE 경로와 플레이어 수동 석방에서 호출한다.
  */
-export declare function applyCaptiveReleaseDiplomacy(store: GameStore, diplomacy: DiplomacyEngine, releaserFactionId: string, releasedOfficerId: string): CaptiveReleaseDiplomacyResult;
+export declare function applyCaptiveReleaseDiplomacy(store: IGameStore, diplomacy: DiplomacyEngine, releaserFactionId: string, releasedOfficerId: string): CaptiveReleaseDiplomacyResult;
 //# sourceMappingURL=captive_recruit_penalty_system.d.ts.map

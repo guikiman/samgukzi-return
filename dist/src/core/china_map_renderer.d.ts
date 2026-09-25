@@ -10,12 +10,22 @@ export interface MapCityView {
     name: string;
     x: number;
     y: number;
+    /** [지도][1:1] 이미지 속 성 아이콘 앵커 좌표 */
+    imageX?: number;
+    imageY?: number;
+    iconType?: 'CAPITAL' | 'CITY' | 'PASS' | 'BATTLEFIELD' | 'PORT';
+    /** 이미지 성 아이콘의 클릭 히트반경 — CSS/배킹스케일에 맞춰 확대한다. */
+    hitRadius?: number;
     ownerColor: string;
     /** 소속 세력 이름 (영토 라벨 표시용) */
     factionName?: string;
     isPlayer: boolean;
     garrison: number;
     isSelected?: boolean;
+    /** [49][461-480] 방문했거나 플레이어 세력이 소유한 도시인지 여부 */
+    isDiscovered?: boolean;
+    /** [49] 방문·소유 도시와 지리적으로 인접한 미방문 도시 — 발견 모드에서 실루엣으로 표시 */
+    isAdjacentToDiscovered?: boolean;
     /** [321-340] 지도 날씨 오버레이 — 도시 타일 상단 날씨 아이콘 (미지정 시 미표시) */
     weather?: string;
     /** [321-340] 수확 보정 (0.5~1.2). 1.0 미만이면 악천후 색상 표시 */
@@ -44,6 +54,11 @@ export declare class ChinaMapRenderer {
     private zoom;
     private hoveredCityId;
     private cities;
+    /** [49] 전체 도시 표시(초기) / 방문·소유 도시만 표시(발견 모드) */
+    private discoveredOnly;
+    /** 제공된 전국지도 배경 이미지 — 좌표계는 이미지 전체 영역을 기준으로 정규화한다. */
+    private readonly mapImage;
+    private mapImageReady;
     /** [321-340] 지도 날씨 오버레이 표시 여부 (기본 on) */
     private showWeatherOverlay;
     /** [1057][321-340] 계절 톤 — 봄/여름/가을/겨울에 따라 대륙 색조 보정 (null=보정 없음) */
@@ -62,16 +77,28 @@ export declare class ChinaMapRenderer {
     private borderLayerDirty;
     private static readonly CELL_SIZE;
     constructor(canvas: HTMLCanvasElement);
+    /** 지도 이미지 로딩 상태 — E2E/실행 화면에서 비동기 자산 readiness를 확인한다. */
+    isMapImageReady(): boolean;
     setView(view: Partial<ChinaMapView>): void;
+    /** 지도 카메라 상태를 도시 화면 전환 후 복원하기 위해 반환한다. */
+    getView(): ChinaMapView;
     setCities(cities: MapCityView[]): void;
+    /** [49] 초기에는 전체 도시, 이후 방문·소유 도시만 표시하는 필터. */
+    setDiscoveredOnly(discoveredOnly: boolean): void;
+    isCityVisible(city: MapCityView): boolean;
+    /** 현재 필터에서 실제로 표시되는 도시 ID — E2E/디버그 검증용. */
+    getVisibleCityIds(): string[];
+    private visibleCities;
     /**
      * 영토 격자 재계산 — 도시 위치 기반 보로노이 근사.
      * 대륙 윤곽 내부의 셀만 가장 가까운 도시의 소속 색으로 채운다.
      */
     private rebuildTerritory;
     setHoveredCity(id: string | null): void;
-    /** 맵 패딩을 포함한 정규화 → 픽셀 변환 */
+    private mapImageRect;
     private normToPixel;
+    private cityMapToPixel;
+    private drawMapImage;
     /** 화면 픽셀 → 정규화 좌표 (역변환) */
     screenToNorm(px: number, py: number): {
         x: number;
@@ -81,6 +108,11 @@ export declare class ChinaMapRenderer {
      * 픽셀 좌표 아래의 도시를 찾는다 (없으면 null)
      */
     cityAt(px: number, py: number): MapCityView | null;
+    /** 도시의 현재 캔버스 픽셀 좌표 — 실제 입력 E2E와 접근성 검증에서 사용한다. */
+    getCityScreenPosition(cityId: string): {
+        x: number;
+        y: number;
+    } | null;
     render(): void;
     /**
      * 영토 레이어 — 저해상도 오프스크린 캔버스에 셀 색을 칠한 뒤
@@ -122,10 +154,19 @@ export declare class ChinaMapRenderer {
     setSeasonTint(season: 'spring' | 'summer' | 'autumn' | 'winter' | null): void;
     /** 계절별 대륙 색 보정 — 태평성세/설한/황염의 계절감 표현 */
     private applySeasonTint;
+    /** [49] 미발견 도시의 흐림·실루엣 표현 — 소유 색/병력/날씨는 숨긴다. */
+    private drawUndiscoveredCity;
     private drawCity;
     pan(dx: number, dy: number): void;
     zoomAt(factor: number, centerPx: number, centerPy: number): void;
     private baseScale;
+    /** 테스트/디버그용: 현재 지도에 표시되는 세력 라벨 목록 */
+    getFactionLabels(): Array<{
+        name: string;
+        color: string;
+        cells: number;
+        isPlayer: boolean;
+    }>;
     /** 테스트/디버그용: 현재 영토 셀 통계 */
     getTerritoryStats(): {
         total: number;

@@ -55,17 +55,17 @@ async function gzipDecompress(bytes) {
     const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
     return new TextDecoder().decode(await new Response(stream).arrayBuffer());
 }
-// ============================================================
-// 3. ReplayShareManager
-// ============================================================
 export class ReplayShareManager {
     constructor() {
         /** 내부 저장은 항상 미니피케이션 형식 (URL 크기 최적화 단일 소스) */
         this.currentBattleLogs = [];
+        /** 커맨드 실행/undo/redo 로그 — 전투 리플레이와 세이브 델타 양쪽에서 재사용 */
+        this.currentCommandEvents = [];
     }
     /** 새로운 전투 시작 시 기존 로그 초기화 */
     clearLogs() {
         this.currentBattleLogs = [];
+        this.currentCommandEvents = [];
     }
     get logCount() {
         return this.currentBattleLogs.length;
@@ -81,6 +81,21 @@ export class ReplayShareManager {
     getLogs() {
         return this.currentBattleLogs.map(deminify);
     }
+    /** 전투·포로·외교 커맨드 이벤트를 리플레이에 기록한다. */
+    recordCommandEvent(event) {
+        this.currentCommandEvents.push({
+            ...event,
+            logMessages: [...event.logMessages],
+            captiveOutcomes: event.captiveOutcomes.map(outcome => ({ ...outcome })),
+        });
+    }
+    getCommandEvents() {
+        return this.currentCommandEvents.map(event => ({
+            ...event,
+            logMessages: [...event.logMessages],
+            captiveOutcomes: event.captiveOutcomes.map(outcome => ({ ...outcome })),
+        }));
+    }
     /**
      * [312] 100-kB 가압축 파이프라인
      * 1. 전체 전투 로그 → JSON 문자열
@@ -91,7 +106,11 @@ export class ReplayShareManager {
         try {
             if (this.currentBattleLogs.length === 0)
                 return '';
-            const jsonStr = JSON.stringify(this.currentBattleLogs);
+            // 커맨드 이벤트가 있으면 버전된 envelope를 사용해 구버전 전투 로그와도 호환한다.
+            const payload = this.currentCommandEvents.length > 0
+                ? { v: 2, battle: this.currentBattleLogs, commands: this.currentCommandEvents }
+                : this.currentBattleLogs;
+            const jsonStr = JSON.stringify(payload);
             const compressed = await gzipCompress(jsonStr);
             return base64UrlEncode(compressed);
         }
@@ -108,9 +127,13 @@ export class ReplayShareManager {
             const bytes = base64UrlDecode(compressedStr);
             const jsonStr = await gzipDecompress(bytes);
             const raw = JSON.parse(jsonStr);
-            if (!Array.isArray(raw))
+            if (Array.isArray(raw))
+                return raw.map(deminify);
+            if (!raw || raw.v !== 2 || !Array.isArray(raw.battle))
                 return [];
-            return raw.map(deminify);
+            this.currentBattleLogs = raw.battle;
+            this.currentCommandEvents = Array.isArray(raw.commands) ? raw.commands : [];
+            return this.currentBattleLogs.map(deminify);
         }
         catch {
             return [];

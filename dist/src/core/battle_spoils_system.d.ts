@@ -9,8 +9,7 @@
  *
  * 순수 함수형 계산 + 스토어 적용 분리로 테스트 용이성 확보.
  */
-import type { GameStore } from './game_store.js';
-import type { Officer, OfficerID } from './types.js';
+import type { Officer, OfficerID, IGameStore } from './types.js';
 /** 포획 확률 기본값 (무장 1명당) */
 export declare const BASE_CAPTURE_CHANCE = 0.35;
 /** 지력이 높으면 도주 확률 가산 (지력 100 → +25%p 감소) */
@@ -47,7 +46,7 @@ export declare function judgeCapture(officer: Officer, roll: number): boolean;
  * @param defenderCityId 함락된 수비 도시
  * @param rolls 포획 판정용 난수 (무장별 0~1, 테스트 주입용 — 없으면 Math.random)
  */
-export declare function processBattleSpoils(store: GameStore, attackerCityId: string, defenderCityId: string, rolls?: Array<{
+export declare function processBattleSpoils(store: IGameStore, attackerCityId: string, defenderCityId: string, rolls?: Array<{
     officerId: OfficerID;
     roll: number;
 }>): SpoilsResult;

@@ -14,9 +14,10 @@ export var FactionRelation;
     FactionRelation["SURRENDERED"] = "surrendered";
 })(FactionRelation || (FactionRelation = {}));
 export class DiplomacyEngine {
-    constructor() {
+    constructor(stateStore) {
         this.relations = new Map();
         this.factionData = new Map();
+        this.stateStore = stateStore;
     }
     key(a, b) {
         // 구분자 '|' — 세력 ID 자체에 '_'가 포함되므로 split 안전성 확보
@@ -26,7 +27,29 @@ export class DiplomacyEngine {
         return this.relations.get(this.key(a, b)) ?? FactionRelation.NEUTRAL;
     }
     setRelation(a, b, rel) {
-        this.relations.set(this.key(a, b), rel);
+        const key = this.key(a, b);
+        if (this.relations.get(key) === rel)
+            return;
+        this.relations.set(key, rel);
+        this.syncFactionTreaty(a, b, rel);
+        this.syncFactionTreaty(b, a, rel);
+    }
+    /** 엔진 관계를 도메인 세력의 양방향 treaty로 투영한다. [341-360] */
+    syncFactionTreaty(a, b, relation) {
+        const faction = this.stateStore?.getFaction(a);
+        if (!faction || !this.stateStore)
+            return;
+        const treaty = relation === FactionRelation.WAR
+            ? 'WAR'
+            : relation === FactionRelation.ALLIANCE
+                ? 'ALLIANCE'
+                : relation === FactionRelation.SURRENDERED ? 'VASSAL' : 'CEASEFIRE';
+        this.stateStore.updateFaction(a, {
+            diplomacy: {
+                ...faction.diplomacy,
+                [b]: { relation: relation === FactionRelation.ALLIANCE ? 50 : relation === FactionRelation.WAR ? -100 : 0, treaty, duration: 1 },
+            },
+        });
     }
     setFactionData(factionId, data) {
         this.factionData.set(factionId, data);

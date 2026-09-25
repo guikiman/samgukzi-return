@@ -220,6 +220,178 @@ async function main() {
         }
         if (!booted) throw new Error('engine not booted in 30s');
 
+        // 실제 시작 화면 흐름 — 게임 시작 → 시나리오 → 뒤로 → 세력 → 뒤로 → 재선택 [9]
+        const waitForDisplay = async (selector, display) => {
+            for (let i = 0; i < 40; i++) {
+                const value = await cdp.evaluate(`document.getElementById('${selector}').style.display === '${display}'`);
+                if (value.value) return true;
+                await delay(100);
+            }
+            return false;
+        };
+        await cdp.evaluate("document.getElementById('btn-title-new').click()");
+        const scenarioFlowOpen = await waitForDisplay('scenario-screen', 'flex');
+        await cdp.evaluate("document.getElementById('btn-scenario-back').click()");
+        const titleBackVisible = await cdp.evaluate("document.getElementById('title-screen').style.display !== 'none'");
+        await cdp.evaluate("document.getElementById('btn-title-new').click()");
+        await waitForDisplay('scenario-screen', 'flex');
+        await cdp.evaluate("document.querySelector('.scenario-card[data-id=\\\"07\\\"]').click()");
+        const factionFlowOpen = await waitForDisplay('faction-screen', 'flex');
+        await cdp.evaluate("document.getElementById('btn-faction-back').click()");
+        const scenarioBackAgain = await waitForDisplay('scenario-screen', 'flex');
+        await cdp.evaluate("document.querySelector('.scenario-card[data-id=\\\"07\\\"]').click()");
+        await waitForDisplay('faction-screen', 'flex');
+        await cdp.evaluate("document.querySelector('.faction-card[data-idx=\\\"1\\\"]').click()");
+
+        // 07 삼국鼎峙 실제 플레이 프로브 — 외부 능력치·도시 프로필·관계 JSON·연의전 [5][269][300]
+        let scenario07Started = false;
+        for (let i = 0; i < 60; i++) {
+            const gs = await cdp.evalJson(
+                "(function(){var s=window.__game.getStore().getGlobalState();return {pf:s.playerFactionId,t:s.turnCount,y:s.time.year};})()");
+            if (gs.pf === 'fac_1' && gs.t === 0 && gs.y === 220) { scenario07Started = true; break; }
+            await delay(500);
+        }
+        if (!scenario07Started) throw new Error('scenario 07 start failed');
+        const flowProbe = { scenarioFlowOpen, titleBackVisible: titleBackVisible.value, factionFlowOpen, scenarioBackAgain };
+        await cdp.evaluate("document.getElementById('btn-next-month').click()");
+        for (let i = 0; i < 75; i++) {
+            const r = await cdp.evaluate("!document.getElementById('btn-next-month').disabled");
+            if (r.value) break;
+            await delay(200);
+        }
+        const scenario07Probe = await cdp.evalJson(
+            "(function(){var g=window.__game,s=g.getStore(),e=g.getEngine();" +
+            "var officers=s.getAllOfficers(),cities=s.getAllCities();" +
+            "return {cityNames:cities.map(function(c){return c.name;})," +
+            "qingdu:cities.find(function(c){return c.name==='청두';}).developmentStats.farming," +
+            "caoPi:officers.find(function(o){return o.id==='cao_pi';}).stats.intelligence," +
+            "relationships:Object.keys(s.getState().relationships).length," +
+            "eventProcessed:e.eventEngine.queueMgr.isProcessed('ev_07_jiangwan_peace')," +
+            "eventText:e.chronicle.list().map(function(x){return x.text;}).join('|')};})()");
+
+        // AI BattleCommand 직접 실행 — 포로 처분 로그·연대기까지 브라우저에서 검증 [121-130][131-145]
+        const captiveBattleProbe = await cdp.evalJson("window.__game.runTestBattle()");
+        // 월간 보고서 UI에도 같은 포로 처분 결과가 표시되는지 확인 [121-130][131-145]
+        const monthlyReportProbe = await cdp.evalJson(
+            "(function(){document.getElementById('btn-report').click();" +
+            "var panel=document.getElementById('monthly-report-panel');var text=document.getElementById('mr-ported').textContent;" +
+            "var visible=panel.style.display==='block';document.getElementById('mr-close').click();" +
+            "return {visible:visible,hasCaptive:text.includes('포로')};})()"
+        );
+        const cityChronicleProbe = await cdp.evalJson(
+            "(function(){try{var g=window.__game;g.openCity(" + JSON.stringify(captiveBattleProbe.targetCityId) + ");" +
+            "var text=document.getElementById('cdp-captive-history').textContent;g.closeCity();" +
+            "return {hasHistory:text.includes('포로')};}catch(e){return {hasHistory:false,error:String(e)};}})()"
+        );
+        const chronicleFilterProbe = await cdp.evalJson(
+            "(function(){document.getElementById('tab-chronicle').click();" +
+            "var content=document.getElementById('chronicle-content');" +
+            "var result={factionFilters:content.querySelectorAll('.ch-faction-filter').length," +
+            "hasCapture:content.textContent.includes('포로')};" +
+            "document.getElementById('tab-log').click();return result;})()"
+        );
+
+        // 중국 전도 도시 표시: 초기 전체 도시 → 방문·소유 도시 필터 전환 [49]
+        const mapVisibilityProbe = await cdp.evalJson(
+            "(function(){var g=window.__game,b=document.getElementById('btn-map-visibility');" +
+            "var initial={mode:g.getCityVisibilityMode(),visible:g.getVisibleCityIds().length,all:g.getWorldCities().length,text:b.textContent};" +
+            "b.click();var discovered={mode:g.getCityVisibilityMode(),visible:g.getVisibleCityIds().length,all:g.getWorldCities().length,text:b.textContent,factions:g.getFactionLabels().map(function(f){return f.name;})};" +
+            "b.click();return {initial:initial,discovered:discovered,restored:g.getCityVisibilityMode()};})()");
+
+        // 지도 스크린샷 회귀 프로브 — 실제 캔버스 픽셀이 캡처되고 정적인 지도에서 안정적인지 확인
+        const mapScreenshotProbe = await cdp.evalJson(
+            "(async function(){var c=document.getElementById('game-canvas'),ctx=c.getContext('2d');" +
+            "function sample(){var x=100,y=100,w=Math.min(400,c.width-x),h=Math.min(300,c.height-y);" +
+            "var d=ctx.getImageData(x,y,w,h).data,hash=2166136261;" +
+            "for(var i=0;i<d.length;i+=997){hash^=d[i];hash=Math.imul(hash,16777619);}return hash>>>0;}" +
+            "var first=sample(),png=c.toDataURL('image/png'),stable=false,previous=first;" +
+            "for(var frame=0;frame<12;frame++){await new Promise(function(r){requestAnimationFrame(function(){r();});});var current=sample();if(current===previous){stable=true;break;}previous=current;}" +
+            "var second=previous,corner=Array.from(ctx.getImageData(2,2,1,1).data);" +
+            "var imageRequests=performance.getEntriesByType('resource').map(function(e){return e.name;}).filter(function(u){return /\\.(png|jpe?g|webp|gif|svg)(\\?|$)/i.test(u);});" +
+            "return {width:c.width,height:c.height,pngLength:png.length,hashStable:stable,corner:corner,imageRequests:imageRequests,mapImageReady:window.__game.getChinaMap().isMapImageReady()};})()");
+
+        // 중국 전도 실제 캔버스 클릭 — 모든 도시가 pointerup에서 선택되는지 검증 [461-480]
+        const mapClickPoints = await cdp.evalJson(
+            "(function(){var g=window.__game,s=g.getStore(),c=document.getElementById('game-canvas'),r=c.getBoundingClientRect();" +
+            "document.getElementById('tutorial-panel').style.display='none';" +
+            "return s.getAllCities().map(function(city){var p=g.getCityScreenPosition(city.id);" +
+            "return {id:city.id,name:city.name,x:r.left+p.x*r.width/c.width,y:r.top+p.y*r.height/c.height};});})()");
+        const mapClickResults = [];
+        for (const point of mapClickPoints) {
+            await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1 });
+            await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1 });
+            await delay(40);
+            const selected = await cdp.evaluate("document.getElementById('cdp-city-name').textContent");
+            mapClickResults.push({ id: point.id, expected: point.name, actual: selected.value });
+            // 도시 진입 전체 화면을 닫아 다음 도시 좌표도 지도에서 계속 검증한다.
+            await cdp.evaluate("document.getElementById('cdp-close').click()");
+        }
+        const mapClickProbe = { points: mapClickPoints.length, results: mapClickResults, coordinates: mapClickPoints };
+
+        // 도시 시설·무장 선택형 대화와 이전/다음 탐색 프로브 [24][49][441-460]
+        const dialogueProbe = await cdp.evalJson(
+            "(function(){var g=window.__game,s=g.getStore();" +
+            "document.getElementById('tutorial-panel').style.display='none';" +
+            "var city=s.getAllCities()[0];g.openCity(city.id);" +
+            "var scene=document.getElementById('city-scene-canvas'),sr=scene.getBoundingClientRect();" +
+            "scene.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:sr.left+sr.width/2,clientY:sr.top+sr.height*0.45}));" +
+            "var buildingDetail=document.getElementById('city-building-detail').textContent;" +
+            "var facilities=document.querySelectorAll('.cdp-facility');" +
+            "var facilityNames=Array.prototype.map.call(facilities,function(el){return el.textContent.trim();});" +
+            "var facility=facilities[0];if(facility)facility.click();" +
+            "var facilityOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
+            "var facilityTitle=document.getElementById('dialogue-title').textContent;" +
+            "document.getElementById('dialogue-close').click();" +
+            "var officer=document.querySelector('.cdp-officer-clickable');if(officer)officer.click();" +
+            "var officerOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
+            "var officerTitle=document.getElementById('dialogue-title').textContent;" +
+            "var choices=document.querySelectorAll('#dialogue-choices .dialogue-choice').length;" +
+            "var giftBeforeGold=g.getStore().getFaction(g.getStore().getGlobalState().playerFactionId).gold;" +
+            "var giftBeforeAffinity=document.querySelector('.od-affinity-row b')?.textContent||'';" +
+            "var giftItem=document.querySelector('[data-gift-item]');" +
+            "var giftGold=document.querySelector('[data-gift-gold]');" +
+            "if(giftItem&&giftGold){giftItem.value='JADE';giftItem.dispatchEvent(new Event('input',{bubbles:true}));giftGold.value='500';giftGold.dispatchEvent(new Event('input',{bubbles:true}));}" +
+            "var giftPreview=document.querySelector('[data-gift-preview]')?.textContent||'';" +
+            "var giftSend=document.querySelector('[data-gift-send]');if(giftSend)giftSend.click();" +
+            "var giftResult=document.getElementById('dialogue-result').textContent;" +
+            "var giftAfterGold=g.getStore().getFaction(g.getStore().getGlobalState().playerFactionId).gold;" +
+            "var giftAfterAffinity=document.querySelector('.od-affinity-row b')?.textContent||'';" +
+            "var page=document.getElementById('dialogue-page').textContent;" +
+            "document.getElementById('dialogue-next').click();var nextPage=document.getElementById('dialogue-page').textContent;" +
+            "document.getElementById('dialogue-prev').click();var prevPage=document.getElementById('dialogue-page').textContent;" +
+            "document.getElementById('dialogue-close').click();" +
+            "var scene=document.getElementById('city-scene-canvas'),chips=document.querySelectorAll('#city-scene-summary .city-building-chip');" +
+            "return {facilityOpen:facilityOpen,facilityTitle:facilityTitle,facilityCount:facilities.length,facilityNames:facilityNames,officerOpen:officerOpen," +
+            "officerTitle:officerTitle,choices:choices,giftBeforeGold:giftBeforeGold,giftBeforeAffinity:giftBeforeAffinity,giftPreview:giftPreview,giftResult:giftResult,giftAfterGold:giftAfterGold,giftAfterAffinity:giftAfterAffinity,page:page,nextPage:nextPage,prevPage:prevPage,citySceneWidth:scene.width,citySceneHeight:scene.height,buildingChips:chips.length,buildingDetail:buildingDetail,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode')};})()");
+
+        // 도시 건물 투자·운영 상태와 지도 카메라 보존 [49][D32]
+        const buildingProbe = await cdp.evalJson(
+            "(function(){var g=window.__game,s=g.getStore(),gs=s.getGlobalState();" +
+            "var city=s.getAllCities().find(function(c){return c.ownerId===gs.playerFactionId;});" +
+            "g.openCity(city.id);var before=g.getCitySceneBuildings();g.selectCitySceneBuildingByIndex(0);" +
+            "var selected=document.getElementById('city-building-detail').textContent;g.investSelectedCityBuilding();" +
+            "var after=g.getCitySceneBuildings();var state=g.getCityBuildingStates()[city.id]||{};" +
+            "var view=g.getMapView();g.closeCity();return {count:before.length,selected:selected,invested:after[0].investment>before[0].investment," +
+            "stateCount:Object.keys(state).length,view:view};})()");
+
+        // 내정 자동 배정: 플레이어 도시에서 능력치 기반 임무를 등록하는지 확인 [49][76-85]
+        const domesticProbe = await cdp.evalJson(
+            "(function(){var g=window.__game,s=g.getStore(),gs=s.getGlobalState(),e=g.getEngine();" +
+            "var city=s.getAllCities().find(function(c){return c.ownerId===gs.playerFactionId;});" +
+            "g.openCity(city.id);document.querySelector('[data-action=auto-domestic]').click();" +
+            "return {pending:e.domesticScheduler.pendingCount,result:document.getElementById('cdp-action-result').textContent};})()");
+
+        // 시나리오별 검증 후 기존 05 회귀 흐름을 위해 페이지 초기화
+        await cdp.call('Page.reload');
+        await delay(1200);
+        booted = false;
+        for (let i = 0; i < 60; i++) {
+            const r = await cdp.evaluate("!!(window.__game && window.__game.getEngine && window.__game.getEngine())");
+            if (r.value) { booted = true; break; }
+            await delay(500);
+        }
+        if (!booted) throw new Error('engine not rebooted after scenario 07 probe');
+
         // 시나리오 시작 (fac_0 = 조조)
         await cdp.evaluate("window.__game.startScenario('05', 0)");
         let started = false;
@@ -273,15 +445,52 @@ async function main() {
             "out.cbActive=!!document.querySelector('#a11y-content [data-cb=\"deuteranopia\"].active');" +
             "document.getElementById('a11y-close').click();return out;})()");
 
-        // (c) 세이브 스냅샷 — 슬롯 저장 시 meta.uiSettings 동반 여부
+        // (c) 키보드 단축키 — H/Escape/P [461-480]
+        const keyboardProbe = await cdp.evalJson(
+            "(function(){var out={};var tutorial=document.getElementById('tutorial-panel');tutorial.style.display='none';" +
+            "document.dispatchEvent(new KeyboardEvent('keydown',{key:'h',bubbles:true}));" +
+            "out.helpOpen=document.getElementById('tutorial-panel').style.display==='block';" +
+            "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));" +
+            "out.helpClosed=document.getElementById('tutorial-panel').style.display==='none';" +
+            "var p=document.getElementById('btn-pause');" +
+            "document.dispatchEvent(new KeyboardEvent('keydown',{key:'p',bubbles:true}));" +
+            "out.paused=p.textContent==='재개';" +
+            "document.dispatchEvent(new KeyboardEvent('keydown',{key:'p',bubbles:true}));" +
+            "out.resumed=p.textContent==='일시정지';return out;})()");
+
+        // (d) 모바일 반응형 + 실제 터치 이벤트 [461-480]
+        await cdp.call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+        const touchPoint = await cdp.evalJson(
+            "(function(){var r=document.getElementById('game-canvas').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()");
+        await cdp.call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...touchPoint, id: 1 }] });
+        await cdp.call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const mobileProbe = await cdp.evalJson(
+            "(function(){var c=document.getElementById('game-canvas'),controls=document.getElementById('controls');" +
+            "return {touchAction:getComputedStyle(c).touchAction,canvasWidth:c.getBoundingClientRect().width," +
+            "controlsScrollable:controls.scrollWidth>=controls.clientWidth,viewport:innerWidth};})()");
+        await cdp.call('Emulation.clearDeviceMetricsOverride');
+
+        // (e) 세이브 스냅샷 — 슬롯 저장 시 meta.uiSettings 동반 여부
         const saveLoadProbe = await cdp.evalJson(
-            "(function(){var out={};" +
+            "(async function(){var out={};var g=window.__game,s=g.getStore();" +
+            "var c=document.getElementById('game-canvas'),r=c.getBoundingClientRect(),city=s.getAllCities()[0],p=g.getCityScreenPosition(city.id);" +
+            "var x=r.left+p.x*r.width/c.width,y=r.top+p.y*r.height/c.height;" +
+            "c.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,clientX:x,clientY:y,pointerId:71,pointerType:'mouse',button:0,buttons:1}));" +
+            "c.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,clientX:x,clientY:y,pointerId:71,pointerType:'mouse',button:0,buttons:0}));" +
+            "out.visitedAfterClick=(s.getGlobalState().visitedCityIds||[]).indexOf(city.id)>=0;" +
+            "var playerCity=s.getAllCities().find(function(c){return c.ownerId===s.getGlobalState().playerFactionId;});" +
+            "g.openCity(playerCity.id);g.selectCitySceneBuildingByIndex(0);g.investSelectedCityBuilding();g.closeCity();" +
             "document.getElementById('btn-slots').click();" +
             "var slot=document.querySelector('.ss-slot[data-slot=\"1\"]');" +
             "if(!slot) return {err:'no slot'};slot.click();" +
             "out.saved=!!localStorage.getItem('sik_re_slot_1');" +
-            "var meta=JSON.parse(localStorage.getItem('sik_re_slot_1')||'{}');" +
-            "out.uiInSave=!!(meta.meta&&meta.meta.uiSettings);" +
+            "var payload=JSON.parse(localStorage.getItem('sik_re_slot_1')||'{}');" +
+            "out.uiInSave=!!(payload.meta&&payload.meta.uiSettings);" +
+            "var mod=await import('./dist/src/core/save_compressor.js');" +
+            "var decoded=JSON.parse(new mod.SaveCompressor().decompress(payload.data));" +
+            "out.visitedInCompressedSave=(decoded.globalState.visitedCityIds||[]).indexOf(city.id)>=0;" +
+            "var payload2=JSON.parse(localStorage.getItem('sik_re_slot_1')||'{}');var decoded2=JSON.parse(new mod.SaveCompressor().decompress(payload2.data));" +
+            "out.buildingStateInCompressedSave=!!(decoded2.globalState.cityBuildingStates&&decoded2.globalState.cityBuildingStates[playerCity.id]);" +
             "document.getElementById('ss-close').click();return out;})()");
 
         const forced = await cdp.evalJson(
@@ -339,14 +548,102 @@ async function main() {
             "units:units,finished:viewer.isFinished,urlLen:('?replay='+encoded).length};" +
             "})()");
 
-        const result = { progress, graphProbe, a11yProbe, saveLoadProbe, replayProbe, forced, ending, consoleErrors: consoleErrors.slice(0, 10), notFound: notFound.slice(0, 5), pageErrors: pageErrors.slice(0, 10) };
+        const result = { flowProbe, scenario07Probe, captiveBattleProbe, monthlyReportProbe, cityChronicleProbe, chronicleFilterProbe, mapVisibilityProbe, mapScreenshotProbe, mapClickProbe, dialogueProbe, buildingProbe, domesticProbe, progress, graphProbe, a11yProbe, keyboardProbe, mobileProbe, saveLoadProbe, replayProbe, forced, ending, consoleErrors: consoleErrors.slice(0, 10), notFound: notFound.slice(0, 5), pageErrors: pageErrors.slice(0, 10) };
         console.log(JSON.stringify(result, null, 2));
 
         const resource404 = consoleErrors.filter((e) => e.includes('Failed to load resource'));
         const otherConsole = consoleErrors.filter((e) => !e.includes('Failed to load resource'));
         const onlyFavicon404 = notFound.length === 0 || notFound.every((u) => u.includes('favicon') || u.endsWith('.ico'));
+        const regressionChecks = {
+            flow: flowProbe.scenarioFlowOpen && flowProbe.titleBackVisible && flowProbe.factionFlowOpen && flowProbe.scenarioBackAgain,
+            scenario: scenario07Probe.cityNames.includes('청두') && scenario07Probe.cityNames.length === 6 && scenario07Probe.qingdu === 70 && scenario07Probe.caoPi === 76 && scenario07Probe.relationships === 8 && scenario07Probe.eventProcessed && scenario07Probe.eventText.includes('강완의 안정'),
+            captiveBattle: captiveBattleProbe.success === true && captiveBattleProbe.commandType === 'BATTLE' && captiveBattleProbe.captiveOutcomes.length > 0 && captiveBattleProbe.logMessages.some(message => message.includes('포획')) && captiveBattleProbe.chronicleText.some(text => text.includes('포로')),
+            monthlyReport: monthlyReportProbe.visible === true && monthlyReportProbe.hasCaptive === true,
+            cityChronicle: cityChronicleProbe.hasHistory === true,
+            chronicleFilter: chronicleFilterProbe.factionFilters > 0 && chronicleFilterProbe.hasCapture === true,
+            map: mapClickProbe.points === 6 && mapVisibilityProbe.initial.mode === 'all' && mapVisibilityProbe.initial.visible === mapVisibilityProbe.initial.all && mapVisibilityProbe.discovered.mode === 'discovered' && mapVisibilityProbe.discovered.visible > 0 && mapVisibilityProbe.discovered.visible < mapVisibilityProbe.discovered.all && mapVisibilityProbe.discovered.factions.length >= 3 && mapVisibilityProbe.restored === 'all',
+            screenshot: mapScreenshotProbe.width > 0 && mapScreenshotProbe.height > 0 && mapScreenshotProbe.pngLength > 1000 && mapScreenshotProbe.hashStable && mapScreenshotProbe.corner.length === 4 && mapScreenshotProbe.imageRequests.some(url => url.includes('assets/china-national-map.png')) && mapScreenshotProbe.imageRequests.every(url => url.includes('assets/china-national-map.png')),
+            mapClicks: mapClickProbe.results.every(item => item.actual === item.expected),
+            dialogue: dialogueProbe.facilityOpen && dialogueProbe.facilityCount === 8 && dialogueProbe.facilityNames.some(name => name.includes('훈련장')) && dialogueProbe.officerOpen && dialogueProbe.choices >= 2 && dialogueProbe.giftPreview.includes('옥비') && dialogueProbe.giftPreview.includes('희귀') && dialogueProbe.giftPreview.includes('+14') && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500 && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity && dialogueProbe.page === '1 / 3' && dialogueProbe.nextPage === '2 / 3' && dialogueProbe.prevPage === '1 / 3',
+            buildings: buildingProbe.count >= 5 && buildingProbe.selected.includes('누적 투자') && buildingProbe.invested && buildingProbe.stateCount >= 1,
+            domestic: domesticProbe.pending >= 1 && domesticProbe.result.includes('자동 내정'),
+            ui: graphProbe.open === 'block' && graphProbe.closed && (graphProbe.rows > 0 || graphProbe.hint === true) && a11yProbe.open === 'block' && a11yProbe.cbActive && keyboardProbe.helpOpen && keyboardProbe.helpClosed && keyboardProbe.paused && keyboardProbe.resumed && mobileProbe.touchAction === 'none' && mobileProbe.canvasWidth > 0 && mobileProbe.viewport === 390,
+            persistence: saveLoadProbe.saved && saveLoadProbe.uiInSave && saveLoadProbe.visitedAfterClick && saveLoadProbe.visitedInCompressedSave && saveLoadProbe.buildingStateInCompressedSave,
+            replay: replayProbe.encoded && replayProbe.roundTrip && replayProbe.units === 2 && replayProbe.finished && replayProbe.urlLen < 100 * 1024,
+            ending: ending.display === 'flex' && ending.narratives >= 1,
+        };
+        console.log('REGRESSION_CHECKS:', JSON.stringify(regressionChecks));
+        const cityChecks = {
+            sceneSize: dialogueProbe.citySceneWidth === 480 && dialogueProbe.citySceneHeight === 240,
+            buildingChips: dialogueProbe.buildingChips >= 4,
+            buildingDetail: dialogueProbe.buildingDetail.includes('· Lv.'),
+            entryMode: dialogueProbe.entryMode === true,
+        };
+        console.log('CITY_CHECKS:', JSON.stringify(cityChecks));
         const ok = pageErrors.length === 0
             && otherConsole.length === 0
+            && flowProbe.scenarioFlowOpen === true
+            && flowProbe.titleBackVisible === true
+            && flowProbe.factionFlowOpen === true
+            && flowProbe.scenarioBackAgain === true
+            && scenario07Probe.cityNames.includes('청두')
+            && scenario07Probe.cityNames.length === 6
+            && scenario07Probe.qingdu === 70
+            && scenario07Probe.caoPi === 76
+            && scenario07Probe.relationships === 8
+            && scenario07Probe.eventProcessed === true
+            && scenario07Probe.eventText.includes('강완의 안정')
+            && captiveBattleProbe.success === true
+            && captiveBattleProbe.commandType === 'BATTLE'
+            && captiveBattleProbe.captiveOutcomes.length > 0
+            && captiveBattleProbe.logMessages.some(message => message.includes('포획'))
+            && captiveBattleProbe.chronicleText.some(text => text.includes('포로'))
+            && monthlyReportProbe.visible === true
+            && monthlyReportProbe.hasCaptive === true
+            && cityChronicleProbe.hasHistory === true
+            && chronicleFilterProbe.factionFilters > 0
+            && chronicleFilterProbe.hasCapture === true
+            && mapClickProbe.points === 6
+            && mapVisibilityProbe.initial.mode === 'all'
+            && mapVisibilityProbe.initial.visible === mapVisibilityProbe.initial.all
+            && mapVisibilityProbe.discovered.mode === 'discovered'
+            && mapVisibilityProbe.discovered.visible > 0
+            && mapVisibilityProbe.discovered.visible < mapVisibilityProbe.discovered.all
+            && mapVisibilityProbe.discovered.factions.length >= 3
+            && mapVisibilityProbe.restored === 'all'
+            && mapScreenshotProbe.width > 0
+            && mapScreenshotProbe.height > 0
+            && mapScreenshotProbe.pngLength > 1000
+            && mapScreenshotProbe.hashStable === true
+            && mapScreenshotProbe.corner.length === 4
+            && mapScreenshotProbe.mapImageReady
+            && mapScreenshotProbe.imageRequests.some(url => url.includes('assets/china-national-map.png'))
+            && mapScreenshotProbe.imageRequests.every(url => url.includes('assets/china-national-map.png'))
+            && mapClickProbe.results.every(item => item.actual === item.expected)
+            && dialogueProbe.facilityOpen === true
+            && dialogueProbe.facilityCount === 8
+            && dialogueProbe.facilityNames.some(name => name.includes('훈련장'))
+            && dialogueProbe.officerOpen === true
+            && dialogueProbe.choices >= 2
+            && dialogueProbe.giftPreview.includes('옥비')
+            && dialogueProbe.giftPreview.includes('희귀')
+            && dialogueProbe.giftPreview.includes('+14')
+            && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500
+            && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity
+            && dialogueProbe.page === '1 / 3'
+            && dialogueProbe.nextPage === '2 / 3'
+            && dialogueProbe.prevPage === '1 / 3'
+            && dialogueProbe.citySceneWidth === 480
+            && dialogueProbe.citySceneHeight === 240
+            && dialogueProbe.buildingChips >= 4
+            && dialogueProbe.buildingDetail.includes('· Lv.')
+            && dialogueProbe.entryMode === true
+            && buildingProbe.count >= 5
+            && buildingProbe.selected.includes('누적 투자')
+            && buildingProbe.invested
+            && buildingProbe.stateCount >= 1
+            && domesticProbe.pending >= 1
+            && domesticProbe.result.includes('자동 내정')
             && resource404.length === notFound.length
             && onlyFavicon404
             && progress.length === 4
@@ -358,8 +655,18 @@ async function main() {
             && (graphProbe.rows > 0 || graphProbe.hint === true)
             && a11yProbe.open === 'block'
             && a11yProbe.cbActive === true
+            && keyboardProbe.helpOpen === true
+            && keyboardProbe.helpClosed === true
+            && keyboardProbe.paused === true
+            && keyboardProbe.resumed === true
+            && mobileProbe.touchAction === 'none'
+            && mobileProbe.canvasWidth > 0
+            && mobileProbe.viewport === 390
             && saveLoadProbe.saved === true
             && saveLoadProbe.uiInSave === true
+            && saveLoadProbe.visitedAfterClick === true
+            && saveLoadProbe.visitedInCompressedSave === true
+            && saveLoadProbe.buildingStateInCompressedSave === true
             // [312] 리플레이 압축→재생 라운드트립
             && replayProbe.encoded === true
             && replayProbe.roundTrip === true

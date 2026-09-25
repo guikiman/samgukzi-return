@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildWorld, getKnownOfficerName, parseStartDate } from '../src/core/scenario_system';
+import { buildWorld, getKnownOfficerName, parseStartDate, CITY_MAP_COORDS, getScenarioRelationships } from '../src/core/scenario_system';
+import scenarioIndex from '../src/data/scenarios/index.json';
 import type { ScenarioData } from '../src/core/scenario_system';
 
 function makeScenario(id: string, factions: Array<{ name: string; capital: string; leader_id: string }>): ScenarioData {
@@ -84,5 +85,26 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
     it('getKnownOfficerName이 보조 무장 이름표도 처리한다', () => {
         expect(getKnownOfficerName('li_jue_esc')).toBe('이각');
         expect(getKnownOfficerName('guo_si_esc')).toBe('곽사');
+    });
+
+    it('07 삼국鼎峙 시나리오는 새 도시·무장·초기 인맥을 제공한다', () => {
+        const scenario = (scenarioIndex as ScenarioData[]).find(s => s.id === '07')!;
+        const world = buildWorld(scenario, 1);
+        expect(world.cities.map(c => c.name)).toEqual(['낙양', '청두', '부경', '항양', '강릉', '동정']);
+        expect(world.factions.map(f => f.cities.length)).toEqual([2, 2, 2]);
+        expect(CITY_MAP_COORDS['청두']).toEqual({ x: 0.30, y: 0.57 });
+        expect(CITY_MAP_COORDS['부경']).toEqual({ x: 0.77, y: 0.62 });
+        expect(world.officers.map(o => o.name)).toEqual(expect.arrayContaining(['사오필', '유찬', '손호', '제갈격']));
+        const caoPi = world.officers.find(o => o.id === 'cao_pi')!;
+        expect(caoPi.stats.intelligence).toBe(76);
+        expect(caoPi.personality).toBe('CALM');
+        const chengdu = world.cities.find(c => c.name === '청두')!;
+        expect(chengdu.population).toBe(96000);
+        expect(chengdu.developmentStats.farming).toBe(68);
+        expect(world.relationships).toHaveLength(8);
+        expect(world.relationships.some(r => r.source === 'cao_pi' && r.target === 'liu_shan' && r.type === 'RIVAL')).toBe(true);
+        const validIds = new Set(world.officers.map(o => o.id));
+        expect(getScenarioRelationships('07', validIds)).toHaveLength(8);
+        expect(getScenarioRelationships('07', new Set(['cao_pi']))).toHaveLength(0);
     });
 });

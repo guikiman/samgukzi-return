@@ -7,7 +7,7 @@
  * 15가지 외교 제안 수락 여부를 무장 야망-의리-지력 다차원 벡터 내적으로 판정
  */
 
-import type { FactionID } from './types.js';
+import type { FactionID, Faction, IGameStore } from './types.js';
 
 export enum FactionRelation {
     ALLIANCE = 'alliance',
@@ -24,6 +24,12 @@ export interface DiplomacyResult {
 export class DiplomacyEngine {
     private relations: Map<string, FactionRelation> = new Map();
     private factionData: Map<FactionID, { totalPower: number; gold: number }> = new Map();
+    /** 관계 상태를 정규화된 세력 diplomacy와 동기화하는 선택적 스토어. [341-360] */
+    private readonly stateStore?: Pick<IGameStore, 'getFaction' | 'updateFaction'>;
+
+    constructor(stateStore?: Pick<IGameStore, 'getFaction' | 'updateFaction'>) {
+        this.stateStore = stateStore;
+    }
 
     private key(a: FactionID, b: FactionID): string {
         // 구분자 '|' — 세력 ID 자체에 '_'가 포함되므로 split 안전성 확보
@@ -35,7 +41,28 @@ export class DiplomacyEngine {
     }
 
     setRelation(a: FactionID, b: FactionID, rel: FactionRelation): void {
-        this.relations.set(this.key(a, b), rel);
+        const key = this.key(a, b);
+        if (this.relations.get(key) === rel) return;
+        this.relations.set(key, rel);
+        this.syncFactionTreaty(a, b, rel);
+        this.syncFactionTreaty(b, a, rel);
+    }
+
+    /** 엔진 관계를 도메인 세력의 양방향 treaty로 투영한다. [341-360] */
+    private syncFactionTreaty(a: FactionID, b: FactionID, relation: FactionRelation): void {
+        const faction = this.stateStore?.getFaction(a);
+        if (!faction || !this.stateStore) return;
+        const treaty: Faction['diplomacy'][string]['treaty'] = relation === FactionRelation.WAR
+            ? 'WAR'
+            : relation === FactionRelation.ALLIANCE
+                ? 'ALLIANCE'
+                : relation === FactionRelation.SURRENDERED ? 'VASSAL' : 'CEASEFIRE';
+        this.stateStore.updateFaction(a, {
+            diplomacy: {
+                ...faction.diplomacy,
+                [b]: { relation: relation === FactionRelation.ALLIANCE ? 50 : relation === FactionRelation.WAR ? -100 : 0, treaty, duration: 1 },
+            },
+        });
     }
 
     setFactionData(factionId: FactionID, data: { totalPower: number; gold: number }): void {

@@ -62,6 +62,14 @@ export interface PortedMonthlySection {
         officerName: string;
         age: number;
     }>;
+    /** 전투 후 포로 처분 결과 [121-130][131-145] */
+    captives: Array<{
+        officerId: string;
+        officerName: string;
+        decision: 'RECRUIT' | 'EXECUTE' | 'RELEASE';
+        success: boolean;
+        message: string;
+    }>;
     /** [83] 방랑군 동향 — 전환/등용/습격/재기 */
     vagrant: Array<{
         factionName: string;

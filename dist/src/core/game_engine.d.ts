@@ -10,12 +10,14 @@ import { GamePhase, PhaseTransition, GlobalState, NormalizedState, Officer, Fact
 import { GameStore } from './game_store.js';
 import { DiplomacyEngine } from './diplomacy_engine.js';
 import { StrategicCommandManager } from './strategic_command_system.js';
+import { DomesticScheduler } from './domestic_scheduler.js';
 import { LifeSimulator } from './life_simulator.js';
 import { MetaManager, LegacyManager, MetaDataManager } from './meta_systems.js';
 import { IntelligenceManager, NarrativeManager, ClimateManager } from './intelligence_narrative_climate.js';
 import { EventEngine } from './event_chain_engine.js';
 import { HistoricalEventSystem } from './historical_event_system.js';
 import { ScenarioBranchManager } from './scenario_branch_manager.js';
+import type { ReplayCommandEvent } from './replay_share_manager.js';
 export declare class GameEngine {
     private store;
     private commandQueue;
@@ -39,6 +41,8 @@ export declare class GameEngine {
     readonly chronicle: import('./chronicle_system.js').ChronicleManager;
     /** 포팅 시스템: 군단/평정 [76-85] */
     readonly strategicCommand: StrategicCommandManager;
+    /** 플레이어 내정 자동 배정·월간 실행 [49][76-85] */
+    readonly domesticScheduler: DomesticScheduler;
     /** 포팅 시스템: 인생 시뮬레이션 [421-438] — 전상/제련/사사/은퇴 */
     readonly lifeSimulator: LifeSimulator;
     /** 포팅 시스템: 메타 게임 [213-214] — 업적/멀티 엔딩 (세션 전역 싱글톤) */
@@ -70,6 +74,8 @@ export declare class GameEngine {
     private streamFailed;
     /** 스트리밍 AI의 월간 결정 수집 버퍼 — executeTurn에서 소비 */
     private streamBatchCount;
+    /** 이번 턴에 Worker 스트리밍 경로가 실제 완료되었는지 — FactionAI 중복 방지 */
+    private streamTurnCompleted;
     /** 민란 억제 롤 오버라이드 [148] — 테스트 결정론용. 값 지정 시 1회 소비 후 자동 해제 */
     private _riotRollOverride;
     /**
@@ -97,6 +103,14 @@ export declare class GameEngine {
     private onExitBattle;
     private onEnterEvent;
     enqueueCommand(command: ICommand): void;
+    private createCommandContext;
+    /** 성공한 각 커맨드 실행 전 월간 포로 로그 길이 — undo 시 UI 버퍼도 같은 경계로 복원한다. */
+    private executedCommandCaptiveLogSizes;
+    /** 전투·포로·외교 명령 실행/복구 이벤트 — 리플레이 및 세이브 델타에서 재사용 [312] */
+    private commandReplayLog;
+    private recordCommandReplay;
+    getCommandReplayLog(): ReplayCommandEvent[];
+    private emitCommandResult;
     executeNextCommand(): CommandResult | null;
     executeAllCommands(): CommandResult[];
     undoLastCommand(): boolean;
@@ -185,6 +199,13 @@ export declare class GameEngine {
             officerName: string;
             age: number;
         }>;
+        captives: Array<{
+            officerId: string;
+            officerName: string;
+            decision: 'RECRUIT' | 'EXECUTE' | 'RELEASE';
+            success: boolean;
+            message: string;
+        }>;
         vagrant: Array<{
             factionName: string;
             kind: 'CONVERT' | 'RECRUIT' | 'RAID';
@@ -221,6 +242,8 @@ export declare class GameEngine {
             relation: string;
         }>;
         chronicle?: import('./chronicle_system.js').ChronicleEntry[];
+        /** 전투·포로·외교 실행/복구 이벤트 — 세이브 델타 및 리플레이 [312] */
+        commandReplayLog?: ReplayCommandEvent[];
         /** 포팅 시스템 스냅샷 [76-85][321-340][341-360][421-438][431-432][441-460] */
         ported?: {
             strategic: ReturnType<StrategicCommandManager['serialize']>;
@@ -270,6 +293,7 @@ export declare class GameEngine {
             relation: string;
         }>;
         chronicle?: import('./chronicle_system.js').ChronicleEntry[];
+        commandReplayLog?: ReplayCommandEvent[];
         ported?: {
             strategic: ReturnType<StrategicCommandManager['serialize']>;
             climates: Array<{

@@ -31,49 +31,54 @@ export class FactionAI {
         this.diplomacy = null;
     }
     /** 월간 세력 AI 실행 — 플레이어 세력 제외 */
-    runMonthly() {
+    runMonthly(options = {}) {
         const gs = this.store.getGlobalState();
         const reports = [];
         for (const faction of this.store.getAllFactions()) {
             if (faction.id === gs.playerFactionId)
                 continue;
-            reports.push(this.runFaction(faction));
+            reports.push(this.runFaction(faction, options));
         }
         return reports;
     }
-    runFaction(faction) {
+    runFaction(faction, options = {}) {
         const actions = [];
         let conqueredCityId = null;
+        const captiveOutcomes = [];
         const leader = faction.leaderId ? this.store.getOfficer(faction.leaderId) : null;
         const aggression = AGGRESSION[leader?.personality ?? 'CALM'] ?? 0.25;
         const cities = this.store.getCitiesByFaction(faction.id);
         if (cities.length === 0) {
             return { factionId: faction.id, factionName: faction.name, actions: ['소속 도시 없음'], conqueredCityId: null };
         }
-        // 1) 내정: 도시 자금 300 이상이면 개발 (상업/농업 교대)
-        for (const city of cities) {
-            if (city.funds >= 300) {
-                const ds = { ...city.developmentStats };
-                if (city.id.charCodeAt(city.id.length - 1) % 2 === 0) {
-                    ds.commerce = Math.min(ds.maxCommerce, ds.commerce + 4);
-                    ds.farming = Math.min(ds.maxFarming, ds.farming + 2);
+        // 스트리밍 AI의 도시 커맨드와 중복되지 않도록, 해당 턴에는 직접 내정/징병을 생략한다.
+        // 자동 전투와 월간 전술은 별도 시스템이므로 계속 처리한다. [201][295]
+        if (!options.skipCityDevelopment) {
+            // 1) 내정: 도시 자금 300 이상이면 개발 (상업/농업 교대)
+            for (const city of cities) {
+                if (city.funds >= 300) {
+                    const ds = { ...city.developmentStats };
+                    if (city.id.charCodeAt(city.id.length - 1) % 2 === 0) {
+                        ds.commerce = Math.min(ds.maxCommerce, ds.commerce + 4);
+                        ds.farming = Math.min(ds.maxFarming, ds.farming + 2);
+                    }
+                    else {
+                        ds.commerce = Math.min(ds.maxCommerce, ds.commerce + 2);
+                        ds.farming = Math.min(ds.maxFarming, ds.farming + 4);
+                    }
+                    this.store.updateCity(city.id, { funds: city.funds - 250, developmentStats: ds });
+                    actions.push(`${city.name} 개발 (상${ds.commerce}/농${ds.farming})`);
                 }
-                else {
-                    ds.commerce = Math.min(ds.maxCommerce, ds.commerce + 2);
-                    ds.farming = Math.min(ds.maxFarming, ds.farming + 4);
-                }
-                this.store.updateCity(city.id, { funds: city.funds - 250, developmentStats: ds });
-                actions.push(`${city.name} 개발 (상${ds.commerce}/농${ds.farming})`);
             }
-        }
-        // 2) 징병: 병력 200 미만 도시는 자금 200으로 병력 +600
-        for (const city of cities) {
-            if (city.development < 200 && city.funds >= 200) {
-                this.store.updateCity(city.id, {
-                    funds: city.funds - 200,
-                    development: city.development + 600,
-                });
-                actions.push(`${city.name} 징병 (+600)`);
+            // 2) 징병: 병력 200 미만 도시는 자금 200으로 병력 +600
+            for (const city of cities) {
+                if (city.development < 200 && city.funds >= 200) {
+                    this.store.updateCity(city.id, {
+                        funds: city.funds - 200,
+                        development: city.development + 600,
+                    });
+                    actions.push(`${city.name} 징병 (+600)`);
+                }
             }
         }
         // 3) 출진: 병력 우위 + 인접 적 도시 + 성향 확률
@@ -150,6 +155,7 @@ export class FactionAI {
                     if (spoils.capturedOfficerIds.length > 0 && this.diplomacy) {
                         const captiveReport = processCaptives(this.store, faction.id, spoils.capturedOfficerIds, this.diplomacy);
                         actions.push(...captiveReport.messages);
+                        captiveOutcomes.push(...captiveReport.outcomes);
                     }
                 }
                 this.store.updateCity(target.id, { ownerId: faction.id, defense: Math.max(5, Math.floor(target.defense * 0.4)) });
@@ -163,7 +169,7 @@ export class FactionAI {
             }
             break; // 세력당 월 1회 출진
         }
-        return { factionId: faction.id, factionName: faction.name, actions, conqueredCityId };
+        return { factionId: faction.id, factionName: faction.name, actions, conqueredCityId, captiveOutcomes };
     }
 }
 //# sourceMappingURL=faction_ai_monthly.js.map

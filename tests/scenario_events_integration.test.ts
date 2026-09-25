@@ -33,6 +33,25 @@ describe('시나리오 연의전 데이터 로더 [300][301]', () => {
         expect(chains.size).toBe(0);
     });
 
+    it('07 삼국鼎峙 체인은 두 개의 연의전 분기를 안전하게 파싱한다', () => {
+        const chains = parseScenarioEvents(scenarioEvents, '07');
+        const nodes = chains.get('chain_07_three_kingdoms')!;
+        expect(nodes).toHaveLength(2);
+        expect(nodes.map(n => n.eventId)).toEqual([
+            'ev_07_jiangwan_peace',
+            'ev_07_yiling_reckoning',
+        ]);
+        expect(nodes.every(n => n.conditions.some(c => c.type === 'year'))).toBe(true);
+    });
+
+    it('07 남방 재편 분기는 별도 체인으로 파싱된다', () => {
+        const chains = parseScenarioEvents(scenarioEvents, '07');
+        const nodes = chains.get('chain_07_southward_reform')!;
+        expect(nodes).toHaveLength(1);
+        expect(nodes[0].eventId).toBe('ev_07_nanman_reform');
+        expect(nodes[0].conditions.some(c => c.type === 'warlord_alive' && c.targetId === 'zhuge_ke')).toBe(true);
+    });
+
     it('JSON 노드가 createEventChainNode 기본값으로 안전하게 변환된다', () => {
         const node = toEventChainNode({
             eventId: 'ev_test',
@@ -66,10 +85,10 @@ describe('시나리오 연의전 데이터 로더 [300][301]', () => {
         const engine = new EventEngine(new EventChainQueueManager(), new WarlordConditionEvaluator());
         const loaded = loadScenarioEventChains(engine, scenarioEvents, '01');
         expect(loaded).toEqual(['chain_01_yellow_turban']);
-        expect(engine.queueMgr.queueSize).toBe(2);
+        expect(engine.queueMgr.queueSize).toBe(1);
         // 중복 적재 방지
         loadScenarioEventChains(engine, scenarioEvents, '01');
-        expect(engine.queueMgr.queueSize).toBe(2);
+        expect(engine.queueMgr.queueSize).toBe(1);
     });
 });
 
@@ -85,7 +104,7 @@ describe('엔진 시나리오 이벤트 통합 [300][106-114]', () => {
 
     it('initWorld에 시나리오 ID를 넘기면 해당 체인이 큐에 적재된다', () => {
         const { engine } = setupWorld('01', 0);
-        expect(engine.eventEngine.queueMgr.queueSize).toBe(2);
+        expect(engine.eventEngine.queueMgr.queueSize).toBe(1);
     });
 
     it('시나리오 ID 미지정 시 체인이 적재되지 않는다 (구버전 호환)', () => {
@@ -214,12 +233,12 @@ describe('시나리오 04 관도 대전 — 오소 야습 실발동 통합 [300]
         return { store, engine };
     }
 
-    it('initWorld("04") 시 관도 체인 2노드가 큐에 적재된다', () => {
+    it('initWorld("04") 시 관도 체인의 첫 노드만 큐에 적재된다', () => {
         const { engine } = setup04();
-        // 체인 1개 × 노드 2개 = 큐 2
-        expect(engine.eventEngine.queueMgr.queueSize).toBe(2);
+        // 선행 조건을 통과한 뒤 다음 노드를 적재하는 연쇄 규칙
+        expect(engine.eventEngine.queueMgr.queueSize).toBe(1);
         expect(engine.eventEngine.queueMgr.isQueued('ev_04_wuchao_plot')).toBe(true);
-        expect(engine.eventEngine.queueMgr.isQueued('ev_04_ju_shou_purge')).toBe(true);
+        expect(engine.eventEngine.queueMgr.isQueued('ev_04_ju_shou_purge')).toBe(false);
     });
 
     it('200년 턴 진행 시 조건 충족 노드가 HISTORICAL_EVENT로 발화되고 보상이 적용된다', async () => {
@@ -264,17 +283,17 @@ describe('전 시나리오(01~06) 연의전 순회 실발동 [300][106-114]', ()
         return { store, engine, world };
     }
 
-    /** 시나리오 ID → 시작 연도에 조건이 즉시 충족되는 노드 ID 목록 */
+    /** 시나리오 ID → 시작 연도에 첫 노드 조건이 충족되는 ID 목록 */
     const FIRST_TURN_EXPECTED: Record<string, string[]> = {
-        '01': ['ev_01_turbans_rise', 'ev_01_royal_decrees'],
-        '02': ['ev_02_hulao_gate'],
-        '03': ['ev_03_lu_bu_strikes', 'ev_03_taoyuan_three'],
-        '04': ['ev_04_wuchao_plot', 'ev_04_ju_shou_purge'],
+        '01': ['ev_01_turbans_rise'],
+        '02': ['ev_02_cao_cao_letter'],
+        '03': ['ev_03_lu_bu_strikes'],
+        '04': ['ev_04_wuchao_plot'],
         '05': ['ev_05_longzhong_plan'],
-        '06': ['ev_06_chu_shi_biao', 'ev_06_wuzhang_star'],
+        '06': ['ev_06_chu_shi_biao'],
     };
 
-    it('모든 시나리오에서 시작 연월 주입 후 첫 턴에 예상 노드가 발화한다', async () => {
+    it('모든 시나리오에서 시작 연월 주입 후 첫 턴에 체인의 첫 노드가 발화한다', async () => {
         for (const [scenarioId, expectedIds] of Object.entries(FIRST_TURN_EXPECTED)) {
             const { engine } = bootScenario(scenarioId);
             const fired: Array<Record<string, unknown>> = [];

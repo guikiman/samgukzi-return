@@ -102,6 +102,8 @@ export interface EvaluationContext {
     getAffinity?: (officerId: string) => number;
     /** 무장 ID → 현재 도시 ID (LOCATION 조건용) */
     getOfficerCity?: (officerId: string) => string | null;
+    /** 세력 ID → 군주 ID (데이터의 leader_id 표기 조건 지원) */
+    factionLeaders?: ReadonlyMap<string, string>;
     /** [0..1) 난수 공급자 (테스트 주입 가능) */
     rng?: () => number;
 }
@@ -132,9 +134,17 @@ export class WarlordConditionEvaluator {
                 return target === undefined || (target.status ?? 'alive') === 'dead';
             }
             case ConditionType.FACTION: {
-                const target = ctx.warlords.get(cond.targetId ?? '');
-                if (!target) return false;
-                return target.factionId === cond.targetFaction;
+                const matchesFaction = (factionId: string | null | undefined): boolean =>
+                    factionId !== null && factionId !== undefined &&
+                    (factionId === cond.targetFaction ||
+                     ctx.factionLeaders?.get(factionId) === cond.targetFaction);
+                if (cond.targetId) {
+                    const target = ctx.warlords.get(cond.targetId);
+                    return target !== undefined && matchesFaction(target.factionId);
+                }
+                // targetId가 생략된 세력 조건은 해당 세력의 세력이 하나라도
+                // 존재하는지 확인한다 (예: 02 시나리오의 동탁 존재 조건).
+                return [...ctx.warlords.values()].some(warlord => matchesFaction(warlord.factionId));
             }
             case ConditionType.CITY_OWNER: {
                 const target = ctx.warlords.get(cond.targetId ?? '');
@@ -200,9 +210,15 @@ export class EventChainQueueManager {
 
     enqueueChain(chainId: string, nodes: EventChainNode[]): void {
         this.chainMap.set(chainId, nodes);
-        for (const node of nodes) {
-            this.enqueue(node);
-        }
+        // 이미 진행 중인 체인이면 중복 적재로 다음 노드를 선행 적재하지 않는다.
+        if (nodes.some(node => this.queuedIds.has(node.eventId))) return;
+        // 체인은 첫 노드의 조건이 충족된 뒤에만 다음 노드를 적재한다.
+        // 모든 노드를 처음부터 큐에 넣으면 선행 조건을 무시하거나 같은 턴에
+        // 연쇄 전체가 활성화되는 중복 발화 버그가 발생한다. [300]
+        const firstPending = nodes.find(node =>
+            !this.processed.has(node.eventId) && !this.queuedIds.has(node.eventId),
+        );
+        if (firstPending) this.enqueue(firstPending);
     }
 
     dequeue(): EventChainNode | null {

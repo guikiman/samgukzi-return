@@ -7,6 +7,7 @@ import {
     checkInteraction,
     executeInteraction,
     getAffinityBetween,
+    calculateGiftAffinity,
     AFFINITY_DELTAS,
     GIFT_COST,
 } from '../src/core/officer_interaction_system.js';
@@ -64,6 +65,39 @@ describe('무장 상호작용 [24][32][33]', () => {
         const gate = checkInteraction(store, actorId, targetId, 'GIFT');
         expect(gate.ok).toBe(false);
         expect(gate.reason).toContain('국고가 부족');
+    });
+
+    it('선물 아이템 등급과 금화 수량으로 우호도를 계산한다', () => {
+        expect(calculateGiftAffinity({ itemId: 'NONE', gold: 200 })).toBe(2);
+        expect(calculateGiftAffinity({ itemId: 'JADE', gold: 500 })).toBe(14);
+        expect(calculateGiftAffinity({ itemId: 'TREASURE', gold: 9999 })).toBe(45);
+    });
+
+    it('선택한 아이템과 금화로 증정하면 해당 비용과 우호도가 적용된다', () => {
+        const faction = store.getFaction(store.getOfficer(actorId)!.factionId!)!;
+        const goldBefore = faction.gold;
+        const affinityBefore = getAffinityBetween(store, actorId, targetId);
+
+        const result = executeInteraction(store, actorId, targetId, 'GIFT', { itemId: 'JADE', gold: 500 });
+
+        expect(result.success).toBe(true);
+        expect(result.goldCost).toBe(500);
+        expect(result.affinityDelta).toBe(14);
+        expect(result.message).toContain('옥비(희귀)');
+        expect(store.getFaction(faction.id)!.gold).toBe(goldBefore - 500);
+        expect(getAffinityBetween(store, actorId, targetId)).toBe(affinityBefore + 14);
+        expect(getAffinityBetween(store, targetId, actorId)).toBe(affinityBefore + 14);
+    });
+
+    it('선물 금화가 国庫보다 많으면 전송하지 않는다', () => {
+        const faction = store.getFaction(store.getOfficer(actorId)!.factionId!)!;
+        store.updateFaction(faction.id, { gold: 100 });
+        const before = getAffinityBetween(store, actorId, targetId);
+        const result = executeInteraction(store, actorId, targetId, 'GIFT', { itemId: 'SILK', gold: 200 });
+        expect(result.success).toBe(false);
+        expect(result.goldCost).toBe(0);
+        expect(store.getFaction(faction.id)!.gold).toBe(100);
+        expect(getAffinityBetween(store, actorId, targetId)).toBe(before);
     });
 
     it('설전은 즉시 시뮬레이션되어 우호도가 변한다 (승리 +8 / 패배 -3 / 무승부 0)', () => {

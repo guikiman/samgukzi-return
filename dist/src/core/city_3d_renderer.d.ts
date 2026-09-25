@@ -10,6 +10,8 @@
 import type { Season, CityID } from './types';
 export type CityBuildingType = 'GOVERNMENT' | 'BARRACKS' | 'MARKET' | 'FARM' | 'TEMPLE' | 'WORKSHOP' | 'WALL' | 'HOUSE';
 export interface CityBuilding {
+    /** 도시 내 배치 슬롯 ID — 도시 화면과 저장 상태의 연결 키 */
+    readonly id: string;
     readonly type: CityBuildingType;
     readonly level: number;
     readonly x: number;
@@ -19,10 +21,16 @@ export interface CityBuilding {
     readonly color: string;
     readonly roofColor: string;
     readonly label: string;
+    readonly investment: number;
+    readonly active: boolean;
 }
 export declare class City3DRenderer {
     /** 도시 건물 배치 생성 */
-    generateCityLayout(cityId: CityID, developmentLevel: number, season: Season): CityBuilding[];
+    generateCityLayout(cityId: CityID, developmentLevel: number, season: Season, savedStates?: Record<string, {
+        level: number;
+        investment: number;
+        active: boolean;
+    }>): CityBuilding[];
     /** 건물 색상 (계절/레벨 기반) */
     getBuildingColor(buildingType: CityBuildingType, level: number, season: Season): {
         wall: string;

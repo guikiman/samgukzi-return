@@ -1,0 +1,17 @@
+{
+  "cao_pi": { "name": "사오필", "courtesy": "종무", "personality": "CALM", "stats": { "leadership": 78, "might": 66, "intelligence": 76, "politics": 72, "charisma": 82 } },
+  "sima_zhao": { "name": "사마조", "courtesy": "子上", "personality": "CAUTIOUS", "stats": { "leadership": 86, "might": 62, "intelligence": 94, "politics": 88, "charisma": 76 } },
+  "zhang_song": { "name": "장송", "courtesy": "문현", "personality": "LOYAL", "stats": { "leadership": 82, "might": 72, "intelligence": 76, "politics": 80, "charisma": 72 } },
+  "xiahou_dun": { "name": "하후돈", "courtesy": "원양", "personality": "LOYAL", "stats": { "leadership": 90, "might": 92, "intelligence": 64, "politics": 76, "charisma": 80 } },
+  "cao_ren": { "name": "조인", "courtesy": "자효", "personality": "LOYAL", "stats": { "leadership": 88, "might": 84, "intelligence": 62, "politics": 66, "charisma": 70 } },
+  "liu_shan": { "name": "유찬", "courtesy": "공명", "personality": "CALM", "stats": { "leadership": 58, "might": 32, "intelligence": 66, "politics": 58, "charisma": 76 } },
+  "jiang_wei": { "name": "강유", "courtesy": "백약", "personality": "LOYAL", "stats": { "leadership": 90, "might": 88, "intelligence": 92, "politics": 68, "charisma": 80 } },
+  "zhuge_ke": { "name": "제갈격", "courtesy": "원도", "personality": "CAUTIOUS", "stats": { "leadership": 84, "might": 44, "intelligence": 90, "politics": 86, "charisma": 78 } },
+  "fei_yi": { "name": "비의", "courtesy": "문상", "personality": "RIGHTEOUS", "stats": { "leadership": 72, "might": 40, "intelligence": 88, "politics": 84, "charisma": 72 } },
+  "fa_zheng": { "name": "법정", "courtesy": "효직", "personality": "AMBITIOUS", "stats": { "leadership": 56, "might": 24, "intelligence": 94, "politics": 78, "charisma": 66 } },
+  "sun_hao": { "name": "손호", "courtesy": "원종", "personality": "CAUTIOUS", "stats": { "leadership": 72, "might": 58, "intelligence": 78, "politics": 70, "charisma": 74 } },
+  "lu_xun": { "name": "육손", "courtesy": "백언", "personality": "CAUTIOUS", "stats": { "leadership": 92, "might": 62, "intelligence": 96, "politics": 90, "charisma": 84 } },
+  "zhang_zhao": { "name": "장조", "courtesy": "홍모", "personality": "LOYAL", "stats": { "leadership": 70, "might": 68, "intelligence": 86, "politics": 72, "charisma": 74 } },
+  "gan_ning": { "name": "감녕", "courtesy": "흥패", "personality": "AGGRESSIVE", "stats": { "leadership": 84, "might": 94, "intelligence": 72, "politics": 42, "charisma": 68 } },
+  "sun_shangxiang": { "name": "손부인", "courtesy": "", "personality": "AGGRESSIVE", "stats": { "leadership": 68, "might": 78, "intelligence": 72, "politics": 62, "charisma": 88 } }
+}

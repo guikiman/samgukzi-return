@@ -11,7 +11,7 @@
  */
 import { OfficerStatus } from './types.js';
 import { applyCaptiveRecruitPenalty, applyCaptiveReleaseDiplomacy } from './captive_recruit_penalty_system.js';
-import { isCaptive, getCapturedOriginFaction } from './captive_escape_system.js';
+import { isCaptive, getCapturedOriginFaction, releaseCaptive } from './captive_escape_system.js';
 /** 군주 성향 판정 — 무력이 지력보다 크면 잔혹형(처형 성향) */
 export function isCruelLeader(might, intelligence) {
     return might > intelligence;
@@ -132,6 +132,8 @@ export function processCaptives(store, factionId, capturedOfficerIds, diplomacy)
         }
         else {
             // 실패/기피: 재야 석방 (충성도 0 유지 — 플레이어 등용 대상으로 전환)
+            // 포로 마커를 해제해야 수용 기간/탈출 판정에서 즉시 제외된다. [131-145]
+            releaseCaptive(store, officer.id);
             const releaseMessages = [`🕊️ ${officer.name} 포로를 풀어주었다`];
             // 석방 외교 효과 [341-360]: 원소속 세력이 살아있으면 관계 개선 (전쟁 중이면 휴전 시도)
             if (diplomacy) {

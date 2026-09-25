@@ -480,6 +480,8 @@ describe('TurnLifecycleManager', () => {
         store.initWorld([o], [f], [c], []);
         const manager = new TurnLifecycleManager(store);
         const decisions = await manager.executeAITurn();
-        expect(decisions.length).toBeGreaterThanOrEqual(0);
+        expect(decisions).toHaveLength(1);
+        expect(decisions[0].officerId).toBe('o1');
+        expect(store.getOfficer('o1')?.hasActedThisTurn).toBe(true);
     });
 });

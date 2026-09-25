@@ -11,8 +11,7 @@
  * 원소속 세력을 조회한다 (세이브 호환 — Officer 인터페이스 변경 없음).
  */
 
-import type { GameStore } from './game_store.js';
-import type { RelationshipEdge } from './types.js';
+import type { IGameStore, RelationshipEdge } from './types.js';
 import { getCapturedOriginFaction } from './captive_escape_system.js';
 import { DiplomacyEngine, FactionRelation } from './diplomacy_engine.js';
 
@@ -44,7 +43,7 @@ export interface CaptiveRecruitPenaltyResult {
  * @param recruitedOfficerId 등용당한 무장 ID
  */
 export function applyCaptiveRecruitPenalty(
-    store: GameStore,
+    store: IGameStore,
     diplomacy: DiplomacyEngine,
     recruitedFactionId: string,
     recruitedOfficerId: string,
@@ -136,7 +135,7 @@ export interface CaptiveReleaseDiplomacyResult {
  * processCaptives의 RELEASE 경로와 플레이어 수동 석방에서 호출한다.
  */
 export function applyCaptiveReleaseDiplomacy(
-    store: GameStore,
+    store: IGameStore,
     diplomacy: DiplomacyEngine,
     releaserFactionId: string,
     releasedOfficerId: string,

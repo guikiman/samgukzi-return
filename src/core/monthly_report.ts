@@ -33,6 +33,8 @@ export interface PortedMonthlySection {
     climates: Array<{ regionId: string; weather: string; temperature: number; harvestModifier: number }>;
     /** 이번 달 은퇴한 무장 [434] */
     retired: Array<{ officerName: string; age: number }>;
+    /** 전투 후 포로 처분 결과 [121-130][131-145] */
+    captives: Array<{ officerId: string; officerName: string; decision: 'RECRUIT' | 'EXECUTE' | 'RELEASE'; success: boolean; message: string }>;
     /** [83] 방랑군 동향 — 전환/등용/습격/재기 */
     vagrant: Array<{ factionName: string; kind: 'CONVERT' | 'RECRUIT' | 'RAID'; success: boolean; message: string }>;
     /** 도시별 기후 표 [321-340] — 소유 세력 포함. climates가 비어도 도시 행은 표시 */

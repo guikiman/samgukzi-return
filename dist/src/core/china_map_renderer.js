@@ -68,6 +68,9 @@ export class ChinaMapRenderer {
         this.zoom = 1.0;
         this.hoveredCityId = null;
         this.cities = [];
+        /** [49] 전체 도시 표시(초기) / 방문·소유 도시만 표시(발견 모드) */
+        this.discoveredOnly = false;
+        this.mapImageReady = false;
         /** [321-340] 지도 날씨 오버레이 표시 여부 (기본 on) */
         this.showWeatherOverlay = true;
         /** [1057][321-340] 계절 톤 — 봄/여름/가을/겨울에 따라 대륙 색조 보정 (null=보정 없음) */
@@ -86,6 +89,21 @@ export class ChinaMapRenderer {
         this.borderLayerDirty = true;
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
+        if (typeof Image !== 'undefined') {
+            const image = new Image();
+            image.decoding = 'async';
+            image.onload = () => { this.mapImageReady = true; };
+            image.onerror = () => { this.mapImageReady = false; };
+            image.src = 'assets/china-national-map.png';
+            this.mapImage = image;
+        }
+        else {
+            this.mapImage = null;
+        }
+    }
+    /** 지도 이미지 로딩 상태 — E2E/실행 화면에서 비동기 자산 readiness를 확인한다. */
+    isMapImageReady() {
+        return this.mapImageReady;
     }
     setView(view) {
         if (view.offsetX !== undefined)
@@ -95,9 +113,37 @@ export class ChinaMapRenderer {
         if (view.zoom !== undefined)
             this.zoom = view.zoom;
     }
+    /** 지도 카메라 상태를 도시 화면 전환 후 복원하기 위해 반환한다. */
+    getView() {
+        return { offsetX: this.offsetX, offsetY: this.offsetY, zoom: this.zoom };
+    }
     setCities(cities) {
         this.cities = cities;
         this.territoryDirty = true;
+        this.territoryLayerDirty = true;
+        this.borderLayerDirty = true;
+    }
+    /** [49] 초기에는 전체 도시, 이후 방문·소유 도시만 표시하는 필터. */
+    setDiscoveredOnly(discoveredOnly) {
+        if (this.discoveredOnly === discoveredOnly)
+            return;
+        this.discoveredOnly = discoveredOnly;
+        this.territoryDirty = true;
+        this.territoryLayerDirty = true;
+        this.borderLayerDirty = true;
+    }
+    isCityVisible(city) {
+        return !this.discoveredOnly
+            || city.isPlayer
+            || city.isDiscovered === true
+            || city.isAdjacentToDiscovered === true;
+    }
+    /** 현재 필터에서 실제로 표시되는 도시 ID — E2E/디버그 검증용. */
+    getVisibleCityIds() {
+        return this.cities.filter(city => this.isCityVisible(city)).map(city => city.id);
+    }
+    visibleCities() {
+        return this.cities.filter(city => this.isCityVisible(city));
     }
     /**
      * 영토 격자 재계산 — 도시 위치 기반 보로노이 근사.
@@ -108,7 +154,7 @@ export class ChinaMapRenderer {
         const rows = Math.ceil(1.0 / ChinaMapRenderer.CELL_SIZE);
         this.territoryCols = cols;
         this.territoryRows = rows;
-        // 소속 있는 도시만 영토 계산에 사용
+        // [49] 세력 구분선·세력명은 발견 모드와 관계없이 전국의 모든 세력을 표시한다.
         const owned = this.cities.filter(c => c.ownerColor);
         const cells = new Array(cols * rows);
         for (let gy = 0; gy < rows; gy++) {
@@ -117,7 +163,7 @@ export class ChinaMapRenderer {
                 const ny = (gy + 0.5) * ChinaMapRenderer.CELL_SIZE;
                 // 대륙 내부인지 검사 (짝수 교차법, 정규화 좌표)
                 if (!pointInPolygon(nx, ny, CONTINENT_OUTLINE)) {
-                    cells[gy * cols + gx] = { ownerColor: null, isPlayer: false, pattern: 'none' };
+                    cells[gy * cols + gx] = { ownerColor: null, cityId: null, isPlayer: false, pattern: 'none' };
                     continue;
                 }
                 // 가장 가까운 소속 도시 탐색 (제곱거리 비교)
@@ -133,8 +179,8 @@ export class ChinaMapRenderer {
                     }
                 }
                 cells[gy * cols + gx] = bestCity
-                    ? { ownerColor: bestCity.ownerColor, isPlayer: bestCity.isPlayer, pattern: bestCity.factionPattern ?? 'none' }
-                    : { ownerColor: null, isPlayer: false, pattern: 'none' };
+                    ? { ownerColor: bestCity.ownerColor, cityId: bestCity.id, isPlayer: bestCity.isPlayer, pattern: bestCity.factionPattern ?? 'none' }
+                    : { ownerColor: null, cityId: null, isPlayer: false, pattern: 'none' };
             }
         }
         this.territoryCells = cells;
@@ -161,7 +207,8 @@ export class ChinaMapRenderer {
             }
         }
         this.factionLabels = Array.from(acc.values())
-            .filter(a => a.n >= 256) // 너무 작은 영토는 라벨 생략 (0.014 격자 기준 ≈면적 4%)
+            // 작은 세력도 전국 지도에서 세력명을 표시하고, 겹칠 때만 안티오버랩 처리로 생략한다.
+            .filter(a => a.n >= 16)
             .map(a => ({ name: a.name, color: a.color, cx: a.sumX / a.n, cy: a.sumY / a.n, cells: a.n, isPlayer: a.isPlayer }));
         this.territoryDirty = false;
         this.territoryLayerDirty = true;
@@ -170,25 +217,42 @@ export class ChinaMapRenderer {
     setHoveredCity(id) {
         this.hoveredCityId = id;
     }
-    /** 맵 패딩을 포함한 정규화 → 픽셀 변환 */
+    mapImageRect(width, height) {
+        if (this.mapImageReady && this.mapImage && this.mapImage.naturalWidth > 0 && this.mapImage.naturalHeight > 0) {
+            const scale = Math.min(width / this.mapImage.naturalWidth, height / this.mapImage.naturalHeight) * this.zoom;
+            const drawWidth = this.mapImage.naturalWidth * scale;
+            const drawHeight = this.mapImage.naturalHeight * scale;
+            return {
+                x: (width - drawWidth) / 2 + this.offsetX,
+                y: (height - drawHeight) / 2 + this.offsetY,
+                width: drawWidth,
+                height: drawHeight,
+            };
+        }
+        const baseScale = Math.min(width / 1.0, height / 0.92) * 0.96 * this.zoom;
+        return { x: width / 2 + this.offsetX - baseScale / 2, y: height / 2 + this.offsetY - baseScale * 0.46, width: baseScale, height: baseScale };
+    }
     normToPixel(x, y, width, height) {
-        // 세로 우선 스케일: 전체 대륙이 항상 보이도록 contain 방식
-        const baseScale = Math.min(width / 1.0, height / 0.92) * 0.96;
-        const s = baseScale * this.zoom;
-        return {
-            px: width / 2 + this.offsetX + (x - 0.5) * s,
-            py: height / 2 + this.offsetY + (y - 0.46) * s,
-        };
+        const rect = this.mapImageRect(width, height);
+        return { px: rect.x + x * rect.width, py: rect.y + y * rect.height };
+    }
+    cityMapToPixel(city, width, height) {
+        return this.normToPixel(city.imageX ?? city.x, city.imageY ?? city.y, width, height);
+    }
+    drawMapImage(ctx, width, height) {
+        if (!this.mapImageReady || !this.mapImage)
+            return false;
+        const rect = this.mapImageRect(width, height);
+        ctx.drawImage(this.mapImage, rect.x, rect.y, rect.width, rect.height);
+        return true;
     }
     /** 화면 픽셀 → 정규화 좌표 (역변환) */
     screenToNorm(px, py) {
-        const width = this.canvas.width;
-        const height = this.canvas.height;
-        const baseScale = Math.min(width / 1.0, height / 0.92) * 0.96;
-        const s = baseScale * this.zoom;
-        const nx = (px - width / 2 - this.offsetX) / s + 0.5;
-        const ny = (py - height / 2 - this.offsetY) / s + 0.46;
-        return { x: nx, y: ny };
+        const rect = this.mapImageRect(this.canvas.width, this.canvas.height);
+        return {
+            x: (px - rect.x) / rect.width,
+            y: (py - rect.y) / rect.height,
+        };
     }
     /**
      * 픽셀 좌표 아래의 도시를 찾는다 (없으면 null)
@@ -197,29 +261,43 @@ export class ChinaMapRenderer {
         const width = this.canvas.width;
         const height = this.canvas.height;
         const radius = 14 * this.zoom;
+        const imageScale = this.mapImageReady && this.mapImage && this.mapImage.naturalWidth > 0
+            ? this.mapImageRect(width, height).width / this.mapImage.naturalWidth
+            : 1;
         let best = null;
         let bestDist = Infinity;
-        for (const city of this.cities) {
-            const { px: cx, py: cy } = this.normToPixel(city.x, city.y, width, height);
+        for (const city of this.visibleCities()) {
+            const { px: cx, py: cy } = this.cityMapToPixel(city, width, height);
             const d = Math.hypot(px - cx, py - cy);
-            if (d < radius + 6 && d < bestDist) {
+            // 이미지 도시 아이콘은 원본 픽셀 크기가 contain 배율로 축약되므로,
+            // DPR이 2 이상이어도 실제 아이콘을 놓치지 않도록 같은 스케일의 히트박스를 사용한다.
+            const hitRadius = this.mapImageReady && this.mapImage
+                ? Math.max(20 * this.zoom, (city.hitRadius ?? 16) * imageScale)
+                : (city.hitRadius ?? 16) * this.zoom;
+            if (d < Math.max(radius + 6, hitRadius) && d < bestDist) {
                 best = city;
                 bestDist = d;
             }
         }
         return best;
     }
+    /** 도시의 현재 캔버스 픽셀 좌표 — 실제 입력 E2E와 접근성 검증에서 사용한다. */
+    getCityScreenPosition(cityId) {
+        const city = this.cities.find(item => item.id === cityId);
+        if (!city || !this.isCityVisible(city))
+            return null;
+        const point = this.cityMapToPixel(city, this.canvas.width, this.canvas.height);
+        return { x: point.px, y: point.py };
+    }
     render() {
         const ctx = this.ctx;
         const width = this.canvas.width;
         const height = this.canvas.height;
         ctx.clearRect(0, 0, width, height);
-        // 배경 (심해 톤)
-        const bg = ctx.createLinearGradient(0, 0, 0, height);
-        bg.addColorStop(0, '#12142a');
-        bg.addColorStop(1, '#0a0b18');
-        ctx.fillStyle = bg;
+        // [用户提供地图] 전국지도 이미지를 먼저 그리고, 실패 시 기존 폴리곤 배경으로 폴백한다.
+        ctx.fillStyle = '#0c0e1c';
         ctx.fillRect(0, 0, width, height);
+        const hasMapImage = this.drawMapImage(ctx, width, height);
         // ---- 대륙 윤곽 ----
         const outline = CONTINENT_OUTLINE.map(p => {
             const { px, py } = this.normToPixel(p.x, p.y, width, height);
@@ -230,65 +308,72 @@ export class ChinaMapRenderer {
         for (let i = 1; i < outline.length; i++)
             ctx.lineTo(outline[i][0], outline[i][1]);
         ctx.closePath();
-        // 육지 그라데이션 (+계절 톤 보정 [1057][321-340])
-        const landGrad = ctx.createLinearGradient(0, 0, width, height);
-        landGrad.addColorStop(0, '#3a4430');
-        landGrad.addColorStop(0.5, '#46523a');
-        landGrad.addColorStop(1, '#37402e');
-        ctx.fillStyle = this.applySeasonTint(landGrad);
-        ctx.fill();
-        // 해안선
-        ctx.strokeStyle = 'rgba(220, 210, 170, 0.35)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        // ---- 세력 영토 (보로노이 색 채우기) [9] ----
-        this.drawTerritory(ctx, width, height);
+        if (!hasMapImage) {
+            // 육지 그라데이션 (+계절 톤 보정 [1057][321-340])
+            const landGrad = ctx.createLinearGradient(0, 0, width, height);
+            landGrad.addColorStop(0, '#3a4430');
+            landGrad.addColorStop(0.5, '#46523a');
+            landGrad.addColorStop(1, '#37402e');
+            ctx.fillStyle = this.applySeasonTint(landGrad);
+            ctx.fill();
+            // 해안선
+            ctx.strokeStyle = 'rgba(220, 210, 170, 0.35)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        // ---- 세력 영토 (이미지 지도에서는 이미지 속 세력 색을 그대로 사용) ----
+        if (!hasMapImage)
+            this.drawTerritory(ctx, width, height);
         // ---- [321-340] 지도 날씨 오버레이 — 도시 위 날씨 아이콘 + 악천후 수확 경고 ----
-        this.drawWeatherOverlay(ctx, width, height);
-        // ---- 산맥 장식 (서부) ----
-        ctx.strokeStyle = 'rgba(150, 140, 110, 0.5)';
-        ctx.lineWidth = 1.2;
-        for (let i = 0; i < 5; i++) {
-            const bx = 0.16 + i * 0.035;
-            const { px, py } = this.normToPixel(bx, 0.34 + (i % 2) * 0.05, width, height);
-            const size = 8 * this.zoom;
-            ctx.beginPath();
-            ctx.moveTo(px - size, py + size * 0.6);
-            ctx.lineTo(px, py - size * 0.7);
-            ctx.lineTo(px + size, py + size * 0.6);
-            ctx.stroke();
+        if (!hasMapImage)
+            this.drawWeatherOverlay(ctx, width, height);
+        // ---- 산맥 장식 (이미지 지도에서는 생략) ----
+        if (!hasMapImage) {
+            ctx.strokeStyle = 'rgba(150, 140, 110, 0.5)';
+            ctx.lineWidth = 1.2;
+            for (let i = 0; i < 5; i++) {
+                const bx = 0.16 + i * 0.035;
+                const { px, py } = this.normToPixel(bx, 0.34 + (i % 2) * 0.05, width, height);
+                const size = 8 * this.zoom;
+                ctx.beginPath();
+                ctx.moveTo(px - size, py + size * 0.6);
+                ctx.lineTo(px, py - size * 0.7);
+                ctx.lineTo(px + size, py + size * 0.6);
+                ctx.stroke();
+            }
+            // ---- 강 ----
+            for (const river of RIVERS) {
+                ctx.beginPath();
+                river.forEach((p, i) => {
+                    const { px, py } = this.normToPixel(p.x, p.y, width, height);
+                    if (i === 0)
+                        ctx.moveTo(px, py);
+                    else {
+                        // 부드러운 곡선
+                        const prev = river[i - 1];
+                        const pp = this.normToPixel(prev.x, prev.y, width, height);
+                        const cpx = (pp.px + px) / 2;
+                        const cpy = (pp.py + py) / 2;
+                        ctx.quadraticCurveTo(pp.px, pp.py, cpx, cpy);
+                    }
+                });
+                const last = river[river.length - 1];
+                const lp = this.normToPixel(last.x, last.y, width, height);
+                ctx.lineTo(lp.px, lp.py);
+                ctx.strokeStyle = 'rgba(90, 140, 190, 0.75)';
+                ctx.lineWidth = Math.max(2, 4 * this.zoom);
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            }
         }
-        // ---- 강 ----
-        for (const river of RIVERS) {
-            ctx.beginPath();
-            river.forEach((p, i) => {
-                const { px, py } = this.normToPixel(p.x, p.y, width, height);
-                if (i === 0)
-                    ctx.moveTo(px, py);
-                else {
-                    // 부드러운 곡선
-                    const prev = river[i - 1];
-                    const pp = this.normToPixel(prev.x, prev.y, width, height);
-                    const cpx = (pp.px + px) / 2;
-                    const cpy = (pp.py + py) / 2;
-                    ctx.quadraticCurveTo(pp.px, pp.py, cpx, cpy);
-                }
-            });
-            const last = river[river.length - 1];
-            const lp = this.normToPixel(last.x, last.y, width, height);
-            ctx.lineTo(lp.px, lp.py);
-            ctx.strokeStyle = 'rgba(90, 140, 190, 0.75)';
-            ctx.lineWidth = Math.max(2, 4 * this.zoom);
-            ctx.lineCap = 'round';
-            ctx.stroke();
+        // ---- 세력 경계선·세력명 (이미지에 이미 포함되어 있으므로 이미지 지도에서는 생략) ----
+        if (!hasMapImage) {
+            this.drawTerritoryBorders(ctx, width, height);
+            this.drawFactionLabels(ctx, width, height);
         }
-        // ---- 세력 경계선 (영토 셀 경계 중 이웃 색이 다른 곳) ----
-        this.drawTerritoryBorders(ctx, width, height);
-        // ---- 세력명 라벨 (영토 위 반투명 대형 글씨) [9] ----
-        this.drawFactionLabels(ctx, width, height);
         // ---- 도시 ----
-        for (const city of this.cities) {
-            this.drawCity(ctx, city, width, height);
+        for (const city of this.visibleCities()) {
+            this.drawCity(ctx, city, width, height, hasMapImage);
         }
         // ---- 나침반/장식 ----
         ctx.fillStyle = 'rgba(220, 210, 170, 0.45)';
@@ -315,7 +400,8 @@ export class ChinaMapRenderer {
         ctx.imageSmoothingQuality = 'high';
         ctx.globalAlpha = 1.0;
         // 영역 전체를 확대 그리기 — 저해상도 픽셀이 부드럽게 보간됨
-        ctx.drawImage(off.canvas, 0, 0, off.width, off.height, 0, 0, width, height);
+        const rect = this.mapImageRect(width, height);
+        ctx.drawImage(off.canvas, 0, 0, off.width, off.height, rect.x, rect.y, rect.width, rect.height);
         ctx.restore();
     }
     /**
@@ -413,9 +499,11 @@ export class ChinaMapRenderer {
             const rows = this.territoryRows;
             const cellW = lw / cols;
             const cellH = lh / rows;
-            const keyOf = (cell) => cell?.ownerColor ?? '';
-            bctx.fillStyle = 'rgba(20, 16, 8, 0.5)';
-            const lineW = Math.max(1, cellW * 0.45);
+            const keyOfFaction = (cell) => cell?.ownerColor ?? '';
+            const keyOfCity = (cell) => cell?.cityId ?? '';
+            // 세력 구분선: 서로 다른 세력 영토를 어두운 굵은 경계로 분리한다.
+            bctx.fillStyle = 'rgba(20, 16, 8, 0.62)';
+            const factionLineW = Math.max(1, cellW * 0.5);
             for (let gy = 0; gy < rows; gy++) {
                 for (let gx = 0; gx < cols; gx++) {
                     const cell = this.territoryCells[gy * cols + gx];
@@ -425,11 +513,20 @@ export class ChinaMapRenderer {
                     const y = gy * cellH;
                     const right = this.territoryCells[gy * cols + gx + 1];
                     const down = this.territoryCells[(gy + 1) * cols + gx];
-                    if (gx + 1 < cols && keyOf(right) !== keyOf(cell)) {
-                        bctx.fillRect(x + cellW - lineW / 2, y - cellH * 0.5, lineW, cellH * 2);
+                    if (gx + 1 < cols && keyOfFaction(right) !== keyOfFaction(cell)) {
+                        bctx.fillRect(x + cellW - factionLineW / 2, y - cellH * 0.5, factionLineW, cellH * 2);
                     }
-                    if (gy + 1 < rows && keyOf(down) !== keyOf(cell)) {
-                        bctx.fillRect(x - cellW * 0.5, y + cellH - lineW / 2, cellW * 2, lineW);
+                    if (gy + 1 < rows && keyOfFaction(down) !== keyOfFaction(cell)) {
+                        bctx.fillRect(x - cellW * 0.5, y + cellH - factionLineW / 2, cellW * 2, factionLineW);
+                    }
+                    // 도시 구분선: 같은 세력 안에서도 서로 다른 도시 영토를 얇은 금색선으로 분리한다.
+                    const cityLineW = Math.max(0.6, cellW * 0.22);
+                    bctx.fillStyle = 'rgba(238, 214, 145, 0.52)';
+                    if (gx + 1 < cols && keyOfFaction(right) === keyOfFaction(cell) && keyOfCity(right) !== keyOfCity(cell)) {
+                        bctx.fillRect(x + cellW - cityLineW / 2, y - cellH * 0.5, cityLineW, cellH * 2);
+                    }
+                    if (gy + 1 < rows && keyOfFaction(down) === keyOfFaction(cell) && keyOfCity(down) !== keyOfCity(cell)) {
+                        bctx.fillRect(x - cellW * 0.5, y + cellH - cityLineW / 2, cellW * 2, cityLineW);
                     }
                 }
             }
@@ -439,7 +536,8 @@ export class ChinaMapRenderer {
         ctx.save();
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(border.canvas, 0, 0, lw, lh, 0, 0, width, height);
+        const rect = this.mapImageRect(width, height);
+        ctx.drawImage(border.canvas, 0, 0, lw, lh, rect.x, rect.y, rect.width, rect.height);
         ctx.restore();
     }
     /**
@@ -507,10 +605,13 @@ export class ChinaMapRenderer {
             SUNNY: '☀️', CLOUDY: '☁️', RAIN: '🌧️', STORM: '⛈️', SNOW: '❄️', FOG: '🌫️', HEATWAVE: '🔥',
         };
         const s = this.zoom;
-        for (const city of this.cities) {
+        for (const city of this.visibleCities()) {
+            // [49] 전체 모드의 미발견 도시는 위치만 흐릿한 실루엣으로 남긴다.
+            if (city.isDiscovered === false)
+                continue;
             if (!city.weather)
                 continue;
-            const { px, py } = this.normToPixel(city.x, city.y, width, height);
+            const { px, py } = this.cityMapToPixel(city, width, height);
             const margin = 60 * s;
             if (px < -margin || px > width + margin || py < -margin || py > height + margin)
                 continue;
@@ -559,14 +660,92 @@ export class ChinaMapRenderer {
         }
         return grad;
     }
-    drawCity(ctx, city, width, height) {
-        const { px, py } = this.normToPixel(city.x, city.y, width, height);
+    /** [49] 미발견 도시의 흐림·실루엣 표현 — 소유 색/병력/날씨는 숨긴다. */
+    drawUndiscoveredCity(ctx, city, width, height, imageMap = false) {
+        const { px, py } = this.cityMapToPixel(city, width, height);
+        if (imageMap) {
+            // 이미지의 성 아이콘은 유지하고, 미방문 상태만 같은 위치에 가린다.
+            const s = this.zoom;
+            ctx.save();
+            ctx.fillStyle = 'rgba(18, 24, 34, 0.32)';
+            ctx.strokeStyle = 'rgba(220, 220, 220, 0.68)';
+            ctx.lineWidth = Math.max(1, 1.2 * s);
+            ctx.setLineDash([3 * s, 3 * s]);
+            ctx.beginPath();
+            ctx.arc(px, py, 12 * s, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+            return;
+        }
+        const s = this.zoom;
+        const margin = 60 * s;
+        if (px < -margin || px > width + margin || py < -margin || py > height + margin)
+            return;
+        const w = 22 * s;
+        const h = 14 * s;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(220, 220, 220, 0.42)';
+        ctx.globalAlpha = 0.7;
+        ctx.lineWidth = Math.max(1, 1.2 * s);
+        ctx.setLineDash([4 * s, 3 * s]);
+        ctx.beginPath();
+        ctx.arc(px, py, 20 * s, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        ctx.save();
+        ctx.globalAlpha = 0.38;
+        ctx.filter = 'grayscale(1) blur(0.7px)';
+        ctx.fillStyle = '#8a8a8e';
+        ctx.strokeStyle = 'rgba(20, 20, 24, 0.8)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.rect(px - w / 2, py - h / 2 + 3 * s, w, h - 3 * s);
+        ctx.fill();
+        ctx.stroke();
+        for (const m of [-0.35, 0, 0.35]) {
+            ctx.beginPath();
+            ctx.rect(px + m * w - 2.5 * s, py - h / 2 - 2 * s, 5 * s, 5 * s);
+            ctx.fill();
+            ctx.stroke();
+        }
+        ctx.fillStyle = '#6d6d72';
+        ctx.beginPath();
+        ctx.arc(px, py - h / 2 - 6 * s, 4.5 * s, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = `bold ${Math.max(10, 12 * s)}px "Malgun Gothic", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.strokeText(city.name, px, py - h / 2 - 14 * s);
+        ctx.fillStyle = '#b0b0b4';
+        ctx.fillText(city.name, px, py - h / 2 - 14 * s);
+        ctx.restore();
+    }
+    drawCity(ctx, city, width, height, imageMap = false) {
+        if (city.isDiscovered === false) {
+            this.drawUndiscoveredCity(ctx, city, width, height, imageMap);
+            return;
+        }
+        const { px, py } = this.cityMapToPixel(city, width, height);
         const s = this.zoom;
         const margin = 60 * s;
         if (px < -margin || px > width + margin || py < -margin || py > height + margin)
             return;
         const hovered = this.hoveredCityId === city.id;
         const selected = city.isSelected;
+        // [49] 도시 구분선 — 도시 영향 범위를 나타내는 가는 원형 경계다.
+        // 방문하지 않은 인접 도시는 점선으로 표시해 실루엣과 구분한다.
+        ctx.save();
+        ctx.strokeStyle = this.lightenColor(city.ownerColor || '#888888', 0.25);
+        ctx.globalAlpha = 0.58;
+        ctx.lineWidth = Math.max(1, 1.2 * s);
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(px, py, 20 * s, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
         // 도시 반경 글로우 (플레이어/호버 강조)
         if (city.isPlayer || selected || hovered) {
             const glowR = (selected ? 22 : hovered ? 18 : 16) * s;
@@ -577,6 +756,30 @@ export class ChinaMapRenderer {
             ctx.beginPath();
             ctx.arc(px, py, glowR, 0, Math.PI * 2);
             ctx.fill();
+        }
+        if (imageMap) {
+            // 전국지도 이미지의 성 아이콘·도시명을 그대로 사용한다.
+            // 이미지 위에는 상태 표시용 얇은 링과 소유 세력 색 점만 덧그린다.
+            if (selected || hovered || city.isPlayer) {
+                ctx.save();
+                ctx.strokeStyle = selected ? '#ffe58a' : hovered ? 'rgba(255,255,255,0.95)' : 'rgba(238,214,145,0.78)';
+                ctx.lineWidth = Math.max(1.25, (selected ? 2.2 : 1.5) * s);
+                ctx.setLineDash(selected ? [] : hovered ? [4 * s, 3 * s] : [2 * s, 3 * s]);
+                ctx.beginPath();
+                ctx.arc(px, py, 13 * s, 0, Math.PI * 2);
+                ctx.stroke();
+                if (city.ownerColor) {
+                    ctx.fillStyle = city.ownerColor;
+                    ctx.beginPath();
+                    ctx.arc(px + 12 * s, py - 12 * s, 3.5 * s, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+            return;
         }
         // 성(城) 아이콘 — 성벽 3개 돌기
         const w = 22 * s;
@@ -636,6 +839,12 @@ export class ChinaMapRenderer {
         const width = this.canvas.width;
         const height = this.canvas.height;
         return Math.min(width / 1.0, height / 0.92) * 0.96 * this.zoom;
+    }
+    /** 테스트/디버그용: 현재 지도에 표시되는 세력 라벨 목록 */
+    getFactionLabels() {
+        if (this.territoryDirty)
+            this.rebuildTerritory();
+        return this.factionLabels.map(label => ({ ...label }));
     }
     /** 테스트/디버그용: 현재 영토 셀 통계 */
     getTerritoryStats() {

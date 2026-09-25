@@ -16,13 +16,13 @@ import {
     AIWorkerPayload, AIWorkerResult,
 } from './types.js';
 import { GameStore, gameStore } from './game_store.js';
-import { CommandQueue, DomesticCommand, TrainingCommand, RecruitmentCommand, MovementCommand, RestCommand, deserializeCommand } from './command_system.js';
+import { CommandQueue, DomesticCommand, TrainingCommand, RecruitmentCommand, CityRecruitmentCommand, MovementCommand, BattleCommand, DiplomacyCommand, RestCommand, deserializeCommand, type DiplomacyAction } from './command_system.js';
 import { TurnScheduler, AITurnProcessor, TurnLifecycleManager } from './turn_scheduler.js';
 import { BootstrapContext, getBootstrap } from './bootstrap.js';
 import { FactionAI } from './faction_ai_monthly.js';
 import { FactionFateSystem } from './faction_fate_system.js';
 import { OfficerLoyaltySystem } from './officer_loyalty_system.js';
-import { DiplomacyEngine } from './diplomacy_engine.js';
+import { DiplomacyEngine, FactionRelation } from './diplomacy_engine.js';
 import { FactionDiplomacyAI } from './faction_diplomacy_ai.js';
 import { ChronicleManager } from './chronicle_system.js';
 import { processHellConstraints } from './hell_constraint_system.js';
@@ -34,6 +34,7 @@ import { processMonthlySwornBrotherRescues } from './sworn_brother_rescue_system
 import { processMonthlySwornBrotherPacts } from './sworn_brother_pact_system.js';
 // Python 시스템 모듈 TS 포팅 통합 [76-85][213-214][321-340][341-360][421-438][431-432][441-460]
 import { StrategicCommandManager, StrategicPolicy, type IPolicyBridge } from './strategic_command_system.js';
+import { DomesticScheduler } from './domestic_scheduler.js';
 import type { WeatherType } from './intelligence_narrative_climate.js';
 import { LifeSimulator } from './life_simulator.js';
 import { MetaManager, LegacyManager, MetaDataManager } from './meta_systems.js';
@@ -55,6 +56,7 @@ import {
 // AI 스트리밍 엔진 [201][121-130] — Worker 기반 1,000명 가중치 AI (AGENTS.md §7)
 import { AIStreamManager } from '../ai/ai_stream_manager.js';
 import type { FactionDecisionBatch } from '../ai/ai_worker_simulator.js';
+import type { ReplayCommandEvent } from './replay_share_manager.js';
 
 type PhaseEnterHandler = () => void | Promise<void>;
 type PhaseExitHandler = () => void;
@@ -88,6 +90,8 @@ export class GameEngine {
     readonly chronicle: import('./chronicle_system.js').ChronicleManager;
     /** 포팅 시스템: 군단/평정 [76-85] */
     readonly strategicCommand: StrategicCommandManager;
+    /** 플레이어 내정 자동 배정·월간 실행 [49][76-85] */
+    readonly domesticScheduler: DomesticScheduler;
     /** 포팅 시스템: 인생 시뮬레이션 [421-438] — 전상/제련/사사/은퇴 */
     readonly lifeSimulator: LifeSimulator;
     /** 포팅 시스템: 메타 게임 [213-214] — 업적/멀티 엔딩 (세션 전역 싱글톤) */
@@ -122,6 +126,8 @@ export class GameEngine {
     private streamFailed = false;
     /** 스트리밍 AI의 월간 결정 수집 버퍼 — executeTurn에서 소비 */
     private streamBatchCount = 0;
+    /** 이번 턴에 Worker 스트리밍 경로가 실제 완료되었는지 — FactionAI 중복 방지 */
+    private streamTurnCompleted = false;
     /** 민란 억제 롤 오버라이드 [148] — 테스트 결정론용. 값 지정 시 1회 소비 후 자동 해제 */
     private _riotRollOverride: number | null = null;
 
@@ -148,9 +154,11 @@ export class GameEngine {
         transports: Array<{ fromCity: string; toCity: string; gold: number; food: number; soldiers: number }>;
         collapsedNetworks: Array<{ factionId: string; cityId: string }>;
         retired: Array<{ officerName: string; age: number }>;
+        /** 전투 후 포로 처분 결과 — 월간 보고서 UI [121-130][131-145] */
+        captives: Array<{ officerId: string; officerName: string; decision: 'RECRUIT' | 'EXECUTE' | 'RELEASE'; success: boolean; message: string }>;
         /** [83] 방랑군 동향 — 전환/등용/습격/재기 (월간 보고서 동향 섹션용) */
         vagrant: Array<{ factionName: string; kind: 'CONVERT' | 'RECRUIT' | 'RAID'; success: boolean; message: string }>;
-    } = { campaigns: [], transports: [], collapsedNetworks: [], retired: [], vagrant: [] };
+    } = { campaigns: [], transports: [], collapsedNetworks: [], retired: [], captives: [], vagrant: [] };
 
     constructor(store?: GameStore) {
         this.store = store ?? gameStore;
@@ -163,7 +171,8 @@ export class GameEngine {
         this.factionAI = new FactionAI(this.store);
         this.fateSystem = new FactionFateSystem(this.store);
         this.loyaltySystem = new OfficerLoyaltySystem(this.store);
-        this.diplomacy = new DiplomacyEngine();
+        // 관계 엔진이 변경 즉시 정규화된 세력 diplomacy에도 반영한다. [341-360]
+        this.diplomacy = new DiplomacyEngine(this.store);
         // 포로 등용 시 원소속 세력 원수화 페널티에서 동일 외교 엔진 사용 [24][341-360]
         this.loyaltySystem.diplomacy = this.diplomacy;
         this.factionAI.diplomacy = this.diplomacy;
@@ -172,6 +181,7 @@ export class GameEngine {
         this.chronicle.attachStore(this.store);
         // 포팅 시스템 초기화 [76-85][213-214][321-340][341-360][421-438][431-432][441-460]
         this.strategicCommand = new StrategicCommandManager('player');
+        this.domesticScheduler = new DomesticScheduler(this.store);
         this.lifeSimulator = new LifeSimulator();
         this.metaManager = MetaManager.getInstance();
         this.legacyManager = new LegacyManager();
@@ -331,24 +341,113 @@ export class GameEngine {
         this.emitEvent({ id: `cmd_${Date.now()}`, type: 'COMMAND_ENQUEUE', payload: { cmdId: command.id, cmdType: command.type }, timestamp: Date.now(), turn: this.store.getGlobalState().turnCount });
     }
 
+    private createCommandContext(): CommandContext {
+        return {
+            store: this.store,
+            diplomacy: this.diplomacy,
+            chronicle: this.chronicle,
+            logger: (msg) => console.log(msg),
+        };
+    }
+
+    /** 성공한 각 커맨드 실행 전 월간 포로 로그 길이 — undo 시 UI 버퍼도 같은 경계로 복원한다. */
+    private executedCommandCaptiveLogSizes: number[] = [];
+    /** 전투·포로·외교 명령 실행/복구 이벤트 — 리플레이 및 세이브 델타에서 재사용 [312] */
+    private commandReplayLog: ReplayCommandEvent[] = [];
+
+    private recordCommandReplay(command: ICommand, action: ReplayCommandEvent['action'], result?: CommandResult, success = true): void {
+        const event: ReplayCommandEvent = {
+            id: `${action.toLowerCase()}_${command.id}`,
+            commandType: command.type,
+            action,
+            turn: command.turnIssued,
+            timestamp: Date.now(),
+            success,
+            message: result?.message ?? `${action} ${command.type}`,
+            logMessages: [...(result?.logMessages ?? [])],
+            captiveOutcomes: (result?.captiveOutcomes ?? []).map(outcome => ({ ...outcome })),
+        };
+        this.commandReplayLog.push(event);
+        this.emitEvent({
+            id: `command_replay_${event.id}_${event.timestamp}`,
+            type: 'COMMAND_REPLAY',
+            payload: event as unknown as Record<string, unknown>,
+            timestamp: event.timestamp,
+            turn: event.turn,
+        });
+    }
+
+    getCommandReplayLog(): ReplayCommandEvent[] {
+        return this.commandReplayLog.map(event => ({
+            ...event,
+            logMessages: [...event.logMessages],
+            captiveOutcomes: event.captiveOutcomes.map(outcome => ({ ...outcome })),
+        }));
+    }
+
+    private emitCommandResult(result: CommandResult): void {
+        if (result.commandType === 'BATTLE' && result.success) {
+            this.portedMonthlyLog.captives.push(...(result.captiveOutcomes ?? []));
+        }
+        this.emitEvent({
+            id: `command_result_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            type: 'COMMAND_EXECUTED',
+            payload: {
+                commandType: result.commandType,
+                success: result.success,
+                message: result.message,
+                logMessages: result.logMessages ?? [],
+                captiveOutcomes: result.captiveOutcomes ?? [],
+            },
+            timestamp: Date.now(),
+            turn: this.store.getGlobalState().turnCount,
+        });
+    }
+
     executeNextCommand(): CommandResult | null {
-        const context: CommandContext = { store: this.store, logger: (msg) => console.log(msg) };
-        return this.commandQueue.executeNext(context);
+        const before = this.portedMonthlyLog.captives.length;
+        const command = this.commandQueue.peekPending();
+        const result = this.commandQueue.executeNext(this.createCommandContext());
+        if (command) this.recordCommandReplay(command, 'EXECUTE', result ?? undefined, result?.success ?? false);
+        if (result?.success) this.executedCommandCaptiveLogSizes.push(before);
+        if (result) this.emitCommandResult(result);
+        return result;
     }
 
     executeAllCommands(): CommandResult[] {
-        const context: CommandContext = { store: this.store, logger: (msg) => console.log(msg) };
-        return this.commandQueue.executeAll(context);
+        const results: CommandResult[] = [];
+        const context = this.createCommandContext();
+        while (this.getPendingCommandCount() > 0) {
+            const before = this.portedMonthlyLog.captives.length;
+            const command = this.commandQueue.peekPending();
+            const result = this.commandQueue.executeNext(context);
+            if (!result) break;
+            if (command) this.recordCommandReplay(command, 'EXECUTE', result, result.success);
+            if (result.success) this.executedCommandCaptiveLogSizes.push(before);
+            results.push(result);
+            this.emitCommandResult(result);
+        }
+        return results;
     }
 
     undoLastCommand(): boolean {
-        const context: CommandContext = { store: this.store, logger: (msg) => console.log(msg) };
-        return this.commandQueue.undoLast(context);
+        const command = this.commandQueue.getLastExecuted();
+        const success = this.commandQueue.undoLast(this.createCommandContext());
+        if (command && success) this.recordCommandReplay(command, 'UNDO');
+        if (success) {
+            const previousSize = this.executedCommandCaptiveLogSizes.pop();
+            if (previousSize !== undefined) this.portedMonthlyLog.captives.length = previousSize;
+        }
+        return success;
     }
 
     redoLastCommand(): boolean {
-        const context: CommandContext = { store: this.store, logger: (msg) => console.log(msg) };
-        return this.commandQueue.redoLast(context);
+        const command = this.commandQueue.getLastUndone();
+        const before = this.portedMonthlyLog.captives.length;
+        const success = this.commandQueue.redoLast(this.createCommandContext());
+        if (command && success) this.recordCommandReplay(command, 'REDO');
+        if (success) this.executedCommandCaptiveLogSizes.push(before);
+        return success;
     }
 
     canUndo(): boolean { return this.commandQueue.canUndo(); }
@@ -385,6 +484,25 @@ export class GameEngine {
             const successCount = results.filter(r => r.success).length;
             console.log(`[Engine] Commands: ${successCount}/${results.length} ok`);
 
+            // 플레이어가 등록한 자동 내정 임무는 AI/커맨드 처리와 동일한 턴 종료를 거친다. [49][76-85]
+            const domesticResults = this.domesticScheduler.executeAll();
+            for (const result of domesticResults) {
+                this.emitEvent({
+                    id: `domestic_${result.taskType}_${Date.now()}`,
+                    type: 'DOMESTIC_ASSIGNMENT_COMPLETED',
+                    payload: {
+                        taskType: result.taskType,
+                        statChanged: result.statChanged,
+                        increment: result.increment,
+                        fundsConsumed: result.fundsConsumed,
+                        successLevel: result.successLevel,
+                        message: result.log,
+                    },
+                    timestamp: Date.now(),
+                    turn: this.store.getGlobalState().turnCount,
+                });
+            }
+
             this.processEventQueue();
             if (this.bootstrap) {
                 this.bootstrap.processTurnStart();
@@ -393,14 +511,19 @@ export class GameEngine {
             this.securityMonthlyLog.riots = [];
             this.securityMonthlyLog.starvations = [];
             // 세력 AI 월간 자율 행동 (내정/징병/출진) [201]
-            const aiReports = this.factionAI.runMonthly();
+            const aiReports = this.factionAI.runMonthly({ skipCityDevelopment: this.streamTurnCompleted });
             for (const r of aiReports) {
                 if (r.actions.length > 0) {
                     console.log(`[FactionAI] ${r.factionName}: ${r.actions.join(', ')}`);
                     this.emitEvent({
                         id: `faction_ai_${r.factionId}_${Date.now()}`,
                         type: 'FACTION_AI_ACTION',
-                        payload: { factionId: r.factionId, actions: r.actions, conqueredCityId: r.conqueredCityId },
+                        payload: {
+                            factionId: r.factionId,
+                            actions: r.actions,
+                            conqueredCityId: r.conqueredCityId,
+                            captiveOutcomes: r.captiveOutcomes ?? [],
+                        },
                         timestamp: Date.now(),
                         turn: this.store.getGlobalState().turnCount,
                     });
@@ -417,8 +540,20 @@ export class GameEngine {
             // 포팅 시스템 월간 훅 [76-85][321-340][341-360][421-438] — 전략 명령 진행, 첩보망 유지비,
             // 지역 기후 전이, 계절 기반 수확 보정, 고령 무장 은퇴
             this.processPortedSystemsMonthly();
-            // AI 세력 월간 자율 외교 (선전포고/휴전/동맹) [341-360]
-            const diploReports = this.diplomacyAI.runMonthly();
+            // AI 세력 월간 자율 외교도 CommandQueue를 경유해 단일 diplomacy 원자를 사용한다. [341-360]
+            const diploReports = this.diplomacyAI.runMonthly((factionId, targetFactionId, action) => {
+                const faction = this.store.getFaction(factionId);
+                if (!faction) return { success: false, message: '행동 세력 없음' };
+                const command = new DiplomacyCommand(
+                    faction.leaderId,
+                    targetFactionId,
+                    action,
+                    this.store.getGlobalState().turnCount,
+                );
+                this.enqueueCommand(command);
+                const result = this.executeNextCommand();
+                return { success: result?.success ?? false, message: result?.message ?? '외교 명령 실행 실패' };
+            });
             for (const r of diploReports) {
                 for (const msg of r.messages) {
                     console.log(`[Diplomacy] ${r.factionName}: ${msg}`);
@@ -605,6 +740,12 @@ export class GameEngine {
             // [결함 수정] 턴 중반 유지보수 이벤트(재야 방문/로밍/복수/구출 등)가
             // 다음 턴 시작까지 배출되지 않아 UI가 1턴 늦게 반응하는 문제 해소
             this.processEventQueue();
+            // 턴 종료 시 개인 행동 페이즈를 지도 페이즈로 되돌린다.
+            // executeTurn()은 월간 자동 진행이므로 다음 턴의 COUNCIL_START가
+            // 반드시 WORLD_MAP에서 시작되도록 FSM 경계를 닫는다.
+            if (this.currentPhase === GamePhase.PERSONAL_ACTION) {
+                this.transition('ACTION_END');
+            }
             console.log('[Engine] === Turn end ===');
         } finally {
             this.isProcessingTurn = false;
@@ -637,6 +778,7 @@ export class GameEngine {
     private async executeAITurnWithStreaming(
         onProgress?: (progress: SchedulerProgress) => void,
     ): Promise<AIDecision[]> {
+        this.streamTurnCompleted = false;
         // Worker 미지원 환경 (Node 테스트 등) — 폴백 직행
         if (typeof Worker === 'undefined') {
             return this.lifecycleManager.executeAITurn(onProgress);
@@ -662,6 +804,7 @@ export class GameEngine {
             );
             this.streamBatchCount = 0;
             await this.aiStream.startMonthlyTurn(snapshot);
+            this.streamTurnCompleted = true;
             console.log(`[Engine] Streaming AI batches: ${this.streamBatchCount}`);
             // 스트리밍 경로에서는 결정이 배치 도착 시점에 이미 소비됨
             return [];
@@ -684,34 +827,92 @@ export class GameEngine {
 
     private convertDecisionToCommand(decision: AIDecision): void {
         const officerId = decision.officerId;
-        const turn = this.store.getGlobalState().turnCount;
+        const gs = this.store.getGlobalState();
+        const officer = this.store.getOfficer(officerId);
+        // Worker/폴백 결정은 신뢰할 수 없는 외부 입력과 동일하게 검증한다.
+        // 플레이어 세력과 이미 행동한 무장은 큐에 중복 등록하지 않는다. [201][49]
+        if (!officer || !officer.factionId || officer.factionId === gs.playerFactionId || officer.hasActedThisTurn) {
+            return;
+        }
+
         const payload = decision.payload;
+        const stringPayload = (key: string): string | null => typeof payload[key] === 'string' ? payload[key] as string : null;
+        // 스트리밍 시뮬레이터는 targetCityId, 기존 AIDecisionEngine은 cityId를 사용한다.
+        const targetCityId = stringPayload('cityId') ?? stringPayload('targetCityId');
+        const targetFactionId = stringPayload('targetFactionId');
+        const turn = gs.turnCount;
         let command: ICommand | null = null;
 
         switch (decision.actionType) {
-            case 'DOMESTIC':
-                if (payload.cityId) {
-                    command = new DomesticCommand(officerId, payload.cityId as CityID, (payload.facilityType as string) ?? 'FARM', turn);
+            case 'DOMESTIC': {
+                const city = targetCityId ? this.store.getCity(targetCityId) : null;
+                if (city && city.ownerId === officer.factionId && officer.cityId === city.id) {
+                    command = new DomesticCommand(officerId, city.id, stringPayload('facilityType') ?? 'FARM', turn);
                 }
                 break;
-            case 'TRAINING':
-                command = new TrainingCommand(officerId, (payload.statKey as 'leadership' | 'might' | 'intelligence' | 'politics' | 'charisma') ?? 'might', turn);
-                break;
-            case 'RECRUITMENT':
-                if (payload.targetOfficerId) {
-                    command = new RecruitmentCommand(officerId, payload.targetOfficerId as OfficerID, turn);
+            }
+            case 'TRAINING': {
+                const statKey = stringPayload('statKey');
+                if (statKey && ['leadership', 'might', 'intelligence', 'politics', 'charisma'].includes(statKey)) {
+                    command = new TrainingCommand(officerId, statKey as 'leadership' | 'might' | 'intelligence' | 'politics' | 'charisma', turn);
                 }
                 break;
-            case 'MOVEMENT':
-                if (payload.fromCityId && payload.toCityId) {
-                    command = new MovementCommand(officerId, payload.fromCityId as CityID, payload.toCityId as CityID, turn);
+            }
+            case 'RECRUITMENT': {
+                const targetOfficerId = stringPayload('targetOfficerId');
+                if (targetOfficerId) {
+                    command = new RecruitmentCommand(officerId, targetOfficerId, turn);
+                } else if (targetCityId) {
+                    command = new CityRecruitmentCommand(officerId, targetCityId, turn);
                 }
                 break;
+            }
+            case 'MOVEMENT': {
+                const fromCityId = stringPayload('fromCityId');
+                const toCityId = stringPayload('toCityId');
+                if (fromCityId && toCityId && fromCityId !== toCityId && officer.cityId === fromCityId) {
+                    command = new MovementCommand(officerId, fromCityId, toCityId, turn);
+                }
+                break;
+            }
+            case 'BATTLE': {
+                // 스트리밍 AI는 목표 도시 ID를, 기존 결정 엔진은 적 세력 ID를 보낸다.
+                const target = targetCityId ? this.store.getCity(targetCityId) : targetFactionId
+                    ? this.store.getAllCities().find(c => c.ownerId === targetFactionId) ?? null
+                    : null;
+                const attackerFaction = this.store.getFaction(officer.factionId);
+                const atWar = !!target?.ownerId && !!attackerFaction && (
+                    attackerFaction.diplomacy[target.ownerId]?.treaty === 'WAR'
+                    || this.diplomacy.getRelation(officer.factionId, target.ownerId) === FactionRelation.WAR
+                );
+                if (target && atWar && officer.cityId && target.id !== officer.cityId && target.ownerId !== officer.factionId) {
+                    command = new BattleCommand(officerId, officer.cityId, target.id, turn);
+                }
+                break;
+            }
+            case 'DIPLOMACY': {
+                const validActions: DiplomacyAction[] = ['ALLIANCE', 'BREAK_ALLIANCE', 'DECLARE_WAR', 'PEACE', 'GIFT'];
+                const explicitAction = stringPayload('action');
+                const domainTreaty = targetFactionId ? this.store.getFaction(officer.factionId)?.diplomacy[targetFactionId]?.treaty : undefined;
+                const engineRelation = targetFactionId
+                    ? this.diplomacy.getRelation(officer.factionId, targetFactionId)
+                    : undefined;
+                const action = explicitAction && validActions.includes(explicitAction as DiplomacyAction)
+                    ? explicitAction as DiplomacyAction
+                    : domainTreaty === 'WAR' || engineRelation === FactionRelation.WAR ? 'PEACE'
+                        : domainTreaty === 'ALLIANCE' || engineRelation === FactionRelation.ALLIANCE ? 'GIFT'
+                            : 'ALLIANCE';
+                if (targetFactionId && targetFactionId !== officer.factionId && this.store.getFaction(targetFactionId)) {
+                    command = new DiplomacyCommand(officerId, targetFactionId, action, turn);
+                }
+                break;
+            }
             case 'REST':
                 command = new RestCommand(officerId, turn);
                 break;
+            // 사회·탐색 등 전용 커맨드가 없는 결정은 잘못된 REST로 변환하지 않고 폐기한다.
             default:
-                command = new RestCommand(officerId, turn);
+                command = null;
         }
 
         if (command) {
@@ -740,10 +941,16 @@ export class GameEngine {
                 cityId: o.cityId,
             });
         }
+        const factionLeaders = new Map<string, string>();
+        for (const faction of this.store.getAllFactions()) {
+            factionLeaders.set(faction.id, faction.leaderId);
+        }
+
         const ctx: EvaluationContext = {
             currentYear: gs.time.year,
             currentTurn: turn,
             warlords,
+            factionLeaders,
             getAffinity: (officerId) => {
                 const edges = this.store.getRelationships(officerId);
                 return edges.length > 0 ? edges[0].affinity : 0;
@@ -1102,6 +1309,7 @@ export class GameEngine {
         transports: Array<{ fromCity: string; toCity: string; gold: number; food: number; soldiers: number }>;
         collapsedNetworks: Array<{ factionId: string; cityId: string }>;
         retired: Array<{ officerName: string; age: number }>;
+        captives: Array<{ officerId: string; officerName: string; decision: 'RECRUIT' | 'EXECUTE' | 'RELEASE'; success: boolean; message: string }>;
         vagrant: Array<{ factionName: string; kind: 'CONVERT' | 'RECRUIT' | 'RAID'; success: boolean; message: string }>;
     } {
         const snapshot = {
@@ -1109,6 +1317,7 @@ export class GameEngine {
             transports: [...this.portedMonthlyLog.transports],
             collapsedNetworks: [...this.portedMonthlyLog.collapsedNetworks],
             retired: [...this.portedMonthlyLog.retired],
+            captives: [...this.portedMonthlyLog.captives],
             vagrant: [...this.portedMonthlyLog.vagrant],
         };
         if (consume) {
@@ -1116,6 +1325,7 @@ export class GameEngine {
             this.portedMonthlyLog.transports = [];
             this.portedMonthlyLog.collapsedNetworks = [];
             this.portedMonthlyLog.retired = [];
+            this.portedMonthlyLog.captives = [];
             this.portedMonthlyLog.vagrant = [];
         }
         return snapshot;
@@ -1279,6 +1489,8 @@ export class GameEngine {
         state: NormalizedState; globalState: GlobalState; commands: SerializedCommand[];
         diplomacy: Array<{ a: string; b: string; relation: string }>;
         chronicle?: import('./chronicle_system.js').ChronicleEntry[];
+        /** 전투·포로·외교 실행/복구 이벤트 — 세이브 델타 및 리플레이 [312] */
+        commandReplayLog?: ReplayCommandEvent[];
         /** 포팅 시스템 스냅샷 [76-85][321-340][341-360][421-438][431-432][441-460] */
         ported?: {
             strategic: ReturnType<StrategicCommandManager['serialize']>;
@@ -1298,10 +1510,12 @@ export class GameEngine {
         return {
             state: this.store.createSnapshot(),
             globalState: this.store.getGlobalState(),
-            commands: this.commandQueue.serializeAll(),
+            // 실행된 커맨드는 현재 상태에 이미 반영되므로 저장 후 재실행하지 않는다. [17]
+            commands: this.commandQueue.serializePending(),
             diplomacy: this.diplomacy.serialize(),
             // 연대기 포함 [Y-메타][441-460] — 이어하기 후에도 역사 유지
             chronicle: this.chronicle.serialize(),
+            commandReplayLog: this.getCommandReplayLog(),
             // 포팅 시스템 상태 포함 — 이어하기 후 군단/기후/내러티브 복원
             ported: {
                 strategic: this.strategicCommand.serialize(),
@@ -1354,6 +1568,7 @@ export class GameEngine {
         state: NormalizedState; globalState: GlobalState; commands: SerializedCommand[];
         diplomacy?: Array<{ a: string; b: string; relation: string }>;
         chronicle?: import('./chronicle_system.js').ChronicleEntry[];
+        commandReplayLog?: ReplayCommandEvent[];
         ported?: {
             strategic: ReturnType<StrategicCommandManager['serialize']>;
             climates: Array<{ regionId: string; weather: string; temperature: number; harvestModifier: number }>;
@@ -1380,6 +1595,11 @@ export class GameEngine {
         if (data.chronicle) {
             this.chronicle.load(data.chronicle);
         }
+        this.commandReplayLog = data.commandReplayLog?.map(event => ({
+            ...event,
+            logMessages: [...event.logMessages],
+            captiveOutcomes: event.captiveOutcomes.map(outcome => ({ ...outcome })),
+        })) ?? [];
         // 포팅 시스템 복원 (구버전 세이브 호환: 없으면 초기화 상태 유지)
         if (data.ported) {
             this.strategicCommand.restore(data.ported.strategic);
@@ -1416,6 +1636,15 @@ export class GameEngine {
 
     initWorld(officers: Officer[], factions: Faction[], cities: City[], armies: Army[], scenarioId?: string): void {
         this.store.initWorld(officers, factions, cities, armies);
+        // 시나리오의 세력 treaty를 관계 엔진에 적재해 초기 상태부터 단일 원자를 유지한다. [341-360]
+        this.diplomacy.restore([]);
+        for (const faction of factions) {
+            for (const [targetId, entry] of Object.entries(faction.diplomacy)) {
+                if (entry.treaty === 'WAR') this.diplomacy.setRelation(faction.id, targetId, FactionRelation.WAR);
+                else if (entry.treaty === 'ALLIANCE') this.diplomacy.setRelation(faction.id, targetId, FactionRelation.ALLIANCE);
+                else if (entry.treaty === 'VASSAL') this.diplomacy.setRelation(faction.id, targetId, FactionRelation.SURRENDERED);
+            }
+        }
         // 도시 안정 상태 초기화 [148]
         this.citySecurityStates.clear();
         for (const c of cities) {

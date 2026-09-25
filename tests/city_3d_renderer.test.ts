@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { City3DRenderer } from '../src/core/city_3d_renderer';
+import { buildWorld } from '../src/core/scenario_system.js';
+import scenarioIndex from '../src/data/scenarios/index.json';
 
 describe('City3DRenderer', () => {
     const renderer = new City3DRenderer();
@@ -7,6 +9,16 @@ describe('City3DRenderer', () => {
     it('should generate city layout', () => {
         const buildings = renderer.generateCityLayout('city_1', 5, 'SPRING');
         expect(buildings.length).toBeGreaterThan(0);
+        expect(new Set(buildings.map(b => b.id)).size).toBe(buildings.length);
+        expect(buildings.every(b => b.active && b.investment === 0)).toBe(true);
+    });
+
+    it('restores saved building level, investment and operating state', () => {
+        const id = 'city_1:0';
+        const buildings = renderer.generateCityLayout('city_1', 5, 'SPRING', {
+            [id]: { level: 4, investment: 360, active: false },
+        });
+        expect(buildings[0]).toMatchObject({ id, level: 4, investment: 360, active: false });
     });
 
     it('should generate more buildings with higher development', () => {
@@ -54,5 +66,17 @@ describe('City3DRenderer', () => {
         const spring = renderer.generateCityLayout('city_1', 5, 'SPRING');
         const winter = renderer.generateCityLayout('city_1', 5, 'WINTER');
         expect(spring[0].color).not.toBe(winter[0].color);
+    });
+
+    it('generates a valid building layout for every scenario city', () => {
+        for (const scenario of scenarioIndex as Array<{ id: string; factions: unknown[] }>) {
+            const world = buildWorld(scenario as never, 0);
+            for (const city of world.cities) {
+                const buildings = renderer.generateCityLayout(city.id, Math.max(1, city.development / 20), 'SPRING');
+                expect(buildings.length).toBeGreaterThanOrEqual(5);
+                expect(new Set(buildings.map(b => b.id)).size).toBe(buildings.length);
+                expect(buildings.every(b => b.level >= 1 && b.level <= 5)).toBe(true);
+            }
+        }
     });
 });

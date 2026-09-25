@@ -6,7 +6,7 @@
  *
  * 15가지 외교 제안 수락 여부를 무장 야망-의리-지력 다차원 벡터 내적으로 판정
  */
-import type { FactionID } from './types.js';
+import type { FactionID, IGameStore } from './types.js';
 export declare enum FactionRelation {
     ALLIANCE = "alliance",
     NEUTRAL = "neutral",
@@ -20,9 +20,14 @@ export interface DiplomacyResult {
 export declare class DiplomacyEngine {
     private relations;
     private factionData;
+    /** 관계 상태를 정규화된 세력 diplomacy와 동기화하는 선택적 스토어. [341-360] */
+    private readonly stateStore?;
+    constructor(stateStore?: Pick<IGameStore, 'getFaction' | 'updateFaction'>);
     private key;
     getRelation(a: FactionID, b: FactionID): FactionRelation;
     setRelation(a: FactionID, b: FactionID, rel: FactionRelation): void;
+    /** 엔진 관계를 도메인 세력의 양방향 treaty로 투영한다. [341-360] */
+    private syncFactionTreaty;
     setFactionData(factionId: FactionID, data: {
         totalPower: number;
         gold: number;

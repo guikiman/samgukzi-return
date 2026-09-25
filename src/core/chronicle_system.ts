@@ -35,6 +35,10 @@ export interface ChronicleEntry {
     icon: string;
     /** 연대기 문구 */
     text: string;
+    /** 사건 관련 세력 (세력 필터용) */
+    factionId?: string | null;
+    /** 사건 관련 도시 (도시 상세 표시용) */
+    cityId?: string | null;
 }
 
 /** 링 버퍼 최대 항목 수 */
@@ -67,10 +71,17 @@ export class ChronicleManager {
     }
 
     /** 연대기 항목 추가 — 시각 미지정 시 스토어 시각 자동 수집 */
-    add(kind: ChronicleKind, text: string, at?: { year: number; month: number; turn: number }): void {
+    add(
+        kind: ChronicleKind,
+        text: string,
+        at?: { year: number; month: number; turn: number },
+        details?: { factionId?: string | null; cityId?: string | null },
+    ): void {
         const gs = this.store?.getGlobalState();
         const entry: ChronicleEntry = {
             kind,
+            factionId: details?.factionId,
+            cityId: details?.cityId,
             year: at?.year ?? gs?.time.year ?? 0,
             month: at?.month ?? gs?.time.month ?? 1,
             turn: at?.turn ?? gs?.turnCount ?? 0,

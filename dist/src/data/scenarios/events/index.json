@@ -268,6 +268,72 @@
                     }
                 }
             ]
+        },
+        {
+            "scenarioId": "07",
+            "chainId": "chain_07_three_kingdoms",
+            "chainName": "삼국鼎峙 — 세력의 재편",
+            "nodes": [
+                {
+                    "eventId": "ev_07_jiangwan_peace",
+                    "eventName": "강완의 안정",
+                    "priority": 10,
+                    "conditions": [
+                        { "type": "year", "minValue": 220, "maxValue": 240 },
+                        { "type": "warlord_alive", "targetId": "cao_pi" }
+                    ],
+                    "result": {
+                        "eventType": "SCENE",
+                        "dialogueLines": [
+                            "사오필: 승상은 적벽에서 살아남아 신하의 마음을 묶었다.",
+                            "강완을 지켜낸 헌정은 새 천하의 질서를 예고했다."
+                        ],
+                        "rewards": { "fundsAll": 450, "diplomacyFlag": "jiangwan_peace" }
+                    }
+                },
+                {
+                    "eventId": "ev_07_yiling_reckoning",
+                    "eventName": "夷陵의 대결과",
+                    "priority": 9,
+                    "conditions": [
+                        { "type": "year", "minValue": 222, "maxValue": 240 },
+                        { "type": "warlord_alive", "targetId": "sun_hao" }
+                    ],
+                    "result": {
+                        "eventType": "BATTLE_SCENE",
+                        "dialogueLines": [
+                            "여순: 오의 수장은 진명을 참지 못하고 산길에 머물렀다. 불길이 그 끝을 기다렸다.",
+                            "夷陵의 대결과는 오군의 전 구도를 바꿨다."
+                        ],
+                        "rewards": { "fundsAll": 300, "reputationSunHao": 15 }
+                    }
+                }
+            ]
+        },
+        {
+            "scenarioId": "07",
+            "chainId": "chain_07_southward_reform",
+            "chainName": "07 — 남방의 재편",
+            "nodes": [
+                {
+                    "eventId": "ev_07_nanman_reform",
+                    "eventName": "남만의 재편",
+                    "priority": 8,
+                    "conditions": [
+                        { "type": "year", "minValue": 225, "maxValue": 240 },
+                        { "type": "warlord_alive", "targetId": "liu_shan" },
+                        { "type": "warlord_alive", "targetId": "zhuge_ke" }
+                    ],
+                    "result": {
+                        "eventType": "SCENE",
+                        "dialogueLines": [
+                            "제갈격: 남방의 마을과 산을 사람마다 다스리며, 서로의 길을 잇는 교역로가 되었다.",
+                            "강릉의 정비가 시작되자 촉의 남쪽 경로가 빠르게 살아났다."
+                        ],
+                        "rewards": { "fundsAll": 280, "strategicFlag": "southern_reform_started" }
+                    }
+                }
+            ]
         }
     ]
 }

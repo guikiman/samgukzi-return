@@ -201,11 +201,12 @@ export class AIStreamManager {
         return this.isTurnRunning;
     }
 
-    /** 워커를 종료하고 자원을 해제한다 */
+    /** 워커를 종료하고 대기 중인 턴을 안전하게 해제한다. */
     terminate(): void {
         this.worker?.terminate();
         this.worker = null;
         this.isTurnRunning = false;
+        this.pendingResolve?.();
         this.pendingResolve = null;
     }
 }

@@ -22,6 +22,10 @@ export interface ChronicleEntry {
     icon: string;
     /** 연대기 문구 */
     text: string;
+    /** 사건 관련 세력 (세력 필터용) */
+    factionId?: string | null;
+    /** 사건 관련 도시 (도시 상세 표시용) */
+    cityId?: string | null;
 }
 /** 링 버퍼 최대 항목 수 */
 export declare const CHRONICLE_MAX = 200;
@@ -38,6 +42,9 @@ export declare class ChronicleManager {
         year: number;
         month: number;
         turn: number;
+    }, details?: {
+        factionId?: string | null;
+        cityId?: string | null;
     }): void;
     /** 최신순 조회 (UI 표시용) */
     list(): ChronicleEntry[];

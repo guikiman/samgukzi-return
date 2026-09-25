@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GameEngine } from '../src/core/game_engine.js';
 import { GameStore } from '../src/core/game_store.js';
 import { buildWorld } from '../src/core/scenario_system.js';
@@ -10,6 +10,7 @@ import {
     judgeCaptiveRecruit,
     processCaptives,
 } from '../src/core/ai_captive_system.js';
+import { isCaptive } from '../src/core/captive_escape_system.js';
 
 describe('AI 포로 후처리 [121-130][131-145]', () => {
     let store: GameStore;
@@ -65,6 +66,22 @@ describe('AI 포로 후처리 [121-130][131-145]', () => {
             // 석방: 재야 유지
             expect(store.getOfficer(officer.id)!.factionId).toBeNull();
             expect(store.getOfficer(officer.id)!.status).toBe(OfficerStatus.FREE);
+        }
+    });
+
+    it('석방 결정을 받으면 포로 마커를 해제해 다시 탈출 판정을 받지 않는다', () => {
+        const faction = world.factions[0];
+        const officer = store.getAllOfficers().find(o => o.factionId !== null)!;
+        store.updateOfficer(officer.id, { factionId: null, status: OfficerStatus.FREE, loyalty: 0, cityId: null });
+
+        const random = vi.spyOn(Math, 'random').mockReturnValue(0.99);
+        try {
+            const report = processCaptives(store, faction.id, [officer.id]);
+            expect(report.outcomes[0]?.decision).toBe('RELEASE');
+            expect(isCaptive(store, officer.id)).toBe(false);
+            expect(store.getOfficer(officer.id)!.status).toBe(OfficerStatus.FREE);
+        } finally {
+            random.mockRestore();
         }
     });
 

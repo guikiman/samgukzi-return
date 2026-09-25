@@ -175,7 +175,8 @@ export class DomesticScheduler {
             }
         }
 
-        this.assignments.set(`${cityId}_${assignment.taskType}`, assignment);
+        // 도시 ID 자체에 underscore가 포함될 수 있으므로 task 구분자는 분리 unambiguous한 '::'를 사용한다. [49]
+        this.assignments.set(`${cityId}::${assignment.taskType}`, assignment);
     }
 
     // ============================================================
@@ -197,7 +198,7 @@ export class DomesticScheduler {
         const results: ExecutionResult[] = [];
 
         for (const [key, assignment] of this.assignments.entries()) {
-            const cityId = key.split('_')[0];
+            const cityId = key.slice(0, key.indexOf('::'));
             const city = this.store.getCity(cityId);
             if (!city) continue;
 

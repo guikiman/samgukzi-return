@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-24T07:04:12.700Z",
+  "generated": "2026-09-25T06:31:10.626Z",
   "files": [
     "dist/src/ai/ai_stream_manager.js",
     "dist/src/ai/ai_stream_worker.js",
@@ -507,7 +507,9 @@
     "dist/src/core/worker_timeout_watchdog.js",
     "dist/src/core/wounded_desertion_system.js",
     "dist/src/core/wounded_soldier_healer.js",
+    "dist/src/data/scenarios/07_officers.json",
     "dist/src/data/scenarios/events/index.json",
+    "dist/src/data/scenarios/relationships.json",
     "dist/src/main.js"
   ]
 }

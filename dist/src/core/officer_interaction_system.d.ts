@@ -13,8 +13,26 @@
  */
 import type { GameStore } from './game_store.js';
 export type InteractionKind = 'CHAT' | 'GIFT' | 'DEBATE' | 'DUEL';
-/** 증정 비용 (金) */
+/** 증정 비용 기본값 (金) — 구버전 호출과 증정 버튼의 기본 수량 */
 export declare const GIFT_COST = 200;
+export type GiftItemId = 'NONE' | 'SILK' | 'JADE' | 'BOOK' | 'TREASURE';
+export type GiftItemGrade = 'NONE' | 'COMMON' | 'FINE' | 'RARE' | 'LEGENDARY';
+export interface GiftItemDefinition {
+    readonly id: GiftItemId;
+    readonly name: string;
+    readonly grade: GiftItemGrade;
+    readonly gradeLabel: string;
+    readonly affinity: number;
+    readonly description: string;
+}
+/** 선물 아이템 등급과 아이템 자체 우호도 효과 [24][C-인간관계] */
+export declare const GIFT_ITEMS: Record<GiftItemId, GiftItemDefinition>;
+export interface GiftOptions {
+    readonly itemId?: GiftItemId;
+    readonly gold?: number;
+}
+/** 금화 100金당 우호도 +1, 최대 +30. 아이템 효과는 별도로 더한다. */
+export declare function calculateGiftAffinity(options?: GiftOptions): number;
 /** 같은 대상과의 대화 월 1회 제한 */
 export declare const CHAT_MONTHLY_LIMIT = 1;
 /** 상호작용별 우호도 변화 기본값 */
@@ -40,7 +58,7 @@ export interface InteractionOutcome {
     readonly message: string;
 }
 /** 상호작용 가능 여부 판정 (사이드 이펙트 없음) */
-export declare function checkInteraction(store: GameStore, actorId: string, targetId: string, kind: InteractionKind): {
+export declare function checkInteraction(store: GameStore, actorId: string, targetId: string, kind: InteractionKind, options?: GiftOptions): {
     ok: boolean;
     reason?: string;
 };
@@ -48,7 +66,7 @@ export declare function checkInteraction(store: GameStore, actorId: string, targ
  * 상호작용 실행 — 판정 → 우호도/자금 적용 → 이력 기록.
  * DEBATE/DUEL은 미니게임 엔진을 사용한 즉시 시뮬레이션 (카드 자동 선택).
  */
-export declare function executeInteraction(store: GameStore, actorId: string, targetId: string, kind: InteractionKind): InteractionOutcome;
+export declare function executeInteraction(store: GameStore, actorId: string, targetId: string, kind: InteractionKind, options?: GiftOptions): InteractionOutcome;
 /** 대상 무장과의 현재 우호도 조회 (엣지 없으면 0) */
 export declare function getAffinityBetween(store: GameStore, aId: string, bId: string): number;
 //# sourceMappingURL=officer_interaction_system.d.ts.map
