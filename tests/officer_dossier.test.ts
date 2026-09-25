@@ -120,6 +120,8 @@ describe('장수 도장 — 출력 무결성', () => {
 describe('장수 도장 — 내용 반영', () => {
     it('생몰 연도가 실제 데이터와 일치한다', () => {
         for (const p of ALL) {
+            // 손글 bio 장수는 summary 가 원문이라 아래 'bio 가 있으면' 그룹에서 검증한다.
+            if (p.bio) continue;
             const d = buildOfficerDossierFromProfile(p);
             if (p.birthYear !== null && p.deathYear !== null && p.deathYear > p.birthYear) {
                 expect(d.summary).toContain(`${p.birthYear}년에 태어나`);
