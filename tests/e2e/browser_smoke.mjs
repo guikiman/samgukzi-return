@@ -548,7 +548,40 @@ async function main() {
             "units:units,finished:viewer.isFinished,urlLen:('?replay='+encoded).length};" +
             "})()");
 
-        const result = { flowProbe, scenario07Probe, captiveBattleProbe, monthlyReportProbe, cityChronicleProbe, chronicleFilterProbe, mapVisibilityProbe, mapScreenshotProbe, mapClickProbe, dialogueProbe, buildingProbe, domesticProbe, progress, graphProbe, a11yProbe, keyboardProbe, mobileProbe, saveLoadProbe, replayProbe, forced, ending, consoleErrors: consoleErrors.slice(0, 10), notFound: notFound.slice(0, 5), pageErrors: pageErrors.slice(0, 10) };
+        // ===== [312][461-480] 리플레이 속도 UI: 기본값·선택·다음 프레임·키보드·실제 터치 =====
+        // 동일한 UI 모듈을 브라우저에서 검증하고, 속도 적용은 다음 프레임에 뷰어へ 전달되는
+        // 실제 main 연결부와 동일한 콜백 경로를 fixture로 확인한다.
+        await cdp.call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+        const replayUiProbe = await cdp.evalJson(
+            "(async function(){var mod=await import('./dist/src/ui/replay_speed_controls.js'),viewer={speed:1,setSpeed:function(speed){this.speed=speed;}};" +
+            "var host=document.createElement('fieldset');host.id='replay-e2e-fixture';host.className='replay-speed-controls';host.style.position='fixed';host.style.left='8px';host.style.top='100px';host.style.zIndex='9999';" +
+            "host.innerHTML='<legend>속도</legend><label><input type=radio name=replay-speed value=0.5>0.5x</label><label><input type=radio name=replay-speed value=1 checked>1x</label><label><input type=radio name=replay-speed value=2>2x</label><label><input type=radio name=replay-speed value=4>4x</label>';document.body.appendChild(host);" +
+            "var calls=[],controls=new mod.ReplaySpeedControls(host,function(speed){calls.push(speed);host.__replaySpeed=speed;viewer.setSpeed(speed);});controls.reset();controls.setVisible(true);" +
+            "var inputs=Array.from(host.querySelectorAll('input[name=replay-speed]')),four=host.querySelector('input[value=\"4\"]'),two=host.querySelector('input[value=\"2\"]'),half=host.querySelector('input[value=\"0.5\"]'),fr=four.getBoundingClientRect(),tr=two.getBoundingClientRect();half.focus();" +
+            "return {loaded:!!viewer,defaults:{speed:viewer.speed,selected:(host.querySelector('input:checked')||{}).value,visible:!host.hidden},options:inputs.map(function(i){return i.value;}).join(',')," +
+            "fourPoint:{x:Math.round(fr.left+fr.width/2),y:Math.round(fr.top+fr.height/2)},twoPoint:{x:Math.round(tr.left+tr.width/2),y:Math.round(tr.top+tr.height/2)},calls:calls};})()");
+        await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x: replayUiProbe.fourPoint.x, y: replayUiProbe.fourPoint.y, button: 'left', buttons: 1, clickCount: 1 });
+        await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: replayUiProbe.fourPoint.x, y: replayUiProbe.fourPoint.y, button: 'left', buttons: 0, clickCount: 1 });
+        await delay(80);
+        const afterClickProbe = await cdp.evalJson(
+            "(function(){var host=document.getElementById('replay-e2e-fixture');return {afterClickSelected:(host.querySelector('input:checked')||{}).value,afterClickSpeed:host.__replaySpeed};})()");
+        await cdp.evalJson("(function(){document.getElementById('replay-e2e-fixture').querySelector('input[value=\"0.5\"]').focus();})()");
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+        await delay(80);
+        const afterKeyProbe = await cdp.evalJson(
+            "(function(){var host=document.getElementById('replay-e2e-fixture');return {afterKeySelected:(host.querySelector('input:checked')||{}).value,afterKeySpeed:host.__replaySpeed};})()");
+        await cdp.call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: replayUiProbe.twoPoint.x, y: replayUiProbe.twoPoint.y, id: 7 }] });
+        await cdp.call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await delay(80);
+        const touchProbe = await cdp.evalJson(
+            "(function(){var host=document.getElementById('replay-e2e-fixture');return {touchSelected:(host.querySelector('input:checked')||{}).value,touchSpeed:host.__replaySpeed};})()");
+        const recoveryProbe = await cdp.evalJson(
+            "(function(){var host=document.getElementById('replay-e2e-fixture'),bad=host.querySelector('input[value=\"2\"]');bad.value='not-a-speed';bad.checked=true;bad.dispatchEvent(new Event('change',{bubbles:true}));var out={recoverySelected:(host.querySelector('input:checked')||{}).value,recoverySpeed:host.__replaySpeed};host.remove();return out;})()");
+        Object.assign(replayUiProbe, afterClickProbe, afterKeyProbe, touchProbe, recoveryProbe);
+        await cdp.call('Emulation.clearDeviceMetricsOverride');
+
+        const result = { flowProbe, scenario07Probe, captiveBattleProbe, monthlyReportProbe, cityChronicleProbe, chronicleFilterProbe, mapVisibilityProbe, mapScreenshotProbe, mapClickProbe, dialogueProbe, buildingProbe, domesticProbe, progress, graphProbe, a11yProbe, keyboardProbe, mobileProbe, saveLoadProbe, replayProbe, replayUiProbe, forced, ending, consoleErrors: consoleErrors.slice(0, 10), notFound: notFound.slice(0, 5), pageErrors: pageErrors.slice(0, 10) };
         console.log(JSON.stringify(result, null, 2));
 
         const resource404 = consoleErrors.filter((e) => e.includes('Failed to load resource'));
@@ -570,6 +603,19 @@ async function main() {
             ui: graphProbe.open === 'block' && graphProbe.closed && (graphProbe.rows > 0 || graphProbe.hint === true) && a11yProbe.open === 'block' && a11yProbe.cbActive && keyboardProbe.helpOpen && keyboardProbe.helpClosed && keyboardProbe.paused && keyboardProbe.resumed && mobileProbe.touchAction === 'none' && mobileProbe.canvasWidth > 0 && mobileProbe.viewport === 390,
             persistence: saveLoadProbe.saved && saveLoadProbe.uiInSave && saveLoadProbe.visitedAfterClick && saveLoadProbe.visitedInCompressedSave && saveLoadProbe.buildingStateInCompressedSave,
             replay: replayProbe.encoded && replayProbe.roundTrip && replayProbe.units === 2 && replayProbe.finished && replayProbe.urlLen < 100 * 1024,
+            replaySpeedUi: replayUiProbe.loaded
+                && replayUiProbe.defaults.visible
+                && replayUiProbe.defaults.speed === 1
+                && replayUiProbe.defaults.selected === '1'
+                && replayUiProbe.options === '0.5,1,2,4'
+                && replayUiProbe.afterClickSpeed === 4
+                && replayUiProbe.afterClickSelected === '4'
+                && replayUiProbe.afterKeySpeed === 0.5
+                && replayUiProbe.afterKeySelected === '0.5'
+                && replayUiProbe.touchSpeed === 2
+                && replayUiProbe.touchSelected === '2'
+                && replayUiProbe.recoverySpeed === 1
+                && replayUiProbe.recoverySelected === '1',
             ending: ending.display === 'flex' && ending.narratives >= 1,
         };
         console.log('REGRESSION_CHECKS:', JSON.stringify(regressionChecks));
@@ -672,7 +718,20 @@ async function main() {
             && replayProbe.roundTrip === true
             && replayProbe.units === 2
             && replayProbe.finished === true
-            && replayProbe.urlLen < 100 * 1024;
+            && replayProbe.urlLen < 100 * 1024
+            && replayUiProbe.loaded === true
+            && replayUiProbe.defaults.visible === true
+            && replayUiProbe.defaults.speed === 1
+            && replayUiProbe.defaults.selected === '1'
+            && replayUiProbe.options === '0.5,1,2,4'
+            && replayUiProbe.afterClickSpeed === 4
+            && replayUiProbe.afterClickSelected === '4'
+            && replayUiProbe.afterKeySpeed === 0.5
+            && replayUiProbe.afterKeySelected === '0.5'
+            && replayUiProbe.touchSpeed === 2
+            && replayUiProbe.touchSelected === '2'
+            && replayUiProbe.recoverySpeed === 1
+            && replayUiProbe.recoverySelected === '1';
         console.log('E2E_RESULT:', ok ? 'PASS' : 'FAIL');
         exitCode = ok ? 0 : 1;
         cdp.sock.destroy();

@@ -26,6 +26,7 @@ import { BattleCommand } from './core/command_system.js';
 import { ReplayShareManager } from './core/replay_share_manager.js';
 import type { ReplayActionLog, ReplayCommandEvent } from './core/replay_share_manager.js';
 import { ReplayViewer } from './core/replay_viewer.js';
+import { ReplaySpeedControls } from './ui/replay_speed_controls.js';
 import { RuntimeModLoader } from './core/runtime_mod_loader.js';
 import { MultiTabMutexCoordinator } from './core/multi_tab_mutex_coordinator.js';
 import { checkInteraction, executeInteraction, getAffinityBetween, GIFT_ITEMS, calculateGiftAffinity, type GiftItemId, type GiftOptions } from './core/officer_interaction_system.js';
@@ -2613,26 +2614,46 @@ document.getElementById('rp-copy')?.addEventListener('click', () => {
 
 // [312] 리플레이 뷰어 — 공유 URL 접속 시 헥스 맵 애니메이션 재생
 let replayViewer: ReplayViewer | null = null;
+const replaySpeedControls = new ReplaySpeedControls(
+    document.getElementById('replay-speed-controls') as HTMLFieldSetElement,
+    speed => replayViewer?.setSpeed(speed),
+);
+
+/** 새 리플레이를 준비하고 속도 UI는 항상 안전한 1x부터 시작한다. */
+function prepareReplayPlayback(logs: readonly ReplayActionLog[]): number {
+    replayViewer = new ReplayViewer({
+        addLog,
+        onComplete: () => replaySpeedControls.setEnabled(false),
+    });
+    const unitCount = replayViewer.load(logs);
+    replaySpeedControls.reset();
+    replaySpeedControls.setEnabled(!replayViewer.isFinished);
+    replaySpeedControls.setVisible(unitCount > 0);
+    if (unitCount === 0) replayViewer = null;
+    return unitCount;
+}
 
 function checkReplayParam(): void {
     const params = new URLSearchParams(location.search);
     const replay = params.get('replay');
     if (!replay) return;
+    // 실패/손상 데이터가 이전 세션의 배율을 물려받지 않도록 UI부터 1x로 복구한다.
+    replaySpeedControls.reset();
+    replaySpeedControls.setVisible(false);
     void replayManager.importFromCompressedString(replay).then(logs => {
         if (logs.length === 0) {
-            addLog('⚠️ 리플레이 데이터 복원 실패');
+            addLog('⚠️ 리플레이 데이터 복원 실패 — 기본 속도 1x로 복구');
             return;
         }
         // 리플레이 재생 모드 — 타이틀을 덮고 헥스 전장에서 애니메이션 재생 [312]
-        replayViewer = new ReplayViewer({ addLog });
-        const unitCount = replayViewer.load(logs);
+        const unitCount = prepareReplayPlayback(logs);
         if (unitCount === 0) {
-            addLog('⚠️ 리플레이에 유닛 정보가 없습니다');
+            addLog('⚠️ 리플레이에 유닛 정보가 없습니다 — 기본 속도 1x 유지');
             return;
         }
         document.getElementById('title-screen')!.style.display = 'none';
         addLog(`🎬 공유된 리플레이 로드 완료 — 액션 ${logs.length}건, 유닛 ${unitCount} (자동 재생)`);
-        replayViewer.play();
+        replayViewer!.play();
     });
 }
 
@@ -2659,17 +2680,22 @@ function updateReplayViewer(dt: number): void {
     ctx.fillRect(10, 32, 320 * replayViewer.progress, 6);
 }
 
-// [312] 리플레이 컨트롤 키바인딩 — Space 일시정지, 1~4 속도 배율
+// [312][461-480] 리플레이 컨트롤 키바인딩 — Space 일시정지, 0~4 속도 프리셋
+// radio에 포커스가 있더라도 브라우저의 네이티브 키보드 탐색을 유지한다.
 document.addEventListener('keydown', (e) => {
     if (!replayViewer || replayViewer.isFinished) return;
+    const target = e.target as HTMLElement | null;
+    const isReplaySpeedInput = target instanceof HTMLInputElement && target.name === 'replay-speed';
+    if (target && !isReplaySpeedInput && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
     if (e.key === ' ') {
+        if (isReplaySpeedInput) return; // radio 기본 Space 선택을 유지한다.
         e.preventDefault();
         replayViewer.togglePause();
-    } else if (e.key >= '1' && e.key <= '4') {
-        const mult = Number(e.key);
-        replayViewer.setSpeed(mult);
-    } else if (e.key === '0') {
-        replayViewer.setSpeed(0.5);
+    } else if (e.key >= '0' && e.key <= '4') {
+        e.preventDefault();
+        // 3은 제외 프리셋(0.5/1/2/4) 계약을 보존하기 위한 4x 별칭이다.
+        replaySpeedControls.setSpeed(e.key === '0' ? 0.5 : e.key === '1' ? 1 : e.key === '2' ? 2 : 4);
     }
 });
 
@@ -3805,6 +3831,9 @@ document.getElementById('btn-scenario-back')!.addEventListener('click', () => {
 document.getElementById('btn-replay-load')?.addEventListener('click', () => {
     const input = document.getElementById('replay-url-input') as HTMLInputElement;
     const msgEl = document.getElementById('replay-import-msg')!;
+    // 어떤 입력/복원 결과라도 이전 속도를 재사용하지 않고 안전한 기본값부터 시작한다.
+    replaySpeedControls.reset();
+    replaySpeedControls.setVisible(false);
     const showMsg = (text: string, ok: boolean): void => {
         msgEl.textContent = text;
         msgEl.style.color = ok ? '#9fd6a0' : '#e08a80';
@@ -3823,16 +3852,15 @@ document.getElementById('btn-replay-load')?.addEventListener('click', () => {
             showMsg('❌ 리플레이 복원 실패 — URL이 올바른지 확인하세요', false);
             return;
         }
-        replayViewer = new ReplayViewer({ addLog });
-        const unitCount = replayViewer.load(logs);
+        const unitCount = prepareReplayPlayback(logs);
         if (unitCount === 0) {
-            showMsg('❌ 리플레이에 유닛 정보가 없습니다', false);
+            showMsg('❌ 리플레이에 유닛 정보가 없습니다 — 기본 속도 1x 유지', false);
             return;
         }
         document.getElementById('scenario-screen')!.style.display = 'none';
         document.getElementById('title-screen')!.style.display = 'none';
         addLog(`🎬 리플레이 로드 완료 — 액션 ${logs.length}건, 유닛 ${unitCount} (자동 재생)`);
-        replayViewer.play();
+        replayViewer!.play();
     });
 });
 
