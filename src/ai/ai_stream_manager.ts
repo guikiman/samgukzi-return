@@ -17,6 +17,7 @@ import type {
     FactionDecisionBatch,
     WorkerOutboundMessage,
 } from './ai_worker_simulator.js';
+import { resolveAIMonthlyDifficulty, DEFAULT_DIFFICULTY } from '../core/difficulty_balance_system.js';
 
 export type {
     AITurnPayload,
@@ -38,7 +39,7 @@ export interface AIStreamCallbacks {
 
 /** GameEngine 도메인 → Worker 스냅샷 변환 입력 (최소 인터페이스) */
 export interface SnapshotSource {
-    getGlobalState(): { year: number; month: number; turnCount: number };
+    getGlobalState(): { time: { year: number; month: number }; turnCount: number; difficulty?: number };
     getAllOfficers(): Array<{
         id: string; name: string; factionId: string | null; cityId: string | null;
         ambition: number; loyalty: number; morality: number; infamy: number;
@@ -176,7 +177,16 @@ export class AIStreamManager {
             isPlayer: playerFactionId !== null && o.factionId === playerFactionId,
         }));
 
-        return { year: gs.year, month: gs.month, turn: gs.turnCount, factions, officers, cities };
+        return {
+            year: gs.time.year,
+            month: gs.time.month,
+            turn: gs.turnCount,
+            aiDifficultyMultiplier: resolveAIMonthlyDifficulty(gs.difficulty ?? DEFAULT_DIFFICULTY, gs.turnCount) / DEFAULT_DIFFICULTY,
+            protectedFactionId: playerFactionId,
+            factions,
+            officers,
+            cities,
+        };
     }
 
     // ============================================================

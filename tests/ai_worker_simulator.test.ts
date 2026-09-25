@@ -121,6 +121,43 @@ describe('calculateOfficerDecision', () => {
         expect(decision?.actionType).toBe('BATTLE');
         expect(decision?.payload.targetCityId).toBe('enemy-city');
     });
+
+    it('applies the monthly AI difficulty multiplier to conquest selection', () => {
+        const cities = {
+            'city-1': city(),
+            'enemy-city': city({ id: 'enemy-city', ownerId: 'faction-2', defense: 10 }),
+        };
+        const factions = { 'faction-1': faction({ atWarWith: ['faction-2'] }) };
+        const lowDifficulty = calculateOfficerDecision(
+            officer({ ambition: 60, stats: { ...baseStats, leadership: 60 } }),
+            cities,
+            factions,
+            { aiDifficultyMultiplier: 0.5 },
+        );
+        const highDifficulty = calculateOfficerDecision(
+            officer({ ambition: 60, stats: { ...baseStats, leadership: 60 } }),
+            cities,
+            factions,
+            { aiDifficultyMultiplier: 1.5 },
+        );
+
+        expect(lowDifficulty?.actionType).not.toBe('BATTLE');
+        expect(highDifficulty?.actionType).toBe('BATTLE');
+    });
+
+    it('does not select a protected player city as a conquest target', () => {
+        const decision = calculateOfficerDecision(
+            officer(),
+            {
+                'city-1': city(),
+                'player-city': city({ id: 'player-city', ownerId: 'player-faction', defense: 1 }),
+            },
+            { 'faction-1': faction({ atWarWith: ['player-faction'] }) },
+            { aiDifficultyMultiplier: 2, protectedFactionId: 'player-faction' },
+        );
+
+        expect(decision?.actionType).not.toBe('BATTLE');
+    });
 });
 
 describe('runAITurn', () => {

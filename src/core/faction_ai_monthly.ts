@@ -16,6 +16,7 @@ import { processBattleSpoils } from './battle_spoils_system.js';
 import { processCaptives, type CaptiveOutcome } from './ai_captive_system.js';
 // [295] 유저 비개입 자동 전투 시뮬레이터 — AI 출진 판정을 확률 단판에서 라운드제 소모전으로 격상
 import { simulateAutoBattle, type AutoBattleSides, type AutoBattleUnit } from './auto_battle_simulator.js';
+import { getAIMonthlyDifficultyMultiplier } from './difficulty_balance_system.js';
 
 /** 전도 정규화 좌표 기반 인접 판정 거리 (main.ts의 ADJACENT_DIST와 동일 기준) */
 const ADJACENT_DIST = 0.16;
@@ -33,6 +34,8 @@ const AGGRESSION: Record<string, number> = {
 export interface FactionAIMonthlyOptions {
     /** 스트리밍 AI가 이미 커맨드 큐로 내정/징병을 처리한 경우 직접 처리 중복을 방지한다. [201] */
     skipCityDevelopment?: boolean;
+    /** 신규 게임 초기 12개월 AI 난이도 곡선을 명시적으로 주입 (테스트/재현용). */
+    aiDifficultyMultiplier?: number;
 }
 
 export interface FactionAIReport {
@@ -67,7 +70,9 @@ export class FactionAI {
         let conqueredCityId: string | null = null;
         const captiveOutcomes: CaptiveOutcome[] = [];
         const leader = faction.leaderId ? this.store.getOfficer(faction.leaderId) : null;
-        const aggression = AGGRESSION[leader?.personality ?? 'CALM'] ?? 0.25;
+        const baseAggression = AGGRESSION[leader?.personality ?? 'CALM'] ?? 0.25;
+        const difficultyMultiplier = options.aiDifficultyMultiplier ?? getAIMonthlyDifficultyMultiplier(this.store);
+        const aggression = Math.min(1, baseAggression * difficultyMultiplier);
 
         const cities = this.store.getCitiesByFaction(faction.id);
         if (cities.length === 0) {
@@ -111,6 +116,8 @@ export class FactionAI {
             if (Math.random() > aggression) continue;
             const targets = this.store.getAllCities().filter(c => {
                 if (!c.ownerId || c.ownerId === faction.id) return false;
+                // 플레이어 세력은 기존 보호 계약대로 AI 직접 공격 대상에서 제외한다. [201][49]
+                if (c.ownerId === this.store.getGlobalState().playerFactionId) return false;
                 const dx = (c.mapX ?? 0) - (src.mapX ?? 0);
                 const dy = (c.mapY ?? 0) - (src.mapY ?? 0);
                 return Math.hypot(dx, dy) <= ADJACENT_DIST;
