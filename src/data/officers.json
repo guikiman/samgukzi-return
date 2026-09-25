@@ -2,37 +2,98 @@
   {
     "id": "liu_bei",
     "name": "유비",
-    "stats": { "lea": 81, "str": 77, "int": 78, "pol": 80 },
-    "city_id": "pyeong_won"
+    "stats": {
+      "lea": 76,
+      "str": 73,
+      "int": 74,
+      "pol": 78
+    },
+    "city_id": "pyeong_won",
+    "profileId": "off_0952",
+    "traits": [
+      "탈토",
+      "영명",
+      "강운",
+      "구심",
+      "재기"
+    ]
   },
   {
     "id": "guan_yu",
     "name": "관우",
-    "stats": { "lea": 96, "str": 97, "int": 75, "pol": 63 },
-    "city_id": "pyeong_won"
+    "stats": {
+      "lea": 96,
+      "str": 97,
+      "int": 75,
+      "pol": 63
+    },
+    "city_id": "pyeong_won",
+    "profileId": "off_0147",
+    "traits": [
+      "신장",
+      "단기",
+      "영명",
+      "구심",
+      "주석"
+    ]
   },
   {
     "id": "cao_pi",
     "name": "사오필",
-    "stats": { "lea": 78, "str": 66, "int": 76, "pol": 72 },
+    "stats": {
+      "lea": 78,
+      "str": 66,
+      "int": 76,
+      "pol": 72
+    },
     "city_id": "pyeong_won"
   },
   {
     "id": "liu_shan",
     "name": "유찬",
-    "stats": { "lea": 58, "str": 32, "int": 66, "pol": 58 },
-    "city_id": "chengdu"
+    "stats": {
+      "lea": 75,
+      "str": 77,
+      "int": 65,
+      "pol": 56
+    },
+    "city_id": "chengdu",
+    "profileId": "off_0935",
+    "traits": [
+      "악주",
+      "노발",
+      "조타",
+      "공명"
+    ]
   },
   {
     "id": "sun_hao",
     "name": "손호",
-    "stats": { "lea": 72, "str": 58, "int": 78, "pol": 70 },
-    "city_id": "jianye"
+    "stats": {
+      "lea": 13,
+      "str": 28,
+      "int": 31,
+      "pol": 6
+    },
+    "city_id": "jianye",
+    "profileId": "off_0554",
+    "traits": [
+      "사역",
+      "징세",
+      "저돌",
+      "낭비",
+      "악명"
+    ]
   },
   {
     "id": "zhuge_ke",
     "name": "제갈격",
-    "stats": { "lea": 84, "str": 44, "int": 90, "pol": 86 },
+    "stats": {
+      "lea": 84,
+      "str": 44,
+      "int": 90,
+      "pol": 86
+    },
     "city_id": "chengdu"
   }
 ]

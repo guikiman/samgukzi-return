@@ -1,0 +1,423 @@
+{
+  "version": 1,
+  "count": 46,
+  "populationEntryCount": 338,
+  "regions": {
+    "양평": {
+      "name": "양평",
+      "gold": 1550,
+      "food": 6390,
+      "population": 116100,
+      "areaCode": 6,
+      "totalOutput": 15380
+    },
+    "북평": {
+      "name": "북평",
+      "gold": 2370,
+      "food": 10850,
+      "population": 126000,
+      "areaCode": 7,
+      "totalOutput": 24596
+    },
+    "계": {
+      "name": "계",
+      "gold": 2590,
+      "food": 8570,
+      "population": 315000,
+      "areaCode": 6,
+      "totalOutput": 23592
+    },
+    "진양": {
+      "name": "진양",
+      "gold": 1610,
+      "food": 8450,
+      "population": 220500,
+      "areaCode": 6,
+      "totalOutput": 17788
+    },
+    "남피": {
+      "name": "남피",
+      "gold": 3450,
+      "food": 18285,
+      "population": 350100,
+      "areaCode": 8,
+      "totalOutput": 38295
+    },
+    "업": {
+      "name": "업",
+      "gold": 6530,
+      "food": 24310,
+      "population": 436500,
+      "areaCode": 12,
+      "totalOutput": 62184
+    },
+    "평원": {
+      "name": "평원",
+      "gold": 2180,
+      "food": 13330,
+      "population": 155700,
+      "areaCode": 6,
+      "totalOutput": 25974
+    },
+    "북해": {
+      "name": "북해",
+      "gold": 2360,
+      "food": 12250,
+      "population": 309600,
+      "areaCode": 6,
+      "totalOutput": 25938
+    },
+    "하비": {
+      "name": "하비",
+      "gold": 2360,
+      "food": 14280,
+      "population": 226800,
+      "areaCode": 8,
+      "totalOutput": 27968
+    },
+    "소패": {
+      "name": "소패",
+      "gold": 1410,
+      "food": 7860,
+      "population": 112500,
+      "areaCode": 5,
+      "totalOutput": 16038
+    },
+    "광릉": {
+      "name": "광릉",
+      "gold": 1360,
+      "food": 8070,
+      "population": 160200,
+      "areaCode": 5,
+      "totalOutput": 15958
+    },
+    "수춘": {
+      "name": "수춘",
+      "gold": 2050,
+      "food": 10410,
+      "population": 318600,
+      "areaCode": 9,
+      "totalOutput": 22300
+    },
+    "여강": {
+      "name": "여강",
+      "gold": 1990,
+      "food": 6990,
+      "population": 135900,
+      "areaCode": 7,
+      "totalOutput": 18532
+    },
+    "복양": {
+      "name": "복양",
+      "gold": 5020,
+      "food": 18290,
+      "population": 225000,
+      "areaCode": 10,
+      "totalOutput": 47406
+    },
+    "진류": {
+      "name": "진류",
+      "gold": 4960,
+      "food": 21370,
+      "population": 323100,
+      "areaCode": 11,
+      "totalOutput": 50138
+    },
+    "허창": {
+      "name": "허창",
+      "gold": 5900,
+      "food": 19690,
+      "population": 492300,
+      "areaCode": 11,
+      "totalOutput": 53910
+    },
+    "여남": {
+      "name": "여남",
+      "gold": 2300,
+      "food": 8100,
+      "population": 258300,
+      "areaCode": 6,
+      "totalOutput": 21440
+    },
+    "낙양": {
+      "name": "낙양",
+      "gold": 7850,
+      "food": 13955,
+      "population": 684900,
+      "areaCode": 13,
+      "totalOutput": 59485
+    },
+    "완": {
+      "name": "완",
+      "gold": 3450,
+      "food": 11780,
+      "population": 261000,
+      "areaCode": 7,
+      "totalOutput": 31790
+    },
+    "장안": {
+      "name": "장안",
+      "gold": 6910,
+      "food": 20935,
+      "population": 428400,
+      "areaCode": 12,
+      "totalOutput": 61013
+    },
+    "상용": {
+      "name": "상용",
+      "gold": 1090,
+      "food": 5870,
+      "population": 170100,
+      "areaCode": 5,
+      "totalOutput": 12192
+    },
+    "안정": {
+      "name": "안정",
+      "gold": 2260,
+      "food": 13870,
+      "population": 120600,
+      "areaCode": 6,
+      "totalOutput": 26978
+    },
+    "천수": {
+      "name": "천수",
+      "gold": 1350,
+      "food": 8790,
+      "population": 146700,
+      "areaCode": 6,
+      "totalOutput": 16620
+    },
+    "무위": {
+      "name": "무위",
+      "gold": 2170,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 6,
+      "totalOutput": 20046
+    },
+    "건업": {
+      "name": "건업",
+      "gold": 2385,
+      "food": 8600,
+      "population": 396900,
+      "areaCode": 8,
+      "totalOutput": 22433
+    },
+    "오": {
+      "name": "오",
+      "gold": 1575,
+      "food": 8005,
+      "population": 268200,
+      "areaCode": 7,
+      "totalOutput": 17140
+    },
+    "회계": {
+      "name": "회계",
+      "gold": 1925,
+      "food": 14250,
+      "population": 278100,
+      "areaCode": 8,
+      "totalOutput": 25415
+    },
+    "시상": {
+      "name": "시상",
+      "gold": 1455,
+      "food": 6770,
+      "population": 196200,
+      "areaCode": 8,
+      "totalOutput": 15209
+    },
+    "건안": {
+      "name": "건안",
+      "gold": 965,
+      "food": 7810,
+      "population": 107100,
+      "areaCode": 6,
+      "totalOutput": 13407
+    },
+    "남해": {
+      "name": "남해",
+      "gold": 1560,
+      "food": 5330,
+      "population": 157500,
+      "areaCode": 5,
+      "totalOutput": 14378
+    },
+    "교지": {
+      "name": "교지",
+      "gold": 1710,
+      "food": 6070,
+      "population": 213300,
+      "areaCode": 6,
+      "totalOutput": 15988
+    },
+    "강하": {
+      "name": "강하",
+      "gold": 1170,
+      "food": 4920,
+      "population": 192600,
+      "areaCode": 6,
+      "totalOutput": 11706
+    },
+    "신야": {
+      "name": "신야",
+      "gold": 900,
+      "food": 4370,
+      "population": 233100,
+      "areaCode": 5,
+      "totalOutput": 9590
+    },
+    "양양": {
+      "name": "양양",
+      "gold": 3470,
+      "food": 14260,
+      "population": 387900,
+      "areaCode": 8,
+      "totalOutput": 34386
+    },
+    "강릉": {
+      "name": "강릉",
+      "gold": 3420,
+      "food": 17070,
+      "population": 411300,
+      "areaCode": 10,
+      "totalOutput": 36906
+    },
+    "장사": {
+      "name": "장사",
+      "gold": 1600,
+      "food": 5530,
+      "population": 304200,
+      "areaCode": 6,
+      "totalOutput": 14810
+    },
+    "무릉": {
+      "name": "무릉",
+      "gold": 1800,
+      "food": 8850,
+      "population": 228600,
+      "areaCode": 7,
+      "totalOutput": 19290
+    },
+    "계양": {
+      "name": "계양",
+      "gold": 1420,
+      "food": 5360,
+      "population": 168300,
+      "areaCode": 6,
+      "totalOutput": 13596
+    },
+    "영릉": {
+      "name": "영릉",
+      "gold": 1490,
+      "food": 6380,
+      "population": 270900,
+      "areaCode": 6,
+      "totalOutput": 15022
+    },
+    "영안": {
+      "name": "영안",
+      "gold": 1400,
+      "food": 5060,
+      "population": 114300,
+      "areaCode": 6,
+      "totalOutput": 13180
+    },
+    "한중": {
+      "name": "한중",
+      "gold": 2770,
+      "food": 20105,
+      "population": 275400,
+      "areaCode": 10,
+      "totalOutput": 36171
+    },
+    "자동": {
+      "name": "자동",
+      "gold": 1190,
+      "food": 8070,
+      "population": 153000,
+      "areaCode": 7,
+      "totalOutput": 14972
+    },
+    "강주": {
+      "name": "강주",
+      "gold": 1925,
+      "food": 11230,
+      "population": 171000,
+      "areaCode": 7,
+      "totalOutput": 22395
+    },
+    "성도": {
+      "name": "성도",
+      "gold": 3260,
+      "food": 17345,
+      "population": 446400,
+      "areaCode": 9,
+      "totalOutput": 36253
+    },
+    "건녕": {
+      "name": "건녕",
+      "gold": 1985,
+      "food": 7430,
+      "population": 256500,
+      "areaCode": 7,
+      "totalOutput": 18943
+    },
+    "운남": {
+      "name": "운남",
+      "gold": 1600,
+      "food": 6290,
+      "population": 137700,
+      "areaCode": 6,
+      "totalOutput": 15570
+    }
+  },
+  "populationByCity": {
+    "양평": 116100,
+    "북평": 126000,
+    "계": 315000,
+    "진양": 220500,
+    "남피": 350100,
+    "업": 436500,
+    "평원": 155700,
+    "북해": 309600,
+    "하비": 226800,
+    "소패": 112500,
+    "광릉": 160200,
+    "수춘": 318600,
+    "여강": 135900,
+    "복양": 225000,
+    "진류": 323100,
+    "허창": 492300,
+    "여남": 258300,
+    "낙양": 684900,
+    "완": 261000,
+    "장안": 428400,
+    "상용": 170100,
+    "안정": 120600,
+    "천수": 146700,
+    "무위": 202500,
+    "건업": 396900,
+    "오": 268200,
+    "회계": 278100,
+    "시상": 196200,
+    "건안": 107100,
+    "남해": 157500,
+    "교지": 213300,
+    "강하": 192600,
+    "신야": 233100,
+    "양양": 387900,
+    "강릉": 411300,
+    "장사": 304200,
+    "무릉": 228600,
+    "계양": 168300,
+    "영릉": 270900,
+    "영안": 114300,
+    "한중": 275400,
+    "자동": 153000,
+    "강주": 171000,
+    "성도": 446400,
+    "건녕": 256500,
+    "운남": 137700
+  }
+}
