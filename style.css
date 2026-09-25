@@ -113,7 +113,82 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 .game-btn:disabled { opacity: 0.35; cursor: default; }
 
 /* ---------- 메인 영역 ---------- */
-#main-area { flex: 1; display: flex; overflow: hidden; }
+/* ---------- 리플레이 속도 컨트롤 [312][461-480] ---------- */
+#replay-speed-controls[hidden] { display: none !important; }
+.replay-speed-controls {
+    position: absolute;
+    top: 58px;
+    left: 16px;
+    z-index: 12;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    margin: 0;
+    padding: 9px 11px 8px;
+    color: var(--text);
+    background: rgba(7, 7, 15, 0.9);
+    border: 1px solid var(--gold-dim);
+    border-radius: 7px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+    backdrop-filter: var(--glass);
+    -webkit-backdrop-filter: var(--glass);
+}
+.replay-speed-controls legend {
+    padding: 0 5px;
+    color: var(--gold-bright);
+    font-family: var(--font-serif);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+.replay-speed-options { display: flex; gap: 5px; }
+.replay-speed-option {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 48px;
+    min-height: 44px;
+    padding: 6px 8px;
+    color: var(--text-muted);
+    background: rgba(20, 22, 40, 0.82);
+    border: 1px solid var(--gold-faint);
+    border-radius: 4px;
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none;
+    transition: color .15s, background .15s, border-color .15s, box-shadow .15s;
+}
+.replay-speed-option:hover { color: var(--text); border-color: var(--gold-dim); }
+.replay-speed-option:has(input:checked) {
+    color: #171307;
+    background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+    border-color: var(--gold-bright);
+    box-shadow: 0 0 12px rgba(212, 175, 55, 0.32);
+    font-weight: 800;
+}
+.replay-speed-option:has(input:focus-visible) {
+    outline: 2px solid #fff8dc;
+    outline-offset: 2px;
+}
+.replay-speed-option input { margin: 0; accent-color: currentColor; }
+.replay-speed-option:has(input:checked) input { color: #171307; }
+.replay-speed-option:has(input:disabled) { opacity: .45; cursor: default; }
+.replay-speed-help {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: 10px;
+    line-height: 1.4;
+}
+.replay-speed-help strong { color: var(--gold-bright); }
+@media (max-width: 600px) {
+    .replay-speed-controls { top: 52px; left: 8px; padding: 7px; }
+    .replay-speed-option { min-width: 44px; min-height: 44px; padding: 5px 6px; }
+}
+
+#main-area { flex: 1; display: flex; overflow: hidden; position: relative; }
 #game-canvas {
     flex: 1;
     /* [49] 폴리곤 중국 전도만 표시하고 별도 배경 이미지는 사용하지 않는다. */

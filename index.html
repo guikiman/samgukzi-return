@@ -33,6 +33,30 @@
     </div>
     <div id="main-area">
         <canvas id="game-canvas" aria-label="중국 전도. 도시를 탭하면 상세 정보가 열립니다." role="img"></canvas>
+        <!-- [312][461-480] 전투 리플레이 속도: 네이티브 radio로 키보드·터치 접근 제공 -->
+        <fieldset id="replay-speed-controls" class="replay-speed-controls" hidden aria-describedby="replay-speed-help">
+            <legend>🎬 재생 속도</legend>
+            <div class="replay-speed-options">
+                <label class="replay-speed-option">
+                    <input type="radio" name="replay-speed" value="0.5" aria-keyshortcuts="0" title="반속 (0)">
+                    <span>0.5x</span>
+                </label>
+                <label class="replay-speed-option">
+                    <input type="radio" name="replay-speed" value="1" checked aria-keyshortcuts="1" title="기본 속도 (1)">
+                    <span>1x</span>
+                </label>
+                <label class="replay-speed-option">
+                    <input type="radio" name="replay-speed" value="2" aria-keyshortcuts="2" title="2배 속도 (2)">
+                    <span>2x</span>
+                </label>
+                <label class="replay-speed-option">
+                    <input type="radio" name="replay-speed" value="4" aria-keyshortcuts="3 4" title="4배 속도 (3 또는 4)">
+                    <span>4x</span>
+                </label>
+            </div>
+            <p id="replay-speed-help" class="replay-speed-help">현재 속도: <strong id="replay-speed-current">1x</strong> · 단축키 0~4</p>
+        </fieldset>
+
         <div id="sidebar">
             <div id="officer-panel" class="panel">
                 <h3>무장 정보</h3>
