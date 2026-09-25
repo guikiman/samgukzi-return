@@ -65,6 +65,9 @@ import type { DebateMinigame } from './core/debate_minigame.js';
 import { getCaptivesInCity } from './core/captive_escape_system.js';
 import { FacilityType, type CityBuildingState } from './core/types.js';
 import { DomesticTaskType } from './core/domestic_scheduler.js';
+// [Auth] 계약 + 백엔드 스토어 + UI 흐름을 조립하는 통합 글루
+import { bootstrapAuth, type AuthRuntime } from './integration/auth_bootstrap.js';
+import type { AuthChangeEvent, AuthSession } from './auth/contracts.js';
 
 // ============================================================
 // DOM References
@@ -3985,7 +3988,58 @@ window.__game = {
         const compressed = engine.saveCompressed();
         try { localStorage.setItem('sik_re_save', compressed); return true; } catch { return false; }
     },
+    /** E2E/디버그용: 인증 런타임 스냅샷 (스토어 + 흐름 양쪽을 함께 노출) */
+    getAuthRuntime: () => {
+        if (!authRuntime) return null;
+        const snapshot = authRuntime.store.getSnapshot();
+        const flowState = authRuntime.flow.viewModel.getState();
+        return {
+            mode: authRuntime.mode,
+            state: snapshot.state.status,
+            guestSessionId: snapshot.guestSession?.sessionId ?? null,
+            flowState: flowState.status,
+            flowGuestSessionId: authRuntime.flow.viewModel.getGuestSession()?.sessionId ?? null,
+        };
+    },
+    /** E2E/디버그용: 인증 흐름의 현재 DOM 상태 */
+    getAuthPanelState: () => {
+        const root = document.getElementById('auth-panel-container')?.querySelector('[data-auth-state]');
+        return root?.getAttribute('data-auth-state') ?? null;
+    },
+    /** E2E/디버그용: 게스트 세션 시작 (프로바이더 네트워크 호출 없음) */
+    signInAsGuest: async () => {
+        if (!authRuntime) return null;
+        const state = await authRuntime.flow.signInAsGuest();
+        // 흐름과 스토어는 별개 상태 기계이므로 공유 게스트 스토리지를 통해 정합시킨다.
+        await authRuntime.store.restoreSession();
+        return state.status;
+    },
+    /** E2E/디버그용: 로그아웃 */
+    signOutAuth: async () => {
+        if (!authRuntime) return null;
+        const state = await authRuntime.flow.signOut();
+        await authRuntime.store.signOut();
+        return state.status;
+    },
+    /** E2E/디버그용: 오프라인 어댑터에 프로바이더 전이를 주입(네트워크 호출 없음) */
+    emitAuthProviderEvent: (event: AuthChangeEvent, session: AuthSession | null) => {
+        if (!authRuntime) return false;
+        return authRuntime.emitProviderEvent(event, session);
+    },
 };
+
+// [Auth] 브라우저 런타임 배선 — 오프라인 어댑터로도 정상 마운트된다.
+// index.html의 인라인 부트스트랩은 window.authClient가 있을 때만 동작하므로
+// 여기서 window.authClient를 노출하지 않아 이중 마운트를 피한다.
+let authRuntime: AuthRuntime | null = null;
+const authPanelContainer = document.getElementById('auth-panel-container');
+if (authPanelContainer) {
+    void bootstrapAuth(authPanelContainer)
+        .then((runtime) => { authRuntime = runtime; })
+        .catch((error: unknown) => {
+            addLog(`인증 초기화 실패: ${error instanceof Error ? error.message : String(error)}`);
+        });
+}
 
 // [312] 페이지 로드 시 공유 리플레이 파라미터 확인
 checkReplayParam();

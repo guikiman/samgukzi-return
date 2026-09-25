@@ -220,6 +220,50 @@ async function main() {
         }
         if (!booted) throw new Error('engine not booted in 30s');
 
+        // ===== [Auth] 통합 브라우저 프로브 =====
+        // 승인된 계약 + 백엔드 스토어 + UI 흐름이 실제로 배선되었는지,
+        // 그리고 프로바이더 네트워크 호출이 전혀 없는지 확인한다.
+        const authProbe = await (async () => {
+            const waitFor = async (expression, label, tries = 60) => {
+                for (let i = 0; i < tries; i++) {
+                    const r = await cdp.evalJson(expression);
+                    if (r && r.ok) return r;
+                    await delay(100);
+                }
+                throw new Error(`auth probe timeout: ${label}`);
+            };
+            // 1) 배선 완료 + 초기 anonymous 상태
+            const mounted = await waitFor(
+                "(function(){var g=window.__game;if(!g||!g.getAuthRuntime)return {ok:false};" +
+                "var rt=g.getAuthRuntime();return {ok:!!rt,mode:rt&&rt.mode,state:rt&&rt.state,panel:g.getAuthPanelState()};})()",
+                'runtime mount');
+            // 2) 게스트 세션 시작 (로컬 스토리지만 사용)
+            const guest = await cdp.evalJson(
+                "(async function(){var g=window.__game;var st=await g.signInAsGuest();" +
+                "var rt=g.getAuthRuntime();return {status:st,mode:rt.mode,state:rt.state,flowState:rt.flowState," +
+                "guestId:rt.guestSessionId,flowGuestId:rt.flowGuestSessionId,panel:g.getAuthPanelState()," +
+                "banner:!!document.querySelector('#auth-panel-container [data-guest-session=\"true\"]')," +
+                "upgrade:!!document.querySelector('#auth-panel-container [data-auth-action=\"upgrade\"]')};})()");
+            // 3) 프로바이더 전이 주입 → authenticated (네트워크 없음)
+            const session = { user: { id: 'e2e-user', email: 'e2e@example.test' }, expiresAt: Math.floor(Date.now() / 1000) + 3600 };
+            const signedIn = await waitFor(
+                "(function(){var g=window.__game;" +
+                "if(!g.emitAuthProviderEvent('SIGNED_IN'," + JSON.stringify(session) + "))return {ok:false,reason:'provider configured'};" +
+                "var rt=g.getAuthRuntime();return {ok:rt.state==='authenticated'&&rt.flowState==='authenticated',state:rt.state,flowState:rt.flowState,panel:g.getAuthPanelState()," +
+                "userId:!!document.querySelector('#auth-panel-container [data-auth-user-id]')," +
+                "signOut:!!document.querySelector('#auth-panel-container [data-auth-action=\"sign-out\"]')," +
+                "alert:!!document.querySelector('#auth-panel-container [role=\"alert\"]')};})()",
+                'provider transition');
+            // 4) 로그아웃 → anonymous 으로 복귀
+            const signedOut = await cdp.evalJson(
+                "(async function(){var g=window.__game;var st=await g.signOutAuth();var rt=g.getAuthRuntime();" +
+                "return {status:st,state:rt.state,flowState:rt.flowState,guestId:rt.guestSessionId," +
+                "flowGuestId:rt.flowGuestSessionId,panel:g.getAuthPanelState()," +
+                "banner:!!document.querySelector('#auth-panel-container [data-guest-session=\"true\"]')};" +
+                "})()");
+            return { mounted, guest, signedIn, signedOut };
+        })();
+
         // 실제 시작 화면 흐름 — 게임 시작 → 시나리오 → 뒤로 → 세력 → 뒤로 → 재선택 [9]
         const waitForDisplay = async (selector, display) => {
             for (let i = 0; i < 40; i++) {
@@ -581,7 +625,7 @@ async function main() {
         Object.assign(replayUiProbe, afterClickProbe, afterKeyProbe, touchProbe, recoveryProbe);
         await cdp.call('Emulation.clearDeviceMetricsOverride');
 
-        const result = { flowProbe, scenario07Probe, captiveBattleProbe, monthlyReportProbe, cityChronicleProbe, chronicleFilterProbe, mapVisibilityProbe, mapScreenshotProbe, mapClickProbe, dialogueProbe, buildingProbe, domesticProbe, progress, graphProbe, a11yProbe, keyboardProbe, mobileProbe, saveLoadProbe, replayProbe, replayUiProbe, forced, ending, consoleErrors: consoleErrors.slice(0, 10), notFound: notFound.slice(0, 5), pageErrors: pageErrors.slice(0, 10) };
+        const result = { flowProbe, scenario07Probe, captiveBattleProbe, monthlyReportProbe, cityChronicleProbe, chronicleFilterProbe, mapVisibilityProbe, mapScreenshotProbe, mapClickProbe, dialogueProbe, buildingProbe, domesticProbe, progress, graphProbe, a11yProbe, keyboardProbe, mobileProbe, saveLoadProbe, replayProbe, replayUiProbe, authProbe, forced, ending, consoleErrors: consoleErrors.slice(0, 10), notFound: notFound.slice(0, 5), pageErrors: pageErrors.slice(0, 10) };
         console.log(JSON.stringify(result, null, 2));
 
         const resource404 = consoleErrors.filter((e) => e.includes('Failed to load resource'));
@@ -616,6 +660,34 @@ async function main() {
                 && replayUiProbe.touchSelected === '2'
                 && replayUiProbe.recoverySpeed === 1
                 && replayUiProbe.recoverySelected === '1',
+            // [Auth] 통합 배선: 오프라인 모드 + 게스트 + 프로바이더 전이 + 로그아웃
+            auth: authProbe.mounted.ok === true
+                && authProbe.mounted.mode === 'offline'
+                && authProbe.mounted.state === 'anonymous'
+                && authProbe.mounted.panel === 'anonymous'
+                && authProbe.guest.status === 'anonymous'
+                && authProbe.guest.state === 'anonymous'
+                && authProbe.guest.flowState === 'anonymous'
+                && authProbe.guest.panel === 'anonymous'
+                && authProbe.guest.banner === true
+                && authProbe.guest.upgrade === true
+                && typeof authProbe.guest.guestId === 'string'
+                && authProbe.guest.guestId.length > 0
+                && authProbe.guest.guestId === authProbe.guest.flowGuestId
+                && authProbe.signedIn.ok === true
+                && authProbe.signedIn.state === 'authenticated'
+                && authProbe.signedIn.flowState === 'authenticated'
+                && authProbe.signedIn.panel === 'authenticated'
+                && authProbe.signedIn.userId === true
+                && authProbe.signedIn.signOut === true
+                && authProbe.signedIn.alert === false
+                && authProbe.signedOut.status === 'anonymous'
+                && authProbe.signedOut.state === 'anonymous'
+                && authProbe.signedOut.flowState === 'anonymous'
+                && authProbe.signedOut.guestId === null
+                && authProbe.signedOut.flowGuestId === null
+                && authProbe.signedOut.panel === 'anonymous'
+                && authProbe.signedOut.banner === false,
             ending: ending.display === 'flex' && ending.narratives >= 1,
         };
         console.log('REGRESSION_CHECKS:', JSON.stringify(regressionChecks));
@@ -731,7 +803,35 @@ async function main() {
             && replayUiProbe.touchSpeed === 2
             && replayUiProbe.touchSelected === '2'
             && replayUiProbe.recoverySpeed === 1
-            && replayUiProbe.recoverySelected === '1';
+            && replayUiProbe.recoverySelected === '1'
+            // [Auth] 통합 인증 프로브
+            && authProbe.mounted.ok === true
+            && authProbe.mounted.mode === 'offline'
+            && authProbe.mounted.state === 'anonymous'
+            && authProbe.mounted.panel === 'anonymous'
+            && authProbe.guest.status === 'anonymous'
+            && authProbe.guest.state === 'anonymous'
+            && authProbe.guest.flowState === 'anonymous'
+            && authProbe.guest.panel === 'anonymous'
+            && authProbe.guest.banner === true
+            && authProbe.guest.upgrade === true
+            && typeof authProbe.guest.guestId === 'string'
+            && authProbe.guest.guestId.length > 0
+            && authProbe.guest.guestId === authProbe.guest.flowGuestId
+            && authProbe.signedIn.ok === true
+            && authProbe.signedIn.state === 'authenticated'
+            && authProbe.signedIn.flowState === 'authenticated'
+            && authProbe.signedIn.panel === 'authenticated'
+            && authProbe.signedIn.userId === true
+            && authProbe.signedIn.signOut === true
+            && authProbe.signedIn.alert === false
+            && authProbe.signedOut.status === 'anonymous'
+            && authProbe.signedOut.state === 'anonymous'
+            && authProbe.signedOut.flowState === 'anonymous'
+            && authProbe.signedOut.guestId === null
+            && authProbe.signedOut.flowGuestId === null
+            && authProbe.signedOut.panel === 'anonymous'
+            && authProbe.signedOut.banner === false;
         console.log('E2E_RESULT:', ok ? 'PASS' : 'FAIL');
         exitCode = ok ? 0 : 1;
         cdp.sock.destroy();
