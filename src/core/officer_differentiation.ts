@@ -9,8 +9,8 @@
  * 결정적(deterministic)이며 Math.random 을 쓰지 않는다 — 같은 장수는 항상 같은 성향.
  */
 
-import { OFFICER_PROFILES, type OfficerProfile } from './officer_profile_schema';
-import type { OfficerID } from './types';
+import { OFFICER_PROFILES, type OfficerProfile } from './officer_profile_schema.js';
+import type { OfficerID } from './types.js';
 
 export const DIFFERENTIATION_AXES = [
     'aggression',

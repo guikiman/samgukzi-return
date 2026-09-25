@@ -9,7 +9,7 @@
  * 접미 구분한다. 동명이인 이름은 ambiguousNames 로 노출하고 단일 조회를 거부한다.
  */
 
-import type { FactionID, OfficerID, OfficerStats, Personality } from './types';
+import type { FactionID, OfficerID, OfficerStats, Personality } from './types.js';
 import officersFullJson from '../data/officers_full.json' with { type: 'json' };
 
 export const OFFICER_RELATION_KINDS = [

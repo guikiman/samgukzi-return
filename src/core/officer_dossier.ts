@@ -14,10 +14,10 @@
  *  4. 성별 중립 — 무장/인물 같은 중립 명사만 쓰고, `gender` 필드로 가정을 만들지 않는다.
  */
 
-import { OFFICER_PROFILES } from './officer_profile_schema';
-import type { OfficerProfile, OfficerRelationKind } from './officer_profile_schema';
-import { getPersonalityEffect } from './rtk14_reference_data';
-import type { OfficerID } from './types';
+import { OFFICER_PROFILES } from './officer_profile_schema.js';
+import type { OfficerProfile, OfficerRelationKind } from './officer_profile_schema.js';
+import { getPersonalityEffect } from './rtk14_reference_data.js';
+import type { OfficerID } from './types.js';
 
 // ---------------------------------------------------------------- 공개 타입
 
