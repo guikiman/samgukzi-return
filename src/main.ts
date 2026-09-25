@@ -31,6 +31,12 @@ import { RuntimeModLoader } from './core/runtime_mod_loader.js';
 import { MultiTabMutexCoordinator } from './core/multi_tab_mutex_coordinator.js';
 import { checkInteraction, executeInteraction, getAffinityBetween, GIFT_ITEMS, calculateGiftAffinity, type GiftItemId, type GiftOptions } from './core/officer_interaction_system.js';
 import { ConversationSystem } from './core/conversation_system.js';
+// [Auth/officers] 정적 도장 데이터 연결 — 이름으로만 조회한다(동명이인 73그룹 안전).
+import {
+    resolveOfficerIdByName,
+    getBridgeDossierParagraphs,
+} from './core/officer_biography_bridge.js';
+import { OFFICER_PROFILES } from './core/officer_profile_schema.js';
 import { judgeVengeanceOnly, startVengeanceGame, finishVengeance, tryVengeanceOnEncounter, applyVengeanceToUnits } from './core/vengeance_system.js';
 import * as vengeance_system from './core/vengeance_system.js';
 import * as free_officer_visit_system from './core/free_officer_visit_system.js';
@@ -1182,11 +1188,70 @@ function renderOfficerDetail(officerId: string | null): void {
     `;
 }
 
+/**
+ * [Auth/officers] 런타임 무장 → 정적 데이터셋 무장 해석 결과.
+ *
+ * 런타임 id 는 `cao_pi` 처럼 자유 문자열이고 정적 데이터셋 id 는 `off_NNNN` 이라
+ * 1:1 대응이 없다. 두 계층을 잇는 유일한 공통 표현은 한국어 이름이다.
+ * `resolveOfficerIdByName()` 이 이름 → 데이터셋 id 를 담당하고, 동명이인이면
+ * 임의로 고르지 않는다.
+ */
+type StaticOfficerLink =
+    | { readonly status: 'linked'; readonly id: string; readonly traits: readonly string[]; readonly paragraphs: readonly string[] }
+    | { readonly status: 'ambiguous'; readonly name: string; readonly candidateCount: number }
+    | { readonly status: 'unlinked'; readonly name: string };
+
+/**
+ * 무장 이름으로 정적 데이터셋 프로필을 찾는다. 절대 던지지 않는다.
+ * - 이름이 비었거나 데이터셋에 없으면 `unlinked`
+ * - 동명이인이면 `ambiguous` (후보 수만 알리고, 누구인지 고르지 않는다)
+ * - 유일하게 풀리면 `linked` (id · 성향 · 도장 문단)
+ */
+function linkStaticOfficer(name: string): StaticOfficerLink {
+    if (typeof name !== 'string' || name.trim() === '') {
+        return { status: 'unlinked', name: '' };
+    }
+    const resolution = resolveOfficerIdByName(name);
+    if (resolution.status === 'not-found') {
+        return { status: 'unlinked', name: resolution.name };
+    }
+    if (resolution.status === 'ambiguous') {
+        // 동명이인: 후보를 노출만 하고 아무것도 선택하지 않는다.
+        return { status: 'ambiguous', name: resolution.name, candidateCount: resolution.candidates.length };
+    }
+    // id 로 프로필/도장을 다시 조회한다. 어느 한쪽이 없으면 unlinked 로 내려간다.
+    const profile = OFFICER_PROFILES.get(resolution.id);
+    if (!profile) {
+        return { status: 'unlinked', name: resolution.name };
+    }
+    const paragraphs = getBridgeDossierParagraphs(profile.id).filter(p => p.trim() !== '');
+    return { status: 'linked', id: profile.id, traits: profile.traits, paragraphs };
+}
+
+/**
+ * 성향(trait) 줄과 도장 문단을 화면에 얹기 위한 보조.
+ * 값이 없으면 빈 배열이라 호출부는 그대로 렌더하면 된다( degrade ).
+ */
+function buildOfficerProfileLines(link: StaticOfficerLink, traitLine: string | undefined): string[] {
+    const lines: string[] = [];
+    if (traitLine !== undefined && traitLine.trim() !== '') {
+        lines.push(`── 성향 ──`, traitLine);
+    }
+    if (link.status === 'linked' && link.paragraphs.length > 0) {
+        lines.push(`── 도장 ──`, ...link.paragraphs);
+    } else if (link.status === 'ambiguous') {
+        lines.push(`── 도장 ──`, `이름이 같은 무장이 ${link.candidateCount}명 있어 기록을 특정할 수 없다.`);
+    }
+    return lines;
+}
+
 function openOfficerDialogue(officerId: string): void {
     if (!engine) return;
     const store = engine['store'];
     const target = store.getOfficer(officerId);
     if (!target) return;
+    // 이름으로만 정적 데이터셋을 찾는다. id 매핑은 시도하지 않는다.
+    const staticLink = linkStaticOfficer(target.name);
     const gs = store.getGlobalState();
     const playerFaction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
     const playerOfficers = playerFaction
@@ -1206,6 +1271,7 @@ function openOfficerDialogue(officerId: string): void {
                 detail: [
                     `統率 ${target.stats.leadership} · 武力 ${target.stats.might}`,
                     `智力 ${target.stats.intelligence} · 政治 ${target.stats.politics} · 魅力 ${target.stats.charisma}`,
+                    ...buildOfficerProfileLines(staticLink, undefined),
                 ],
             }],
             index: 0,
@@ -1214,10 +1280,16 @@ function openOfficerDialogue(officerId: string): void {
     }
 
     const affinity = getAffinityBetween(store, actor.id, target.id);
+    // 성향이 풀렸을 때만 id·traits 를 넘긴다. 동명이인이면 아무 id 도 주지 않는다 —
+    // 잘못된 성향이 붙는 것보다 성향 줄이 없는 편이 낫다.
+    const dialogueOfficer = staticLink.status === 'linked'
+        ? { name: target.name, personality: target.personality, id: staticLink.id, traits: staticLink.traits }
+        : target;
     const conversationBranch = conversationSystem.getDialogueBranch(
-        target,
+        dialogueOfficer,
         affinity >= 30 ? 'personal' : target.stats.might >= target.stats.intelligence ? 'military' : 'strategy',
         affinity,
+        { includeTraitLine: true },
     );
     const status = target.status === 'FREE' ? '재야 무장' : store.getFaction(target.factionId!)?.name ?? '무소속';
     const chooseInteraction = (kind: 'CHAT' | 'GIFT' | 'DEBATE' | 'DUEL'): DialogueChoice => {
@@ -1246,6 +1318,7 @@ function openOfficerDialogue(officerId: string): void {
                 detail: [
                     `현재 우호도 ${affinity >= 0 ? '+' : ''}${affinity}`,
                     `장기 ${target.personality} · 충성도 ${target.loyalty} · 명성 ${target.fame}`,
+                    ...(conversationBranch.traitLine !== undefined ? [conversationBranch.traitLine] : []),
                 ],
                 choices: [chooseInteraction('CHAT')],
                 giftComposer: {
@@ -1264,6 +1337,7 @@ function openOfficerDialogue(officerId: string): void {
                     `政治 ${target.stats.politics} · 魅力 ${target.stats.charisma} · 야망 ${target.ambition}`,
                     `상호작용 기록 ${store.getRelationships(target.id).reduce((sum, edge) => sum + edge.history.length, 0)}건`,
                     `상태 ${status} · 위치 ${target.cityId ? store.getCity(target.cityId)?.name ?? '미상' : '미상'}`,
+                    ...buildOfficerProfileLines(staticLink, conversationBranch.traitLine),
                 ],
             },
             {
