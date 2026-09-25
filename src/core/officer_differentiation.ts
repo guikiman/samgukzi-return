@@ -43,7 +43,6 @@ const TRAIT_AXES: Readonly<Record<string, Partial<Record<DifferentiationAxis, nu
     저돌: { aggression: 3, recklessness: 3 },
     난폭: { aggression: 3, mercy: -3, recklessness: 2 },
     맹자: { aggression: 2 },
-    살상: { aggression: 1 },
     위풍: { aggression: 2 },
     묘산: { cunning: 1, aggression: 1 },
     기략: { cunning: 2 },
@@ -52,6 +51,20 @@ const TRAIT_AXES: Readonly<Record<string, Partial<Record<DifferentiationAxis, nu
     포박: { aggression: 1 },
     단기: { aggression: 3 },
     호걸: { aggression: 2 },
+    // 공성·기동·사기 능력의 직접 상승 — 앞을 밀어붙이는 개성
+    과감: { aggression: 3 },
+    원시: { aggression: 3 },
+    소탕: { aggression: 3 },
+    분쇄: { aggression: 3 },
+    질주: { aggression: 2, resolve: 1 },
+    견뢰: { aggression: 2, resolve: 1 },
+    붕벽: { aggression: 2, resolve: 1 },
+    진화: { aggression: 2, resolve: 1 },
+    // 적의 역량을 깎거나 상태이상을 늘려붙이는 개성
+    봉살: { aggression: 2, mercy: -2 },
+    경국: { aggression: 2, mercy: -2 },
+    // 적이 많을수록 강해지는 개성
+    신위: { aggression: 3, resolve: 1 },
     투장: { aggression: 1, resolve: 2 },
     오만: { aggression: 1, recklessness: 2 },
     공명: { aggression: 2, recklessness: 2 },
@@ -74,6 +87,27 @@ const TRAIT_AXES: Readonly<Record<string, Partial<Record<DifferentiationAxis, nu
     규율: { resolve: 1, mercy: 1 },
     선비: { resolve: 1, mercy: 2 },
     호위: { resolve: 1, mercy: 2 },
+    // 지형 특화 개성 — 지정 지형에서 방어적으로 버틴다 (상승량에 비례)
+    산전: { resolve: 2 },
+    숲전: { resolve: 2 },
+    수전: { resolve: 2 },
+    지리: { resolve: 2 },
+    사역: { resolve: 2 },
+    강저: { resolve: 1 },
+    남만: { resolve: 1 },
+    오환: { resolve: 1 },
+    흉노: { resolve: 1 },
+    산월: { resolve: 1 },
+    // 도발·혼란·상태이상에도 무너지지 않는 개성
+    침착: { resolve: 2, aggression: -1 },
+    격분: { resolve: 2, aggression: 1 },
+    경솔: { resolve: 2 },
+    단려: { resolve: 2, mercy: 1 },
+    해독: { resolve: 2 },
+    // 부대 사기·회복으로 다시 일어서는 개성
+    앙양: { resolve: 2, social: 1 },
+    재기: { resolve: 2, mercy: 1 },
+    감수: { resolve: 2, administration: 1 },
     // 계략/정보 축
     책사: { cunning: 3 },
     간파: { cunning: 2 },
@@ -82,10 +116,24 @@ const TRAIT_AXES: Readonly<Record<string, Partial<Record<DifferentiationAxis, nu
     화공: { cunning: 2 },
     발명: { cunning: 2 },
     해제: { cunning: 2 },
-    함정: { cunning: 2 },
     감지: { cunning: 1 },
     점술: { cunning: 1 },
     석병: { cunning: 2 },
+    // 적 상태이상 전법을 좌우하는 개성
+    봉추: { cunning: 3, resolve: 1 },
+    복룡: { cunning: 3, resolve: 1 },
+    통찰: { cunning: 3, resolve: 1 },
+    허실: { cunning: 3, mercy: -2 },
+    언독: { cunning: 2, mercy: -1 },
+    재원: { cunning: 2, aggression: 1 },
+    // 적의 능력·사기를 떨어뜨리는 개성
+    신기: { cunning: 3, resolve: 1 },
+    효웅: { cunning: 3, resolve: 1 },
+    환술: { cunning: 2, aggression: 1 },
+    // 요새·시설을 세워 전장을 짜는 개성
+    축성: { cunning: 2, administration: 1 },
+    // 불 계열을 장악하는 개성
+    화신: { cunning: 2, resolve: 2 },
     // 행정/정치 축
     능리: { administration: 3 },
     교화: { administration: 2, mercy: 1 },
@@ -94,7 +142,6 @@ const TRAIT_AXES: Readonly<Record<string, Partial<Record<DifferentiationAxis, nu
     법률: { administration: 3 },
     징세: { administration: 2, greed: 1 },
     농정: { administration: 3 },
-    수납: { administration: 2 },
     절약: { administration: 2 },
     절감: { administration: 2 },
     부호: { administration: 1, greed: 2 },
@@ -109,6 +156,21 @@ const TRAIT_AXES: Readonly<Record<string, Partial<Record<DifferentiationAxis, nu
     친만: { administration: 1, mercy: 1 },
     친월: { administration: 1, mercy: 1 },
     친선: { administration: 1, mercy: 1 },
+    // 관직 임명으로 병력·사기를 조달하는 개성
+    모집: { administration: 3 },
+    동원: { administration: 3 },
+    교련: { administration: 2, resolve: 1 },
+    // 도시·수송·회유를 관리하는 개성
+    개수: { administration: 2, resolve: 1 },
+    여망: { administration: 2, resolve: 1 },
+    운반: { administration: 2, resolve: 1 },
+    // 병력 유지·교역·영토 확장 효율 개성
+    둔전: { administration: 3 },
+    향도: { administration: 2, greed: 1 },
+    영명: { administration: 3, mercy: 1 },
+    악명: { administration: 2, greed: 1 },
+    // 성장이 빠른 개성
+    잠재: { administration: 1, resolve: 1 },
     // 인맥/외교 축
     인맥: { social: 3 },
     안목: { social: 2, cunning: 1 },
@@ -121,6 +183,19 @@ const TRAIT_AXES: Readonly<Record<string, Partial<Record<DifferentiationAxis, nu
     명경: { social: 1 },
     응원: { social: 2, mercy: 1 },
     악주: { social: -2 },
+    // 사다리 부대 전체를 떠받치는 지휘관 개성
+    시상: { social: 3 },
+    간웅: { social: 3, resolve: 1 },
+    신장: { social: 3, resolve: 1 },
+    임재: { social: 3, resolve: 1 },
+    // 부대 능력을 함께 끌어올리는 개성
+    독장: { social: 2, aggression: 1 },
+    효장: { social: 2, aggression: 1 },
+    용장: { social: 2, aggression: 1 },
+    // 아군 격파에 사기가 오르는 개성
+    선동: { social: 2, cunning: 1 },
+    // 아군이 몰살해도 흔들리지 않는 개성
+    노발: { mercy: -2, resolve: 1 },
     // 탐욕/야망 축
     탐욕: { greed: 3 },
     소욕: { greed: 2 },
@@ -131,6 +206,10 @@ const TRAIT_AXES: Readonly<Record<string, Partial<Record<DifferentiationAxis, nu
     위무: { mercy: 2 },
     인정: { mercy: 2, resolve: 1 },
     혈로: { mercy: 1, social: 1 },
+    // 부상병을 돌보는 개성
+    의술: { mercy: 3 },
+    신안: { mercy: 3, social: 1 },
+    황천: { mercy: 3, social: 1 },
     // 위험/무모 축
     나약: { recklessness: 2, resolve: -2 },
     허약: { recklessness: 2, resolve: -2 },
@@ -141,6 +220,12 @@ const TRAIT_AXES: Readonly<Record<string, Partial<Record<DifferentiationAxis, nu
     주란: { resolve: -2 },
     동요: { resolve: -2 },
     우유: { resolve: -1, aggression: -1 },
+    // 적의 영향권(ZOC)을 무시하고 움직이는 개성
+    비장: { resolve: 2, recklessness: 2 },
+    조타: { resolve: 2, recklessness: 1 },
+    탈토: { resolve: 2, cunning: 2 },
+    // 불을 감수하고 달려드는 개성
+    등갑: { resolve: 2, recklessness: 1 },
 };
 
 const UNMAPPED = new Set(Object.keys(TRAIT_AXES));
