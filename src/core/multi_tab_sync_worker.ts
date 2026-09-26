@@ -7,7 +7,7 @@ let currentLockHolder: string | null = null;
 const sessions: Map<string, { connectedAt: number; lastHeartbeat: number }> = new Map();
 const heartbeatTimeout = 15000;
 
-self.onconnect = (event: MessageEvent) => {
+(self as unknown as SharedWorkerGlobalScope).onconnect = (event: MessageEvent) => {
     const port = event.ports[0];
 
     port.onmessage = (e: MessageEvent) => {

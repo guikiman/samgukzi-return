@@ -45,7 +45,7 @@ export class MultiTabSyncManager {
     init(): boolean {
         if (typeof SharedWorker === 'undefined') return false;
         try {
-            this.worker = new SharedWorker(new URL('./multi_tab_sync_worker.ts', import.meta.url));
+            this.worker = new SharedWorker(new URL('./multi_tab_sync_worker.js', import.meta.url));
             this.worker.port.start();
             this.worker.port.onmessage = (event: MessageEvent<TabSyncMessage>) => {
                 this.handleMessage(event.data);
