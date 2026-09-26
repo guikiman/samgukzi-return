@@ -35,10 +35,28 @@ describe('PublicOrderSystem', () => {
         expect(revoltCount).toBeGreaterThan(0);
     });
 
-    it('should not trigger revolt when order is high', () => {
-        const city = makeCity(95);
-        const result = order.checkRevolt(city);
-        expect(result.revoltOccurred).toBe(false);
+    it('rarely triggers revolt when order is high', () => {
+        // checkRevolt rolls Math.random() against the risk, and risk is 2.5% at
+        // order 95, so a single call asserts a coin with one side in 40.
+        // The point of the test is that a well-policed city almost never
+        // revolts, which is a statement about the rate.
+        let revolts = 0;
+        const trials = 4000;
+        for (let i = 0; i < trials; i++) {
+            if (order.checkRevolt(makeCity(95)).revoltOccurred) revolts++;
+        }
+        expect(revolts / trials).toBeCloseTo(order.getRevoltRisk(makeCity(95)), 2);
+    });
+
+    it('revolts far more often when order is low', () => {
+        let highOrder = 0;
+        let lowOrder = 0;
+        const trials = 2000;
+        for (let i = 0; i < trials; i++) {
+            if (order.checkRevolt(makeCity(95)).revoltOccurred) highOrder++;
+            if (order.checkRevolt(makeCity(10)).revoltOccurred) lowOrder++;
+        }
+        expect(lowOrder).toBeGreaterThan(highOrder * 5);
     });
 
     it('should apply occupation penalty', () => {
