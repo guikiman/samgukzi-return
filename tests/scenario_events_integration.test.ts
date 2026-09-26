@@ -17,7 +17,9 @@ import { BranchType } from '../src/core/scenario_branch_manager.js';
 describe('시나리오 연의전 데이터 로더 [300][301]', () => {
     it('시나리오 02의 체인이 파싱되어 노드 배열로 반환된다', () => {
         const chains = parseScenarioEvents(scenarioEvents, '02');
-        expect(chains.size).toBe(1);
+        // 시나리오당 체인 수는 늘릴 수 있으므로 개수 자체를 고정하지 않는다
+        expect(chains.size).toBeGreaterThanOrEqual(1);
+        expect(chains.has('chain_02_coalition')).toBe(true);
         const nodes = chains.get('chain_02_coalition')!;
         expect(nodes.length).toBe(3);
         // 노드 순서 보존 — JSON 배열 순서 = 체인 순서
@@ -233,12 +235,17 @@ describe('시나리오 04 관도 대전 — 오소 야습 실발동 통합 [300]
         return { store, engine };
     }
 
-    it('initWorld("04") 시 관도 체인의 첫 노드만 큐에 적재된다', () => {
+    it('initWorld("04") 시 각 체인의 첫 노드만 큐에 적재된다', () => {
         const { engine } = setup04();
         // 선행 조건을 통과한 뒤 다음 노드를 적재하는 연쇄 규칙
-        expect(engine.eventEngine.queueMgr.queueSize).toBe(1);
+        // 시나리오 04는 체인이 둘이므로 큐 크기 자체는 고정하지 않는다
+        expect(engine.eventEngine.queueMgr.queueSize).toBeGreaterThanOrEqual(1);
+        // 관도 체인 — 첫 노드는 적제되고 연쇄상 다음 노드는 대기
         expect(engine.eventEngine.queueMgr.isQueued('ev_04_wuchao_plot')).toBe(true);
         expect(engine.eventEngine.queueMgr.isQueued('ev_04_ju_shou_purge')).toBe(false);
+        // 의대의 밀서 체인도 같은 규칙을 따른다
+        expect(engine.eventEngine.queueMgr.isQueued('ev_04_yidaizhao')).toBe(true);
+        expect(engine.eventEngine.queueMgr.isQueued('ev_04_guojia_plan')).toBe(false);
     });
 
     it('200년 턴 진행 시 조건 충족 노드가 HISTORICAL_EVENT로 발화되고 보상이 적용된다', async () => {

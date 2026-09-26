@@ -1,339 +1,795 @@
 {
-    "comment": "시나리오별 연의전 이벤트 체인 정의 [300][106-114]. EventEngine 큐에 적재되어 월간 스캔으로 조건 충족 시 발동된다.",
-    "chains": [
+  "comment": "시나리오별 연의전 이벤트 체인 정의 [300][106-114]. EventEngine 큐에 적재되어 월간 스캔으로 조건 충족 시 발동된다.",
+  "chains": [
+    {
+      "scenarioId": "01",
+      "chainId": "chain_01_yellow_turban",
+      "chainName": "황건적의 난 — 봉기의 불씨",
+      "nodes": [
         {
-            "scenarioId": "01",
-            "chainId": "chain_01_yellow_turban",
-            "chainName": "황건적의 난 — 봉기의 불씨",
-            "nodes": [
-                {
-                    "eventId": "ev_01_turbans_rise",
-                    "eventName": "황건적 봉기",
-                    "priority": 10,
-                    "conditions": [
-                        { "type": "year", "minValue": 184, "maxValue": 200 }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "장각: 창천이 죽은 뒤에 황천이 당립떠 세상을 다스리리라.",
-                            "황건적의 기치 아래 수십만의 난민이 봉기했다!"
-                        ],
-                        "rewards": { "moraleAll": -5, "chaosFlag": "yellow_turban_rising" }
-                    }
-                },
-                {
-                    "eventId": "ev_01_royal_decrees",
-                    "eventName": "조정의 격문",
-                    "priority": 5,
-                    "conditions": [
-                        { "type": "year", "minValue": 184 }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "조정은 각지에 격문을 내려 의병 모집을 명했다.",
-                            "각지의 영웅들이 자신의 기치를 올리기 시작한다."
-                        ],
-                        "rewards": { "fundsAll": 300 }
-                    }
-                }
-            ]
+          "eventId": "ev_01_turbans_rise",
+          "eventName": "황건적 봉기",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 184,
+              "maxValue": 200
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "장각: 창천이 죽은 뒤에 황천이 당립떠 세상을 다스리리라.",
+              "황건적의 기치 아래 수십만의 난민이 봉기했다!"
+            ],
+            "rewards": {
+              "moraleAll": -5,
+              "chaosFlag": "yellow_turban_rising"
+            }
+          }
         },
         {
-            "scenarioId": "02",
-            "chainId": "chain_02_coalition",
-            "chainName": "반동탁 연합 — 격문과 회맹",
-            "nodes": [
-                {
-                    "eventId": "ev_02_cao_cao_letter",
-                    "eventName": "조조의 격문",
-                    "priority": 10,
-                    "conditions": [
-                        { "type": "year", "minValue": 190, "maxValue": 195 },
-                        { "type": "faction", "targetFaction": "dong_zhuo" }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "조조: 동탁을 토벌할 연합군의 깃발 아래 모여라!",
-                            "조조의 격문에 각지 제후들이 응답했다."
-                        ],
-                        "rewards": { "diplomacyFlag": "coalition_formed" }
-                    }
-                },
-                {
-                    "eventId": "ev_02_hulao_gate",
-                    "eventName": "호뢰관의 대치",
-                    "priority": 8,
-                    "conditions": [
-                        { "type": "year", "minValue": 190 },
-                        { "type": "warlord_alive", "targetId": "lv_bu" }
-                    ],
-                    "result": {
-                        "eventType": "BATTLE_SCENE",
-                        "dialogueLines": [
-                            "여포: 나는 날개 달린 악마, 사람들이 나를 비로소 두렵여하리라!",
-                            "호뢰관 앞 삼형제의 합세로 여포가 물러났다."
-                        ],
-                        "rewards": { "reputationLiuBei": 10 }
-                    }
-                },
-                {
-                    "eventId": "ev_02_jade_seal",
-                    "eventName": "전국새의 발견",
-                    "priority": 7,
-                    "conditions": [
-                        { "type": "year", "minValue": 191 },
-                        { "type": "warlord_alive", "targetId": "sun_jian" }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "손견: 이것은... 전국샤가 아니냐. 하늘이 나에게 천하를 맡기신 것인가.",
-                            "손견이 낙양 폐허에서 전국새를 발견했다."
-                        ],
-                        "rewards": { "ambitionSunJian": 20 }
-                    }
-                }
-            ]
-        },
-        {
-            "scenarioId": "03",
-            "chainId": "chain_03_warlords",
-            "chainName": "군웅할거 — 연주의 위기",
-            "nodes": [
-                {
-                    "eventId": "ev_03_lu_bu_strikes",
-                    "eventName": "여포의 연주 습격",
-                    "priority": 10,
-                    "conditions": [
-                        { "type": "year", "minValue": 194, "maxValue": 198 },
-                        { "type": "warlord_alive", "targetId": "lv_bu" },
-                        { "type": "warlord_alive", "targetId": "cao_cao" }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "진궁: 장군, 지금이 조조의 본거지를 노릴 절호의 기회입니다!",
-                            "여포가 진류를 비워 연주를 습격했다."
-                        ],
-                        "rewards": { "chaosFlag": "yanzhou_crisis" }
-                    }
-                },
-                {
-                    "eventId": "ev_03_taoyuan_three",
-                    "eventName": "도원결의의 재회",
-                    "priority": 6,
-                    "conditions": [
-                        { "type": "year", "minValue": 194 },
-                        { "type": "warlord_alive", "targetId": "liu_bei" },
-                        { "type": "warlord_alive", "targetId": "guan_yu" },
-                        { "type": "warlord_alive", "targetId": "zhang_fei" }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "유비: 우리 형제의 의는 하늘과 땅이 함께 알리니라.",
-                            "삼형제가 다시 한번 서약을 굳혔다."
-                        ],
-                        "rewards": { "moraleLiuBeiFaction": 10 }
-                    }
-                }
-            ]
-        },
-        {
-            "scenarioId": "04",
-            "chainId": "chain_04_guandu",
-            "chainName": "관도 대전 — 화북의 주도권",
-            "nodes": [
-                {
-                    "eventId": "ev_04_wuchao_plot",
-                    "eventName": "오소 야습 — 허유의 배신",
-                    "priority": 10,
-                    "conditions": [
-                        { "type": "year", "minValue": 200, "maxValue": 202 },
-                        { "type": "warlord_alive", "targetId": "cao_cao" },
-                        { "type": "warlord_alive", "targetId": "yuan_shao" }
-                    ],
-                    "result": {
-                        "eventType": "BATTLE_SCENE",
-                        "dialogueLines": [
-                            "허유: 원소공은 모사의 계를 받아들이지 않으십니다. 이제 화북의 주인은 정해졌습니다.",
-                            "조조가 허유의 항복을 받고 원소의 병참기지 오소를 불태웠다. 관도의 승패가 갈렸다."
-                        ],
-                        "rewards": { "moraleAll": -5, "fundsAll": 500, "strategicFlag": "wuchao_burned" }
-                    }
-                },
-                {
-                    "eventId": "ev_04_ju_shou_purge",
-                    "eventName": "원씨의 내분 — 저수의 죽음",
-                    "priority": 8,
-                    "conditions": [
-                        { "type": "year", "minValue": 200, "maxValue": 203 },
-                        { "type": "warlord_alive", "targetId": "yuan_shao" }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "곽도: 저수공은 패전의 책임을 물어 형명에 처해질 것입니다.",
-                            "원소는 패전 후 저수를 사형했다. 원씨 진영의 모사들이 떨어져 나갔다."
-                        ],
-                        "rewards": { "moraleAll": -3, "chaosFlag": "yuan_clinic_strife" }
-                    }
-                }
-            ]
-        },
-        {
-            "scenarioId": "05",
-            "chainId": "chain_05_three_kingdoms",
-            "chainName": "삼국정립 — 천하 삼분",
-            "nodes": [
-                {
-                    "eventId": "ev_05_longzhong_plan",
-                    "eventName": "융중 대책",
-                    "priority": 10,
-                    "conditions": [
-                        { "type": "year", "minValue": 207 },
-                        { "type": "warlord_alive", "targetId": "liu_bei" },
-                        { "type": "warlord_alive", "targetId": "zhuge_liang" }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "제갈량: 천하가 이미 삼분되어 장군이 익주를 차지하면 대업을 이룰 수 있습니다.",
-                            "유비가 융중에서 제갈량의 천하 삼분계를 들었다."
-                        ],
-                        "rewards": { "strategicFlag": "longzhong_plan_heard" }
-                    }
-                },
-                {
-                    "eventId": "ev_05_red_cliff_wind",
-                    "eventName": "적벽의 동풍",
-                    "priority": 9,
-                    "conditions": [
-                        { "type": "year", "minValue": 208 },
-                        { "type": "warlord_alive", "targetId": "zhuge_liang" },
-                        { "type": "warlord_alive", "targetId": "zhou_yu" }
-                    ],
-                    "result": {
-                        "eventType": "BATTLE_SCENE",
-                        "dialogueLines": [
-                            "제갈량: 동풍을 빌려 드리지요.",
-                            "동풍이 일어나 화공이 조조의 연합 함대를 집어삼켰다!"
-                        ],
-                        "rewards": { "fireAttackReady": true }
-                    }
-                }
-            ]
-        },
-        {
-            "scenarioId": "06",
-            "chainId": "chain_06_northern_expedition",
-            "chainName": "출사표 — 오장원의 별",
-            "nodes": [
-                {
-                    "eventId": "ev_06_chu_shi_biao",
-                    "eventName": "출사표",
-                    "priority": 10,
-                    "conditions": [
-                        { "type": "year", "minValue": 227 },
-                        { "type": "warlord_alive", "targetId": "liu_bei" },
-                        { "type": "warlord_alive", "targetId": "zhuge_liang" }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "제갈량: 신본은 본래 남양에서 밭을 가던 일개 평민이었습니다. 선제께서 신의 비루함을 아랑곳하지 않으시고 초려에 삼고초려하여 주셨습니다.",
-                            "제갈량이 출사표를 올리고 북벌의 대원정에 나섰다. 한나라의 부흥을 바라는 마지막 충의였다."
-                        ],
-                        "rewards": { "moraleAll": 5, "strategicFlag": "northern_expedition_begun" }
-                    }
-                },
-                {
-                    "eventId": "ev_06_wuzhang_star",
-                    "eventName": "오장원의 별 낙하",
-                    "priority": 9,
-                    "conditions": [
-                        { "type": "year", "minValue": 234 },
-                        { "type": "warlord_alive", "targetId": "zhuge_liang" }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "큰 별이 오장원 하늘에서 붉게 떨어졌다.",
-                            "제갈량이 오장원에서 별이 되었다. 슬픔에 잠긴 촉군의 병사들이 물러났다."
-                        ],
-                        "rewards": { "moraleAll": -8, "chaosFlag": "zhuge_liang_fallen" }
-                    }
-                }
-            ]
-        },
-        {
-            "scenarioId": "07",
-            "chainId": "chain_07_three_kingdoms",
-            "chainName": "삼국鼎峙 — 세력의 재편",
-            "nodes": [
-                {
-                    "eventId": "ev_07_jiangwan_peace",
-                    "eventName": "강완의 안정",
-                    "priority": 10,
-                    "conditions": [
-                        { "type": "year", "minValue": 220, "maxValue": 240 },
-                        { "type": "warlord_alive", "targetId": "cao_pi" }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "사오필: 승상은 적벽에서 살아남아 신하의 마음을 묶었다.",
-                            "강완을 지켜낸 헌정은 새 천하의 질서를 예고했다."
-                        ],
-                        "rewards": { "fundsAll": 450, "diplomacyFlag": "jiangwan_peace" }
-                    }
-                },
-                {
-                    "eventId": "ev_07_yiling_reckoning",
-                    "eventName": "夷陵의 대결과",
-                    "priority": 9,
-                    "conditions": [
-                        { "type": "year", "minValue": 222, "maxValue": 240 },
-                        { "type": "warlord_alive", "targetId": "sun_hao" }
-                    ],
-                    "result": {
-                        "eventType": "BATTLE_SCENE",
-                        "dialogueLines": [
-                            "여순: 오의 수장은 진명을 참지 못하고 산길에 머물렀다. 불길이 그 끝을 기다렸다.",
-                            "夷陵의 대결과는 오군의 전 구도를 바꿨다."
-                        ],
-                        "rewards": { "fundsAll": 300, "reputationSunHao": 15 }
-                    }
-                }
-            ]
-        },
-        {
-            "scenarioId": "07",
-            "chainId": "chain_07_southward_reform",
-            "chainName": "07 — 남방의 재편",
-            "nodes": [
-                {
-                    "eventId": "ev_07_nanman_reform",
-                    "eventName": "남만의 재편",
-                    "priority": 8,
-                    "conditions": [
-                        { "type": "year", "minValue": 225, "maxValue": 240 },
-                        { "type": "warlord_alive", "targetId": "liu_shan" },
-                        { "type": "warlord_alive", "targetId": "zhuge_ke" }
-                    ],
-                    "result": {
-                        "eventType": "SCENE",
-                        "dialogueLines": [
-                            "제갈격: 남방의 마을과 산을 사람마다 다스리며, 서로의 길을 잇는 교역로가 되었다.",
-                            "강릉의 정비가 시작되자 촉의 남쪽 경로가 빠르게 살아났다."
-                        ],
-                        "rewards": { "fundsAll": 280, "strategicFlag": "southern_reform_started" }
-                    }
-                }
-            ]
+          "eventId": "ev_01_royal_decrees",
+          "eventName": "조정의 격문",
+          "priority": 5,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 184
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "조정은 각지에 격문을 내려 의병 모집을 명했다.",
+              "각지의 영웅들이 자신의 기치를 올리기 시작한다."
+            ],
+            "rewards": {
+              "fundsAll": 300
+            }
+          }
         }
-    ]
+      ]
+    },
+    {
+      "scenarioId": "02",
+      "chainId": "chain_02_coalition",
+      "chainName": "반동탁 연합 — 격문과 회맹",
+      "nodes": [
+        {
+          "eventId": "ev_02_cao_cao_letter",
+          "eventName": "조조의 격문",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 190,
+              "maxValue": 195
+            },
+            {
+              "type": "faction",
+              "targetFaction": "dong_zhuo"
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "조조: 동탁을 토벌할 연합군의 깃발 아래 모여라!",
+              "조조의 격문에 각지 제후들이 응답했다."
+            ],
+            "rewards": {
+              "diplomacyFlag": "coalition_formed"
+            }
+          }
+        },
+        {
+          "eventId": "ev_02_hulao_gate",
+          "eventName": "호뢰관의 대치",
+          "priority": 8,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 190
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "lv_bu"
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "여포: 나는 날개 달린 악마, 사람들이 나를 비로소 두렵여하리라!",
+              "호뢰관 앞 삼형제의 합세로 여포가 물러났다."
+            ],
+            "rewards": {
+              "reputationLiuBei": 10
+            }
+          }
+        },
+        {
+          "eventId": "ev_02_jade_seal",
+          "eventName": "전국새의 발견",
+          "priority": 7,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 191
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "sun_jian"
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "손견: 이것은... 전국샤가 아니냐. 하늘이 나에게 천하를 맡기신 것인가.",
+              "손견이 낙양 폐허에서 전국새를 발견했다."
+            ],
+            "rewards": {
+              "ambitionSunJian": 20
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "03",
+      "chainId": "chain_03_warlords",
+      "chainName": "군웅할거 — 연주의 위기",
+      "nodes": [
+        {
+          "eventId": "ev_03_lu_bu_strikes",
+          "eventName": "여포의 연주 습격",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 194,
+              "maxValue": 198
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "lv_bu"
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "cao_cao"
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "진궁: 장군, 지금이 조조의 본거지를 노릴 절호의 기회입니다!",
+              "여포가 진류를 비워 연주를 습격했다."
+            ],
+            "rewards": {
+              "chaosFlag": "yanzhou_crisis"
+            }
+          }
+        },
+        {
+          "eventId": "ev_03_taoyuan_three",
+          "eventName": "도원결의의 재회",
+          "priority": 6,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 194
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "liu_bei"
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "guan_yu"
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "zhang_fei"
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "유비: 우리 형제의 의는 하늘과 땅이 함께 알리니라.",
+              "삼형제가 다시 한번 서약을 굳혔다."
+            ],
+            "rewards": {
+              "moraleLiuBeiFaction": 10
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "04",
+      "chainId": "chain_04_guandu",
+      "chainName": "관도 대전 — 화북의 주도권",
+      "nodes": [
+        {
+          "eventId": "ev_04_wuchao_plot",
+          "eventName": "오소 야습 — 허유의 배신",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 200,
+              "maxValue": 202
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "cao_cao"
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "yuan_shao"
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "허유: 원소공은 모사의 계를 받아들이지 않으십니다. 이제 화북의 주인은 정해졌습니다.",
+              "조조가 허유의 항복을 받고 원소의 병참기지 오소를 불태웠다. 관도의 승패가 갈렸다."
+            ],
+            "rewards": {
+              "moraleAll": -5,
+              "fundsAll": 500,
+              "strategicFlag": "wuchao_burned"
+            }
+          }
+        },
+        {
+          "eventId": "ev_04_ju_shou_purge",
+          "eventName": "원씨의 내분 — 저수의 죽음",
+          "priority": 8,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 200,
+              "maxValue": 203
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "yuan_shao"
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "곽도: 저수공은 패전의 책임을 물어 형명에 처해질 것입니다.",
+              "원소는 패전 후 저수를 사형했다. 원씨 진영의 모사들이 떨어져 나갔다."
+            ],
+            "rewards": {
+              "moraleAll": -3,
+              "chaosFlag": "yuan_clinic_strife"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "05",
+      "chainId": "chain_05_three_kingdoms",
+      "chainName": "삼국정립 — 천하 삼분",
+      "nodes": [
+        {
+          "eventId": "ev_05_longzhong_plan",
+          "eventName": "융중 대책",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 207
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "liu_bei"
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "zhuge_liang"
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "제갈량: 천하가 이미 삼분되어 장군이 익주를 차지하면 대업을 이룰 수 있습니다.",
+              "유비가 융중에서 제갈량의 천하 삼분계를 들었다."
+            ],
+            "rewards": {
+              "strategicFlag": "longzhong_plan_heard"
+            }
+          }
+        },
+        {
+          "eventId": "ev_05_red_cliff_wind",
+          "eventName": "적벽의 동풍",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 208
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "zhuge_liang"
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "zhou_yu"
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "제갈량: 동풍을 빌려 드리지요.",
+              "동풍이 일어나 화공이 조조의 연합 함대를 집어삼켰다!"
+            ],
+            "rewards": {
+              "fireAttackReady": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "06",
+      "chainId": "chain_06_northern_expedition",
+      "chainName": "출사표 — 오장원의 별",
+      "nodes": [
+        {
+          "eventId": "ev_06_chu_shi_biao",
+          "eventName": "출사표",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 227
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "liu_bei"
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "zhuge_liang"
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "제갈량: 신본은 본래 남양에서 밭을 가던 일개 평민이었습니다. 선제께서 신의 비루함을 아랑곳하지 않으시고 초려에 삼고초려하여 주셨습니다.",
+              "제갈량이 출사표를 올리고 북벌의 대원정에 나섰다. 한나라의 부흥을 바라는 마지막 충의였다."
+            ],
+            "rewards": {
+              "moraleAll": 5,
+              "strategicFlag": "northern_expedition_begun"
+            }
+          }
+        },
+        {
+          "eventId": "ev_06_wuzhang_star",
+          "eventName": "오장원의 별 낙하",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 234
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "zhuge_liang"
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "큰 별이 오장원 하늘에서 붉게 떨어졌다.",
+              "제갈량이 오장원에서 별이 되었다. 슬픔에 잠긴 촉군의 병사들이 물러났다."
+            ],
+            "rewards": {
+              "moraleAll": -8,
+              "chaosFlag": "zhuge_liang_fallen"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "07",
+      "chainId": "chain_07_three_kingdoms",
+      "chainName": "삼국鼎峙 — 세력의 재편",
+      "nodes": [
+        {
+          "eventId": "ev_07_jiangwan_peace",
+          "eventName": "강완의 안정",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 220,
+              "maxValue": 240
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "cao_pi"
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "사오필: 승상은 적벽에서 살아남아 신하의 마음을 묶었다.",
+              "강완을 지켜낸 헌정은 새 천하의 질서를 예고했다."
+            ],
+            "rewards": {
+              "fundsAll": 450,
+              "diplomacyFlag": "jiangwan_peace"
+            }
+          }
+        },
+        {
+          "eventId": "ev_07_yiling_reckoning",
+          "eventName": "夷陵의 대결과",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 222,
+              "maxValue": 240
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "sun_hao"
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "여순: 오의 수장은 진명을 참지 못하고 산길에 머물렀다. 불길이 그 끝을 기다렸다.",
+              "夷陵의 대결과는 오군의 전 구도를 바꿨다."
+            ],
+            "rewards": {
+              "fundsAll": 300,
+              "reputationSunHao": 15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "07",
+      "chainId": "chain_07_southward_reform",
+      "chainName": "07 — 남방의 재편",
+      "nodes": [
+        {
+          "eventId": "ev_07_nanman_reform",
+          "eventName": "남만의 재편",
+          "priority": 8,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 225,
+              "maxValue": 240
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "liu_shan"
+            },
+            {
+              "type": "warlord_alive",
+              "targetId": "zhuge_ke"
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "제갈격: 남방의 마을과 산을 사람마다 다스리며, 서로의 길을 잇는 교역로가 되었다.",
+              "강릉의 정비가 시작되자 촉의 남쪽 경로가 빠르게 살아났다."
+            ],
+            "rewards": {
+              "fundsAll": 280,
+              "strategicFlag": "southern_reform_started"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "02",
+      "chainId": "chain_02_lianhuanji",
+      "chainName": "연환계 — 미인의 눈물이 온기를 녹인다",
+      "nodes": [
+        {
+          "eventId": "ev_02_lianhuan_wangyun",
+          "eventName": "왕윤의 연환계",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 190,
+              "maxValue": 191
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "왕윤: 이공은 하루아침에 천자를 꼭두각시로 두셨으니, 그에 따를 이를 세워야 합니다.",
+              "왕윤: 조蝉 씨가 눈물을 흘리면 낙양 궁전의 온기가 얼어붙을 것입니다.",
+              "조蝉: 소나 닭 사골을 탁자 위에 올려놓고 기다렸더니, 마침 떴습니다.",
+              "동탁: 천자의 종이 내 손에 있는데, 무엇이 감히 나를 해치겠는가!"
+            ]
+          }
+        },
+        {
+          "eventId": "ev_02_dongzhuo_fall",
+          "eventName": "등탁의 최후",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 190,
+              "maxValue": 192
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "여포: 온갖 수레에 얼음을 잔뜩 실었으니 어찌 온기가 있겠는가.",
+              "여포: 병사들이 경적에 고개를 숙이고 숨을 죽였다.",
+              "왕윤: 등탁이 스스로 목숨을 끊었다. 연환계의 공이 여기서 마쳤다."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "02",
+      "chainId": "chain_02_hair_oath",
+      "chainName": "발을 자른 주공 — 법을 먼저 세운 장수",
+      "nodes": [
+        {
+          "eventId": "ev_02_hair_oath",
+          "eventName": "발을 자른 주공",
+          "priority": 8,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 190,
+              "maxValue": 193
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "부관: 저처럼 논밭을 밟다가 목을 베인 사내가 한 푼도 챙기지 못했습니다!",
+              "조조: 그대의 목을 베어라. 내 목으로 그 칼날을 막겠다!",
+              "조조: 법은 내가 정하는 것이니, 죽음을 무릅쓰지 않겠다."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "04",
+      "chainId": "chain_04_yidaizhao",
+      "chainName": "의대의 밀서 — 세 사람의 죽음을 미루는 법",
+      "nodes": [
+        {
+          "eventId": "ev_04_yidaizhao",
+          "eventName": "의대의 밀서",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 200,
+              "maxValue": 200
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "공손찬: 사형수의 예의가 한 조의 목숨을 걸고 있노라.",
+              "한전: 이 책핵을 품고 죽는 자는 없는 법이 아니다. 이미 죽은 자다.",
+              "한전: 이 세 조의 이별이 벌써 세째 해다. 무릎이 굽혀지지 않겠는가!"
+            ]
+          }
+        },
+        {
+          "eventId": "ev_04_guojia_plan",
+          "eventName": "원교의 유언",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 200,
+              "maxValue": 200
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "주유: 원교의 포는 남은 것을 다 뽑았다. 그 짐승의 이빨을 더 긁을 수 없다.",
+              "조조: 남은 이를 더 긁는 것만이 옳은 일이지. 탁론은 이르지 않겠는가."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "05",
+      "chainId": "chain_05_chibicampaign",
+      "chainName": "남악의 불 — 대강 위공이 호상 대결을 피한다",
+      "nodes": [
+        {
+          "eventId": "ev_05_zhugeliang",
+          "eventName": "저주연의 세 번째 방문",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 207,
+              "maxValue": 209
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "유비: 현덕은 이미 제게 한 번 거절당했다.",
+              "제갈량: 보질 좋은 사내군자는 쓰지 않겠다. 보질 없는 사내만 쓰겠노라.",
+              "제갈량: 기와집도 보질 없는 사내의 쓸모가 아니겠는가."
+            ]
+          }
+        },
+        {
+          "eventId": "ev_05_chibi",
+          "eventName": "적벽의 불사",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 208,
+              "maxValue": 208
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "주유: 오시받으시는 바람이 오시면 오대나 남풍이 분다. 그 불이 적 진영을 삼키리라.",
+              "주유: 한 번의 대지로 오군을 덮으리니, 복도 대지이니라 여겨라.",
+              "황개: 불꽃이 하늘을 물들인다. 이 불길이 천하를 뒤집어 놓으리라."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "05",
+      "chainId": "chain_05_nanman",
+      "chainName": "남정 — 일곱 번 잡고 일곱 번 놓다",
+      "nodes": [
+        {
+          "eventId": "ev_05_nanman_surrender",
+          "eventName": "남중의 일곱 포획",
+          "priority": 8,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 225,
+              "maxValue": 226
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "제갈량: 이 일곱 포획이 일곱 승리가 아니다. 일곱이 비로소 내 부족을 이기지 못했다.",
+              "맹획: 대가가 우리 술래를 잡고도 풀어 주었으니, 이 마음으로 항복하겠노라."
+            ]
+          }
+        },
+        {
+          "eventId": "ev_05_kongcheng",
+          "eventName": "공성지루",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 228,
+              "maxValue": 229
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "초예: 문을 열어라. 거히 내 배를 내보이라 했겠는가!",
+              "초예: 이 진영이 텅 비었다는 소문을, 산 위에 먼저 듣고 하겠다.",
+              "보중: 오탐이 천 리 밖에 있는데, 문을 연 까닭을 하겠는가."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "05",
+      "chainId": "chain_05_yiling",
+      "chainName": "의 어긋난 형제 — 백병의 불이 남쪽에서",
+      "nodes": [
+        {
+          "eventId": "ev_05_yiling",
+          "eventName": "백쪽의 불",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 222,
+              "maxValue": 223
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "유비: 관우와 장비, 저 두 형제의 피가 가장 먼저 섞이게 되었소.",
+              "사마의: 논을 삼킨다고 형제인 척 그럴 수 있겠는가."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "07",
+      "chainId": "chain_07_gaopingling",
+      "chainName": "고평릉 — 침묵한 계략이 실전을 뒤흔든다",
+      "nodes": [
+        {
+          "eventId": "ev_07_gaopingling",
+          "eventName": "고평릉의 변",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 249,
+              "maxValue": 250
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "사마의: 거문 앞에서 선봉이 나가기도 전에, 병사들이 이미 움직이고 있었다.",
+              "문정: 상이 자연히 병사를 거두었고, 그이는 조정의 허수아비였다.",
+              "사마의: 이 사나이는 내게 두려운 것이 아니다. 바로 내 아들이 두렵다."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "07",
+      "chainId": "chain_07_lebusishu",
+      "chainName": "락불사수 — 유비의 웃음 뒤에 남은 것",
+      "nodes": [
+        {
+          "eventId": "ev_07_lebusishu",
+          "eventName": "락불사수",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 263,
+              "maxValue": 264
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "유비: 이 신하가된, 오늘이 서쪽으로 갈 기미가 보이지 않소.",
+              "조타: 병사들이 무너지는 것을 보고도 웃음만 낸 것이 한 부끄러운 일이다."
+            ]
+          }
+        }
+      ]
+    }
+  ]
 }
