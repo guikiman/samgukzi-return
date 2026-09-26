@@ -1076,8 +1076,6 @@ export class GameEngine {
             //    → 개발(상업+)할수록 다음 달 수입이 늘어나는 선순환
             for (const c of cities) {
                 const ds = c.developmentStats;
-                const newGoldIncome = 90 + Math.floor(ds.commerce);
-                const newFoodIncome = 200 + Math.floor(ds.farming * 2.62);
                 // 발전도 성장분: 매월 상업+3, 농업+2 자연 성장 (개발 투자 시 추가)
                 const grownCommerce = Math.min(ds.maxCommerce, ds.commerce + 3);
                 const grownFarming = Math.min(ds.maxFarming, ds.farming + 2);
@@ -1088,7 +1086,6 @@ export class GameEngine {
                     developmentStats: { ...ds, commerce: grownCommerce, farming: grownFarming },
                     funds: c.funds + grownGoldIncome * 3,
                 });
-                this.store.updateFaction(faction.id, { gold: faction.gold + newGoldIncome });
             }
         }
 
