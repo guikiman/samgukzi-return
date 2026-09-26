@@ -97,15 +97,17 @@ export interface SettlementDelta {
     officerCount: number;
 }
 
-/** 두 스냅샷의 특정 세력 증감을 계산한다 (이전 세력이 사라지면 0 기준) */
 export function diffSettlement(
     prev: FactionSettlement | undefined,
     curr: FactionSettlement,
 ): SettlementDelta {
+    if (!prev) {
+        return { gold: 0, food: 0, troops: 0, officerCount: 0 };
+    }
     return {
-        gold: curr.gold - (prev?.gold ?? 0),
-        food: curr.food - (prev?.food ?? 0),
-        troops: curr.troops - (prev?.troops ?? 0),
-        officerCount: curr.officerCount - (prev?.officerCount ?? 0),
+        gold: curr.gold - prev.gold,
+        food: curr.food - prev.food,
+        troops: curr.troops - prev.troops,
+        officerCount: curr.officerCount - prev.officerCount,
     };
 }

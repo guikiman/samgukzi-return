@@ -2356,6 +2356,10 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
     // 신규/이어하기 공통: 중국 전도에 도시 배치 (소속/영토 포함) [9][17]
     syncChinaMapCities();
 
+    // 정산 증감의 기준선 — 이 시점의 재고로 두어야 첫 턴이 실제 증감으로 표시된다
+    prevSettlement = computeSettlement(engine['store']);
+    latestSettlement = prevSettlement;
+
     // 첫 플레이 자동 튜토리얼 [461-480] — 신규 시작에서만 표시
     if (world && tutorial.shouldShowOnStart()) openTutorial(true);
 

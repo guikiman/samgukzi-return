@@ -53,14 +53,25 @@ describe('월말 정산 요약 [E1-361][461-480]', () => {
         expect(delta).toEqual({ gold: 200, food: -200, troops: -500, officerCount: 1 });
     });
 
-    it('diffSettlement — 이전 스냅샷이 없으면 0 기준(=현재값)', () => {
+    it('diffSettlement — 기준 스냅샷이 없으면 증감 0 (국고 전체를 증가로 보지 않는다)', () => {
         const curr = {
             factionId: 'fac_1', factionName: '손권', cityCount: 1,
             goldIncome: 90, foodIncome: 180, gold: 600, food: 3000,
             troops: 5000, officerCount: 5, avgMorale: 65,
         };
         expect(diffSettlement(undefined, curr)).toEqual({
-            gold: 600, food: 3000, troops: 5000, officerCount: 5,
+            gold: 0, food: 0, troops: 0, officerCount: 0,
+        });
+    });
+
+    it('diffSettlement — 국고가 0인 세력도 실제 증감 0과 구분되지 않는다', () => {
+        const zeroed = {
+            factionId: 'fac_2', factionName: '공손', cityCount: 0,
+            goldIncome: 0, foodIncome: 0, gold: 0, food: 0,
+            troops: 0, officerCount: 0, avgMorale: 0,
+        };
+        expect(diffSettlement(zeroed, { ...zeroed })).toEqual({
+            gold: 0, food: 0, troops: 0, officerCount: 0,
         });
     });
 });
