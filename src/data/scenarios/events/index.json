@@ -790,6 +790,229 @@
           }
         }
       ]
+    },
+    {
+      "scenarioId": "03",
+      "chainId": "chain_03_xuzhou",
+      "chainName": "주인의 자리를 빼앗기다",
+      "nodes": [
+        {
+          "eventId": "ev_03_taoqian_death",
+          "eventName": "도건의 유언",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 194,
+              "maxValue": 195
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "도건: 이 자리를 내 손에서 네 손으로 넘기겠다.",
+              "곽공: 주공이 죽었다고 이 땅이 비었다 하겠는가.",
+              "곽공: 이 술잔이 식기 전에 누가 씻어 비울 것인가."
+            ]
+          }
+        },
+        {
+          "eventId": "ev_03_lvbu_seizes",
+          "eventName": "저포의 유람",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 194,
+              "maxValue": 197
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "저포: 예장 창끝에 내 손이 닿았다. 이제 그 손이 주를 쓸 텐가.",
+              "유비: 저는 죽어도 이 주를 주공에게 되돌려 드리겠노라.",
+              "저포: 부질없는 이를 주공이 거두지 못했다면, 나를 거두겠는가."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "05",
+      "chainId": "chain_05_northern_campaign",
+      "chainName": "북벌 — 보망에서 한중까지",
+      "nodes": [
+        {
+          "eventId": "ev_05_bowang",
+          "eventName": "보망포의 불",
+          "priority": 8,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 208,
+              "maxValue": 208
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "관우: 이 불이 적의 진영 물자만 태우고 우리 진영은 비껴 가노라.",
+              "주유: 공의 진영이 요동치니 우회하여 의병과 합류하시오."
+            ]
+          }
+        },
+        {
+          "eventId": "ev_05_tongguan",
+          "eventName": "潼관의 돌",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 211,
+              "maxValue": 212
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "사마의: 한중을 빼앗는 것과 지킨 것이 이 바위 위에서 갈린다.",
+              "마초: 북쪽 두 문이 저마다 성채를 세웠으니, 쥐도 지나가지 못하리라."
+            ]
+          }
+        },
+        {
+          "eventId": "ev_05_hanzhong",
+          "eventName": "한중의 쟁탈",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 219,
+              "maxValue": 220
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "유비: 한중은 오 년 동안 내 미제였으니, 이제 돌려받겠다.",
+              "법정: 한중을 얻으면 큰 일이 서고, 큰 일이 서면 진영이 굳는다."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "05",
+      "chainId": "chain_05_shoucheng",
+      "chainName": "백지의 유언 — 사자는 죽고 사업은 남는다",
+      "nodes": [
+        {
+          "eventId": "ev_05_liubei_yi",
+          "eventName": "유비의 입촉",
+          "priority": 8,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 211,
+              "maxValue": 214
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "유비: 성주가 죽은 틈을 타 박도위가 넘어온다 하여 다들 의심하나 봅니다.",
+              "유비: 이들이 붙는 것은 이을 계승이니라. 내 손을 내밀겠노라."
+            ]
+          }
+        },
+        {
+          "eventId": "ev_05_maicheng",
+          "eventName": "마젯성",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 219,
+              "maxValue": 220
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "관우: 이 성벽이 이보다 더 얇은 곳은 없다.",
+              "관우: 이 성을 지키는 것보다, 신하의 목숨을 지키는 것이 먼저다.",
+              "관우: 퇴로를 먼저 열어 두라. 성이 놓여도 목숨은 보존된다."
+            ]
+          }
+        },
+        {
+          "eventId": "ev_05_baidi",
+          "eventName": "백지의 유언",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 223,
+              "maxValue": 224
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "유비: 관우와 장비는 내게 어린 동생이나 다름이 없다.",
+              "유비: 내 아들 선근을 부탁하노라. 충직 하나 조심하되 못 하겠노라.",
+              "제갈량: 이 잔이 비면 닦고, 이 비가 마르면 다시 채우거라."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "06",
+      "chainId": "chain_06_after_zhugeliang",
+      "chainName": "사후의 착각 — 내양의 적막이 굳어 버리다",
+      "nodes": [
+        {
+          "eventId": "ev_06_zhugeliang_death",
+          "eventName": "오장성의 유산",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 234,
+              "maxValue": 235
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "제갈량: 이번에는 더는 못 가겠노라. 사람의 일은 하늘이 정한 수순이니라.",
+              "장완: 와룡이 길을 접었다면 이 잔은 비겠네. 등불을 들여오라.",
+              "장완: 정전이 중독에 위님이 계시니, 그 말을 삼가시오."
+            ]
+          }
+        },
+        {
+          "eventId": "ev_06_liangzhou_lost",
+          "eventName": "량주의 상실",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 231,
+              "maxValue": 245
+            }
+          ],
+          "result": {
+            "eventType": "BATTLE_SCENE",
+            "dialogueLines": [
+              "강회: 자사가 벼슬에 오르니 어리석음이 또 바람을 불었네.",
+              "강회: 오주 사람이 길을 내주지 않으니, 북문을 닫고 버티리라."
+            ]
+          }
+        }
+      ]
     }
   ]
 }
