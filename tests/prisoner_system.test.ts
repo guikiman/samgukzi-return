@@ -40,9 +40,25 @@ describe('PrisonerManager', () => {
     });
 
     it('should recruit a prisoner', () => {
-        manager.capturePrisoner('officer_1', 'faction_1', 'faction_2', 10, 100);
-        const result = manager.recruitPrisoner('officer_1', 'recruiter_1', 30, 80);
-        expect(result.success || !result.success).toBe(true);
+        // 성공률 = (100 - 충성도)/100 x 설득력/100 = 0.7 x 0.8 = 0.56
+        // 포획 자체도 확률이라 forceCapture 로 상태를 직접 만들어 준다
+        let success = 0;
+        const trials = 2000;
+        for (let i = 0; i < trials; i++) {
+            forceCapture('officer_1');
+            if (manager.recruitPrisoner('officer_1', 'recruiter_1', 30, 80).success) success++;
+        }
+        expect(Math.abs(success / trials - 0.56)).toBeLessThan(0.05);
+    });
+
+    it('설득력이 0 이면 등용은 불가능하다', () => {
+        let success = 0;
+        const trials = 200;
+        for (let i = 0; i < trials; i++) {
+            manager.capturePrisoner('officer_1', 'faction_1', 'faction_2', 10, 100);
+            if (manager.recruitPrisoner('officer_1', 'recruiter_1', 30, 0).success) success++;
+        }
+        expect(success).toBe(0);
     });
 
     it('should release a prisoner', () => {
@@ -61,14 +77,11 @@ describe('PrisonerManager', () => {
     });
 
     function forceCapture(officerId: string) {
-        const existing = manager['prisoners'].get(officerId);
-        if (!existing) {
-            manager['prisoners'].set(officerId, {
-                officerId, captorFactionId: 'faction_1',
-                originalFactionId: 'faction_2', captureDate: Date.now(),
-                status: 'CAPTURED', escapeAttempts: 0, negotiationCount: 0,
-            });
-        }
+        manager['prisoners'].set(officerId, {
+            officerId, captorFactionId: 'faction_1',
+            originalFactionId: 'faction_2', captureDate: Date.now(),
+            status: 'CAPTURED', escapeAttempts: 0, negotiationCount: 0,
+        });
     }
 
     it('should negotiate ransom', () => {
@@ -86,9 +99,14 @@ describe('PrisonerManager', () => {
     });
 
     it('should attempt escape', () => {
-        manager.capturePrisoner('officer_1', 'faction_1', 'faction_2', 10, 100);
-        const result = manager.attemptEscape('officer_1', 90);
-        expect(result.success || !result.success).toBe(true);
+        // 탈옥 확률 = 지력 / 200 = 0.45
+        let success = 0;
+        const trials = 2000;
+        for (let i = 0; i < trials; i++) {
+            forceCapture('officer_1');
+            if (manager.attemptEscape('officer_1', 90).success) success++;
+        }
+        expect(Math.abs(success / trials - 0.45)).toBeLessThan(0.05);
     });
 
     it('should return prisoners by faction', () => {

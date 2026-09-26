@@ -4,6 +4,12 @@ import { DeathSuccessionManager } from '../src/core/death_succession_system';
 describe('DeathSuccessionManager', () => {
     let manager: DeathSuccessionManager;
 
+    const rate = (roll: () => boolean, trials = 2000): number => {
+        let hits = 0;
+        for (let i = 0; i < trials; i++) if (roll()) hits++;
+        return hits / trials;
+    };
+
     beforeEach(() => {
         manager = new DeathSuccessionManager();
         manager.setCurrentDate(200);
@@ -52,9 +58,19 @@ describe('DeathSuccessionManager', () => {
     });
 
     it('should roll battle death with low HP', () => {
-        // HP 0/100 → 50% death chance
-        const result = manager.rollBattleDeath(0, 100);
-        expect(result || !result).toBe(true); // non-deterministic
+        let deaths = 0;
+        const trials = 2000;
+        for (let i = 0; i < trials; i++) {
+            if (manager.rollBattleDeath(0, 100)) deaths++;
+        }
+        expect(deaths / trials).toBeCloseTo(0.5, 1);
+    });
+
+    it('HP 가 높으면 전사 확률이 낮아진다', () => {
+        const lowHp = rate(() => manager.rollBattleDeath(0, 100));
+        const halfHp = rate(() => manager.rollBattleDeath(50, 100));
+        expect(halfHp).toBeLessThan(lowHp);
+        expect(halfHp).toBeCloseTo(0.25, 1);
     });
 
     it('should track death events', () => {

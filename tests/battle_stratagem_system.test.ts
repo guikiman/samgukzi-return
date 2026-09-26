@@ -37,9 +37,38 @@ describe('BattleStratagemManager', () => {
     });
 
     it('should execute stratagem', () => {
-        const effect = manager.executeStratagem('ROCKFALL', 'off_1', { q: 0, r: 0 }, 80, 'SUNNY', 100);
-        expect(effect.executorId).toBe('off_1');
-        expect(effect.success || !effect.success).toBe(true);
+        let success = 0;
+        const trials = 2000;
+        for (let i = 0; i < trials; i++) {
+            if (manager.executeStratagem('ROCKFALL', 'off_1', { q: 0, r: 0 }, 80, 'SUNNY', 100).success) {
+                success++;
+            }
+        }
+        const rate = manager.calculateSuccessRate('ROCKFALL', 80, 'SUNNY');
+        // 2000회 표본의 표준오차는 약 0.009 이므로 허용차를 0.05 로 잡는다
+        expect(Math.abs(success / trials - rate)).toBeLessThan(0.05);
+    });
+
+    it('실패하면 피해를 입히지 않는다', () => {
+        const damaged = [];
+        for (let i = 0; i < 200; i++) {
+            const e = manager.executeStratagem('ROCKFALL', 'off_1', { q: 0, r: 0 }, 0, 'STORM', 100);
+            if (!e.success) damaged.push(e.damageApplied);
+        }
+        expect(damaged.length).toBeGreaterThan(50);
+        expect(damaged.every(d => d === 0)).toBe(true);
+    });
+
+    it('성공하면 계략 수치를 그대로 피해를 입힌다', () => {
+        let checked = 0;
+        for (let i = 0; i < 400 && checked < 20; i++) {
+            const e = manager.executeStratagem('ROCKFALL', 'off_1', { q: 0, r: 0 }, 100, 'SUNNY', 100);
+            if (!e.success) continue;
+            checked++;
+            expect(e.damageApplied).toBe(STRATAGEMS.ROCKFALL.damage);
+            expect(e.stratagem.type).toBe('ROCKFALL');
+        }
+        expect(checked).toBeGreaterThan(0);
     });
 
     it('should process active effects over time', () => {

@@ -61,18 +61,40 @@ describe('WandererArmyManager', () => {
     });
 
     it('should succeed uprising with favorable conditions', () => {
-        manager.formWandererArmy('officer_1', 1000, 3000);
-        // 매우 유리한 조건: 병력 3000 vs 방어군 1000, 충성도 10, 통솔 95
-        const result = manager.uprise('city_1', 1000, 10, 95);
-        // 확률이 매우 높으므로 성공 기대
-        expect(result.success || !result.success).toBeDefined();
+        // 성공률 = 병력비 x 통솔 x (1 - 충성도) = 3 x 0.95 x 0.9 = 2.565
+        // 1 을 넘어서므로 Math.random() 과 비교하면 언제나 성공한다
+        let success = 0;
+        const trials = 200;
+        for (let i = 0; i < trials; i++) {
+            // uprise 는 성공 여부와 무관하게 방랑군을 해산시키므로 매번 새로 편성한다
+            manager.formWandererArmy('officer_1', 1000, 3000);
+            if (manager.uprise('city_1', 1000, 10, 95).success) success++;
+        }
+        expect(success).toBe(trials);
+    });
+
+    it('불리한 조건에서는 거병이 거의 실패한다', () => {
+        // 성공률 = 0.33 x 0.2 x 0.1 = 0.0067
+        let success = 0;
+        const trials = 200;
+        for (let i = 0; i < trials; i++) {
+            manager.formWandererArmy('officer_1', 1000, 3000);
+            manager.addOfficer('officer_1');
+            if (manager.uprise('city_1', 3000, 90, 20).success) success++;
+        }
+        expect(success / trials).toBeLessThan(0.2);
     });
 
     it('should fail uprising with unfavorable conditions', () => {
-        manager.formWandererArmy('officer_1', 1000, 100);
         // 불리한 조건: 병력 100 vs 방어군 5000, 충성도 90, 통솔 30
-        const result = manager.uprise('city_1', 5000, 90, 30);
-        expect(result.success).toBe(false);
+        // 성공률 = 0.02 x 0.3 x 0.1 = 0.0006 이라 2000회에 1~2회만 성공한다
+        let success = 0;
+        const trials = 2000;
+        for (let i = 0; i < trials; i++) {
+            manager.formWandererArmy('officer_1', 1000, 100);
+            if (manager.uprise('city_1', 5000, 90, 30).success) success++;
+        }
+        expect(success).toBeLessThan(trials * 0.01);
     });
 
     it('should fail uprising without soldiers', () => {
