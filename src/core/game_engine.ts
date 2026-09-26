@@ -535,6 +535,7 @@ export class GameEngine {
             // 수입을 먼저 반영하면 군량 고갈 세력이 수입 한 번에 회복되어 아사가 영원히 발생하지 않는다.
             this.processCitySecurityMonthly();
             this.processMonthlyMaintenance();
+            this.processMonthlyUpkeep();
             // 연의전 이벤트 체인 스캔/발동 [300][106-114]
             this.processEventChainMonthly();
             // 포팅 시스템 월간 훅 [76-85][321-340][341-360][421-438] — 전략 명령 진행, 첩보망 유지비,
@@ -1012,6 +1013,48 @@ export class GameEngine {
                     console.log(`[EventChain] 분기 활성화: ${branch.branchId} (${branch.branchType})`);
                 }
             }
+        }
+    }
+
+    private static readonly OFFICER_SALARY = 15;
+    private static readonly CITY_UPKEEP = 10;
+    private static readonly ARMY_UPKEEP_PER_SOLDIER = 2;
+    private static readonly FOOD_UPKEEP_BASE = 60;
+    private static readonly FOOD_UPKEEP_PER_OFFICER = 15;
+    private static readonly FOOD_UPKEEP_PER_CITY = 40;
+
+    /**
+     * 월 세출 [C-2] — processCitySecurityMonthly의 `food <= 0` 아사 판정을
+     * 실제로 발동시키기 위한 지출선. 수입만 있고 이 지출이 없으면 굶주림이
+     * 영영 불가능해진다. 상수를 임의 튜닝값으로 보고 지우면 그 버그가 되살아난다.
+     */
+    private processMonthlyUpkeep(): void {
+        const factions = this.store.getAllFactions();
+        for (const faction of factions) {
+            const cities = this.store.getCitiesByFaction(faction.id);
+            const officerCount = faction.officers.length;
+            const cityCount = cities.length;
+            let soldierCount = 0;
+            for (const armyId of faction.armies) {
+                const army = this.store.getArmy(armyId);
+                if (army) soldierCount += army.soldiers;
+            }
+
+            const goldUpkeep =
+                officerCount * GameEngine.OFFICER_SALARY +
+                cityCount * GameEngine.CITY_UPKEEP +
+                soldierCount * GameEngine.ARMY_UPKEEP_PER_SOLDIER;
+            const foodUpkeep =
+                GameEngine.FOOD_UPKEEP_BASE +
+                officerCount * GameEngine.FOOD_UPKEEP_PER_OFFICER +
+                cityCount * GameEngine.FOOD_UPKEEP_PER_CITY +
+                soldierCount;
+
+            if (goldUpkeep === 0 && foodUpkeep === 0) continue;
+            this.store.updateFaction(faction.id, {
+                gold: faction.gold - goldUpkeep,
+                food: faction.food - foodUpkeep,
+            });
         }
     }
 
