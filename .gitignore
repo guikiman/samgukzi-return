@@ -30,3 +30,7 @@ opencode.json
 tauri-assets/
 src-tauri/target/
 src-tauri/gen/
+
+# Total War: Three Kingdoms 파생 지도 — 저작권. 커밋 금지.
+# 원본 대체본이 준비되면 이 줄을 제거하고 의도적으로 커밋할 것.
+assets/china-national-map.png
