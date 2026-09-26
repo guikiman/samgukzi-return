@@ -21,6 +21,7 @@ export const RIOT_THRESHOLD = 100;
 export const RECRUIT_RIOT_INCREMENT = 5;
 /** 굶주림 라운드당 위험도 증가 */
 const STARVE_RIOT_INCREMENT = 15;
+export const BANKRUPT_RIOT_INCREMENT = 15;
 /** 치안 100 기준 매월 감소량 */
 const ORDER_DECAY_MONTHLY = 3;
 
@@ -41,6 +42,16 @@ export function accumulateRecruitFatigue(state: CitySecurityState, recruits: num
     // 대규모 징병일수록 피로도 가중 (기본 5 + 500명 초과분 보정)
     const fatigue = RECRUIT_RIOT_INCREMENT + (recruits > 500 ? 5 : 0);
     state.riotRisk += fatigue;
+    return state.riotRisk;
+}
+
+/**
+ * 월세 미납에 따른 위험도 누적 [C-3] — processStarvation 과 같은 가중치.
+ * 굶주림이 "먹이를 못 줬다"면 이건 "값을 못 줬다"다. 결과는 같은 파이프라인
+ * (checkRiot → 도시 이탈 → 세력 멸망)으로 흘러가므로 별도 패배 경로가 필요 없다.
+ */
+export function accumulateUnpaidWages(state: CitySecurityState): number {
+    state.riotRisk += BANKRUPT_RIOT_INCREMENT;
     return state.riotRisk;
 }
 

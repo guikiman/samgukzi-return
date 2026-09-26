@@ -49,6 +49,7 @@ import { BUILTIN_SCENARIO_EVENTS, loadScenarioEventChains } from './scenario_eve
 // 도시 안정 시스템 [148] — 민란 위험도/아사 판정 (Python city_manager.py 포팅)
 import {
     CitySecurityState,
+    accumulateUnpaidWages,
     checkRiot,
     decayRiotRisk,
     processStarvation,
@@ -114,6 +115,7 @@ export class GameEngine {
     readonly scenarioBranches = new ScenarioBranchManager();
     /** 도시 안정 상태 [148] — 도시 ID별 민란 위험도 (Python riot_risk) */
     private citySecurityStates = new Map<string, CitySecurityState>();
+    private bankruptWarned = new Set<string>();
     /** 이번 달 발생한 민란/아사 기록 [148] — 월간 보고서 동향용 */
     private securityMonthlyLog: {
         riots: Array<{ cityId: string; cityName: string; fromFactionId: string | null }>;
@@ -1128,6 +1130,9 @@ export class GameEngine {
     private processCitySecurityMonthly(): void {
         const turn = this.store.getGlobalState().turnCount;
         const gs = this.store.getGlobalState();
+        for (const faction of this.store.getAllFactions()) {
+            if (faction.gold >= 0) this.bankruptWarned.delete(faction.id);
+        }
 
         for (const city of this.store.getAllCities()) {
             if (!city.ownerId) continue;
@@ -1156,6 +1161,22 @@ export class GameEngine {
                         id: `starvation_${city.id}_${Date.now()}`,
                         type: 'CITY_STARVATION',
                         payload: { cityId: city.id, cityName: city.name, losses: result.starveLoss, factionId: city.ownerId },
+                        timestamp: Date.now(),
+                        turn,
+                    });
+                }
+            }
+
+            // 1b) 월세 미납 [C-3] — 파산 세력은 도시마다 위험도가 오른다 [148]
+            if (faction && faction.gold < 0) {
+                accumulateUnpaidWages(sec);
+                if (!this.bankruptWarned.has(faction.id)) {
+                    this.bankruptWarned.add(faction.id);
+                    this.chronicle.add('HISTORICAL', `${faction.name}가 월세를 내지 못해 ${city.name}에서 민심이 샜다`);
+                    this.emitEvent({
+                        id: `bankrupt_${faction.id}_${turn}`,
+                        type: 'FACTION_BANKRUPT',
+                        payload: { factionId: faction.id, factionName: faction.name, gold: faction.gold, turn },
                         timestamp: Date.now(),
                         turn,
                     });

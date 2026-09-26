@@ -3553,6 +3553,21 @@ function init(): void {
         addLog(`🚪 배신: ${event.payload.officerName}이(가) 이탈했습니다`);
         chronicle.add('DEFECTION', `${event.payload.officerName}이(가) 주군을 배신했다`);
     });
+    engine.subscribe('FACTION_BANKRUPT', (event: any) => {
+        addLog(`💸 파산: ${event.payload.factionName} 국고가 ${event.payload.gold.toLocaleString()}로 바닥났다 — 월세 미납이 시작됐다`);
+        chronicle.add('HISTORICAL', `${event.payload.factionName}가 월세를 내지 못했다`);
+        fireFeedback('VENGEANCE_FAIL');
+    });
+    engine.subscribe('CITY_STARVATION', (event: any) => {
+        addLog(`🍂 굶주림: ${event.payload.cityName}에서 병력 ${event.payload.losses}명이 굶어 죽었다`);
+        chronicle.add('HISTORICAL', `${event.payload.cityName}에서 굶주림으로 병력 ${event.payload.losses}이 죽었다`);
+        fireFeedback('VENGEANCE_FAIL');
+    });
+    engine.subscribe('CITY_RIOT', (event: any) => {
+        addLog(`🔥 민란: ${event.payload.cityName}에서 반란이 일어나 도시가 이탈했다`);
+        chronicle.add('DESTROYED', `${event.payload.cityName}에서 민란이 일어나 도시가 세력에서 이탈했다`);
+        fireFeedback('VENGEANCE_FAIL');
+    });
     // 포로 탈출 이벤트 [131-145]
     engine.subscribe('CAPTIVE_ESCAPED', (event: any) => {
         addLog(`🏃 포로 탈출: ${event.payload.officerName}이(가) 수용소에서 탈출했습니다`);
