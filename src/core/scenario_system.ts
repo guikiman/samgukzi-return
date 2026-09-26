@@ -186,20 +186,26 @@ export const CITY_IMAGE_ANCHORS: Record<string, { x: number; y: number }> = {
 };
 
 
-/** [지도][1:1] 전략 관문·전장·요충지 앵커. 도시 생성이 활성화될 때 동일한 방식으로 사용한다. */
+/**
+ * [지도][1:1] 전략 관문·전장·항구 앵커 (0~1 정규화).
+ *
+ * assets/map-china-4096.webp 와 같은 위도경도 표에서 나온 실제 픽셀 좌표다.
+ * scripts/generate_map.py 가 지형 이미지와 이 표를 함께 만든다.
+ */
 export const MAP_FEATURE_ANCHORS: Record<string, { x: number; y: number; kind: 'PASS' | 'BATTLEFIELD' | 'PORT' }> = {
-    '호로관': { x: 634 / 1536, y: 145 / 1024, kind: 'PASS' },
-    '함곡관': { x: 648 / 1536, y: 293 / 1024, kind: 'PASS' },
-    '양관': { x: 245 / 1536, y: 226 / 1024, kind: 'PASS' },
-    '정관': { x: 495 / 1536, y: 301 / 1024, kind: 'PASS' },
-    '산관': { x: 430 / 1536, y: 379 / 1024, kind: 'PASS' },
-    '진관': { x: 585 / 1536, y: 227 / 1024, kind: 'PASS' },
-    '대방곡': { x: 159 / 1536, y: 563 / 1024, kind: 'PASS' },
-    '적벽': { x: 925 / 1536, y: 500 / 1024, kind: 'BATTLEFIELD' },
-    '한강': { x: 1174 / 1536, y: 617 / 1024, kind: 'PORT' },
-    '창오': { x: 1058 / 1536, y: 696 / 1024, kind: 'PORT' },
-    '한중협곡': { x: 310 / 1536, y: 544 / 1024, kind: 'PASS' },
+    '호로관': { x: 0.3330, y: 0.3569, kind: 'PASS' },
+    '함곡관': { x: 0.3523, y: 0.4021, kind: 'PASS' },
+    '양관': { x: 0.0454, y: 0.2478, kind: 'PASS' },
+    '정관': { x: 0.4331, y: 0.2998, kind: 'PASS' },
+    '산관': { x: 0.2839, y: 0.4197, kind: 'PASS' },
+    '진관': { x: 0.2253, y: 0.4683, kind: 'PASS' },  // 데이터셋 표기 검문관
+    '대방곡': { x: 0.2546, y: 0.4084, kind: 'PASS' },
+    '적벽': { x: 0.4253, y: 0.5391, kind: 'BATTLEFIELD' },
+    '한강': { x: 0.4331, y: 0.5198, kind: 'PORT' },  // 데이터셋 표기 강하수운
+    '창오': { x: 0.3623, y: 0.7166, kind: 'PASS' },
+    '한중협곡': { x: 0.2546, y: 0.4426, kind: 'PASS' },  // 데이터셋 표기 한중협
 };
+
 
 /** 무장 이름표 (간이 사전 — 확장 가능) */
 interface ScenarioOfficerProfile {

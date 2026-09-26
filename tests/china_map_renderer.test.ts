@@ -45,8 +45,25 @@ describe('ChinaMapRenderer', () => {
         }
     });
 
-    it('전략 관문·전장 앵커가 등록되어 있다', () => {
-        expect(MAP_FEATURE_ANCHORS['호로관'].kind).toBe('PASS');
+    it('전략 관문·전장 앵커 전부가 4096 비트맵 좌표와 일치한다', () => {
+        const map = mapCoords as {
+            map: { width: number };
+            passes: Array<{ name: string; x: number; y: number }>;
+        };
+        const alias: Record<string, string> = {
+            '진관': '검문관',
+            '한중협곡': '한중협',
+            '한강': '강하수운',
+        };
+        const byName = new Map(map.passes.map(p => [p.name, p]));
+        const names = Object.keys(MAP_FEATURE_ANCHORS);
+        expect(names.length).toBeGreaterThan(0);
+        for (const name of names) {
+            const src = byName.get(alias[name] ?? name);
+            expect(src, `${name} 대응 지형 없음`).toBeDefined();
+            expect(MAP_FEATURE_ANCHORS[name].x).toBeCloseTo(src!.x / map.map.width, 4);
+            expect(MAP_FEATURE_ANCHORS[name].y).toBeCloseTo(src!.y / map.map.width, 4);
+        }
         expect(MAP_FEATURE_ANCHORS['적벽'].kind).toBe('BATTLEFIELD');
         expect(MAP_FEATURE_ANCHORS['한강'].kind).toBe('PORT');
     });
