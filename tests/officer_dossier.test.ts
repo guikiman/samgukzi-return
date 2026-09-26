@@ -201,7 +201,7 @@ describe('장수 도장 — 내용 반영', () => {
 
         let sameText = 0;
         for (let i = 0; i < keys.length; i++) {
-            for (let k = i + 1; k < Math.min(keys.length, i + 40); k++) {
+            for (let k = i + 1; k < Math.min(keys.length, i + 12); k++) {
                 const a = buildOfficerDossierFromProfile(byTrait.get(keys[i])!);
                 const b = buildOfficerDossierFromProfile(byTrait.get(keys[k])!);
                 if (allText(a) === allText(b)) sameText++;

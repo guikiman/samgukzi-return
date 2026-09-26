@@ -24,11 +24,21 @@ describe('DuelDeckBuilder', () => {
     });
 
     it('should generate more SPECIAL cards for high might', () => {
-        const highMightDeck = builder.buildDeck('officer_1', 300, ['BLADE']);
-        const lowMightDeck = builder.buildDeck('officer_2', 20, []);
-        const highSpecials = highMightDeck.cards.filter(c => c.type === 'SPECIAL').length;
-        const lowSpecials = lowMightDeck.cards.filter(c => c.type === 'SPECIAL').length;
-        expect(highSpecials).toBeGreaterThanOrEqual(lowSpecials);
+        const specialChance = (might: number, bonus: number): number => Math.min(0.3, might / 300 + bonus);
+        const sampleSpecials = (might: number, skills: string[]): number => {
+            let total = 0;
+            for (let i = 0; i < 200; i++) {
+                total += builder.buildDeck('officer_1', might, skills).cards
+                    .filter(c => c.type === 'SPECIAL').length;
+            }
+            return total;
+        };
+        const highSpecials = sampleSpecials(300, ['BLADE']);
+        const lowSpecials = sampleSpecials(20, []);
+        expect(highSpecials).toBeGreaterThan(lowSpecials);
+        const lowRate = lowSpecials / (200 * 15);
+        expect(lowRate).toBeLessThan(specialChance(20, 0) + 0.05);
+        expect(highSpecials / (200 * 15)).toBeGreaterThan(specialChance(300, 0.1) - 0.05);
     });
 });
 
