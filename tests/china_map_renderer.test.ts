@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { ChinaMapRenderer, pointInPolygon } from '../src/core/china_map_renderer';
 import type { MapCityView } from '../src/core/china_map_renderer';
 import { CITY_IMAGE_ANCHORS, MAP_FEATURE_ANCHORS } from '../src/core/scenario_system';
+import mapCoords from '../assets/map-coordinates-4096.json';
 
 function createMockCanvas(): HTMLCanvasElement {
     const canvas = {
@@ -34,17 +35,20 @@ function createMockCanvas(): HTMLCanvasElement {
 }
 
 describe('ChinaMapRenderer', () => {
-    it('제공된 1536×1024 도시·관문 좌표가 정규화 앵커로 등록되어 있다', () => {
-        expect(CITY_IMAGE_ANCHORS['장안'].x).toBeCloseTo(487 / 1536, 5);
-        expect(CITY_IMAGE_ANCHORS['장안'].y).toBeCloseTo(168 / 1024, 5);
-        expect(CITY_IMAGE_ANCHORS['낙양'].x).toBeCloseTo(750 / 1536, 5);
-        expect(CITY_IMAGE_ANCHORS['낙양'].y).toBeCloseTo(348 / 1024, 5);
-        expect(MAP_FEATURE_ANCHORS['호로관']).toMatchObject({
-            x: 634 / 1536,
-            y: 145 / 1024,
-            kind: 'PASS',
-        });
+    it('도시 앵커 전부가 4096 비트맵 좌표와 일치한다', () => {
+        const map = mapCoords as { map: { width: number }; cities: Array<{ name: string; x: number; y: number }> };
+        expect(map.cities.length).toBeGreaterThan(0);
+        for (const c of map.cities) {
+            expect(CITY_IMAGE_ANCHORS[c.name]).toBeDefined();
+            expect(CITY_IMAGE_ANCHORS[c.name].x).toBeCloseTo(c.x / map.map.width, 4);
+            expect(CITY_IMAGE_ANCHORS[c.name].y).toBeCloseTo(c.y / map.map.width, 4);
+        }
+    });
+
+    it('전략 관문·전장 앵커가 등록되어 있다', () => {
+        expect(MAP_FEATURE_ANCHORS['호로관'].kind).toBe('PASS');
         expect(MAP_FEATURE_ANCHORS['적벽'].kind).toBe('BATTLEFIELD');
+        expect(MAP_FEATURE_ANCHORS['한강'].kind).toBe('PORT');
     });
 
     it('도시 배치 후 화면 중앙 클릭 시 정규 좌표 변환 일관성', () => {

@@ -136,9 +136,16 @@ export class ChinaMapRenderer {
 
     private static readonly CELL_SIZE = 0.014; // 정규화 공간 격자 간격 (≈72×72 격자) [269]
 
+    /** [지도][1:1] Natural Earth 실제 지형 비트맵. 미로딩이면 스케치 지도로 폴백. */
+    private mapImage: HTMLImageElement | null = null;
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d')!;
+        if (typeof Image === 'undefined') return;
+        const img = new Image();
+        img.addEventListener('load', () => { this.mapImage = img; });
+        img.src = 'assets/map-china-4096.webp';
     }
 
     setView(view: Partial<ChinaMapView>): void {
@@ -331,29 +338,40 @@ export class ChinaMapRenderer {
         ctx.fillStyle = '#0c0e1c';
         ctx.fillRect(0, 0, width, height);
 
-        // ---- 대륙 윤곽 ----
-        const outline: Array<[number, number]> = CONTINENT_OUTLINE.map(p => {
-            const { px, py } = this.normToPixel(p.x, p.y, width, height);
-            return [px, py] as [number, number];
-        });
+        if (this.mapImage) {
+            // 실제 지형 비트맵 [지도][1:1]
+            const rect = this.mapImageRect(width, height);
+            ctx.drawImage(this.mapImage, rect.x, rect.y, rect.width, rect.height);
+            const tint = this.seasonTintOverlay(width, height);
+            if (tint) {
+                ctx.fillStyle = tint;
+                ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+            }
+        } else {
+            // ---- 대륙 윤곽 (비트맵 미로딩 시 폴백) ----
+            const outline: Array<[number, number]> = CONTINENT_OUTLINE.map(p => {
+                const { px, py } = this.normToPixel(p.x, p.y, width, height);
+                return [px, py] as [number, number];
+            });
 
-        ctx.beginPath();
-        ctx.moveTo(outline[0][0], outline[0][1]);
-        for (let i = 1; i < outline.length; i++) ctx.lineTo(outline[i][0], outline[i][1]);
-        ctx.closePath();
+            ctx.beginPath();
+            ctx.moveTo(outline[0][0], outline[0][1]);
+            for (let i = 1; i < outline.length; i++) ctx.lineTo(outline[i][0], outline[i][1]);
+            ctx.closePath();
 
-        // 육지 그라데이션 (+계절 톤 보정 [1057][321-340])
-        const landGrad = ctx.createLinearGradient(0, 0, width, height);
-        landGrad.addColorStop(0, '#3a4430');
-        landGrad.addColorStop(0.5, '#46523a');
-        landGrad.addColorStop(1, '#37402e');
-        ctx.fillStyle = this.applySeasonTint(landGrad);
-        ctx.fill();
+            // 육지 그라데이션 (+계절 톤 보정 [1057][321-340])
+            const landGrad = ctx.createLinearGradient(0, 0, width, height);
+            landGrad.addColorStop(0, '#3a4430');
+            landGrad.addColorStop(0.5, '#46523a');
+            landGrad.addColorStop(1, '#37402e');
+            ctx.fillStyle = this.applySeasonTint(landGrad);
+            ctx.fill();
 
-        // 해안선
-        ctx.strokeStyle = 'rgba(220, 210, 170, 0.35)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+            // 해안선
+            ctx.strokeStyle = 'rgba(220, 210, 170, 0.35)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
 
         // ---- 세력 영토 (도시 좌표에서 산출한 보로노이 근사) ----
         this.drawTerritory(ctx, width, height);
@@ -361,42 +379,44 @@ export class ChinaMapRenderer {
         // ---- [321-340] 지도 날씨 오버레이 — 도시 위 날씨 아이콘 + 악천후 수확 경고 ----
         this.drawWeatherOverlay(ctx, width, height);
 
-        // ---- 산맥 장식 ----
-        ctx.strokeStyle = 'rgba(150, 140, 110, 0.5)';
-        ctx.lineWidth = 1.2;
-        for (let i = 0; i < 5; i++) {
-            const bx = 0.16 + i * 0.035;
-            const { px, py } = this.normToPixel(bx, 0.34 + (i % 2) * 0.05, width, height);
-            const size = 8 * this.zoom;
-            ctx.beginPath();
-            ctx.moveTo(px - size, py + size * 0.6);
-            ctx.lineTo(px, py - size * 0.7);
-            ctx.lineTo(px + size, py + size * 0.6);
-            ctx.stroke();
-        }
+        if (!this.mapImage) {
+            // ---- 산맥 장식 (비트맵 미로딩 시 폴백) ----
+            ctx.strokeStyle = 'rgba(150, 140, 110, 0.5)';
+            ctx.lineWidth = 1.2;
+            for (let i = 0; i < 5; i++) {
+                const bx = 0.16 + i * 0.035;
+                const { px, py } = this.normToPixel(bx, 0.34 + (i % 2) * 0.05, width, height);
+                const size = 8 * this.zoom;
+                ctx.beginPath();
+                ctx.moveTo(px - size, py + size * 0.6);
+                ctx.lineTo(px, py - size * 0.7);
+                ctx.lineTo(px + size, py + size * 0.6);
+                ctx.stroke();
+            }
 
-        // ---- 강 ----
-        for (const river of RIVERS) {
-            ctx.beginPath();
-            river.forEach((p, i) => {
-                const { px, py } = this.normToPixel(p.x, p.y, width, height);
-                if (i === 0) ctx.moveTo(px, py);
-                else {
-                    // 부드러운 곡선
-                    const prev = river[i - 1];
-                    const pp = this.normToPixel(prev.x, prev.y, width, height);
-                    const cpx = (pp.px + px) / 2;
-                    const cpy = (pp.py + py) / 2;
-                    ctx.quadraticCurveTo(pp.px, pp.py, cpx, cpy);
-                }
-            });
-            const last = river[river.length - 1];
-            const lp = this.normToPixel(last.x, last.y, width, height);
-            ctx.lineTo(lp.px, lp.py);
-            ctx.strokeStyle = 'rgba(90, 140, 190, 0.75)';
-            ctx.lineWidth = Math.max(2, 4 * this.zoom);
-            ctx.lineCap = 'round';
-            ctx.stroke();
+            // ---- 강 (비트맵 미로딩 시 폴백 — Natural Earth에 이미 하천이 있다) ----
+            for (const river of RIVERS) {
+                ctx.beginPath();
+                river.forEach((p, i) => {
+                    const { px, py } = this.normToPixel(p.x, p.y, width, height);
+                    if (i === 0) ctx.moveTo(px, py);
+                    else {
+                        // 부드러운 곡선
+                        const prev = river[i - 1];
+                        const pp = this.normToPixel(prev.x, prev.y, width, height);
+                        const cpx = (pp.px + px) / 2;
+                        const cpy = (pp.py + py) / 2;
+                        ctx.quadraticCurveTo(pp.px, pp.py, cpx, cpy);
+                    }
+                });
+                const last = river[river.length - 1];
+                const lp = this.normToPixel(last.x, last.y, width, height);
+                ctx.lineTo(lp.px, lp.py);
+                ctx.strokeStyle = 'rgba(90, 140, 190, 0.75)';
+                ctx.lineWidth = Math.max(2, 4 * this.zoom);
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            }
         }
 
         // ---- 세력 경계선·세력명 (도시 좌표에서 산출한 데이터) ----
@@ -694,16 +714,27 @@ export class ChinaMapRenderer {
         this.seasonTint = season;
     }
 
+    private static readonly SEASON_TINTS: Record<'spring' | 'summer' | 'autumn' | 'winter', Array<[number, string]>> = {
+        spring: [[0, 'rgba(140, 200, 120, 0.18)'], [1, 'rgba(140, 200, 120, 0.10)']],
+        summer: [[0, 'rgba(90, 180, 90, 0.22)'], [1, 'rgba(60, 150, 70, 0.12)']],
+        autumn: [[0, 'rgba(220, 150, 60, 0.20)'], [1, 'rgba(180, 110, 40, 0.10)']],
+        winter: [[0, 'rgba(200, 220, 245, 0.22)'], [1, 'rgba(150, 180, 220, 0.12)']],
+    };
+
+    /** 비트맵 위 계절 보정 — 육지색 없이 반투명 톤만 얹는다. 스케치 경로와 그라데이션을 공유하면 지도가 가려진다. */
+    private seasonTintOverlay(width: number, height: number): CanvasGradient | null {
+        if (!this.seasonTint) return null;
+        const grad = this.ctx.createLinearGradient(0, 0, width, height);
+        for (const [stop, color] of ChinaMapRenderer.SEASON_TINTS[this.seasonTint]) {
+            grad.addColorStop(stop, color);
+        }
+        return grad;
+    }
+
     /** 계절별 대륙 색 보정 — 태평성세/설한/황염의 계절감 표현 */
     private applySeasonTint(grad: CanvasGradient): CanvasGradient {
         if (!this.seasonTint) return grad;
-        const tints: Record<NonNullable<typeof this.seasonTint>, Array<[number, string]>> = {
-            spring: [[0, 'rgba(140, 200, 120, 0.18)'], [1, 'rgba(140, 200, 120, 0.10)']],
-            summer: [[0, 'rgba(90, 180, 90, 0.22)'], [1, 'rgba(60, 150, 70, 0.12)']],
-            autumn: [[0, 'rgba(220, 150, 60, 0.20)'], [1, 'rgba(180, 110, 40, 0.10)']],
-            winter: [[0, 'rgba(200, 220, 245, 0.22)'], [1, 'rgba(150, 180, 220, 0.12)']],
-        };
-        for (const [stop, color] of tints[this.seasonTint]) {
+        for (const [stop, color] of ChinaMapRenderer.SEASON_TINTS[this.seasonTint]) {
             grad.addColorStop(stop, color);
         }
         return grad;
