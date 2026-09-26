@@ -145,6 +145,9 @@ export class ChinaMapRenderer {
     /** 육지 판정용 마스크 알파 (0=바다, 255=육지). getLandMask가 함께 채운다. */
     private landAlpha: Uint8Array | null = null;
 
+    /** 지도 위에 곱해 낡은 종이감을 만드는 텍스처. 미로딩이면 생략. */
+    private paperTexture: HTMLImageElement | null = null;
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d')!;
@@ -160,6 +163,9 @@ export class ChinaMapRenderer {
             this.borderLayerDirty = true;
         });
         img.src = 'assets/map-china-4096.webp';
+        const paper = new Image();
+        paper.addEventListener('load', () => { this.paperTexture = paper; });
+        paper.src = 'assets/map-parchment-1024.webp';
     }
 
     /**
@@ -434,6 +440,13 @@ export class ChinaMapRenderer {
             // 실제 지형 비트맵 [지도][1:1]
             const rect = this.mapImageRect(width, height);
             ctx.drawImage(this.mapImage, rect.x, rect.y, rect.width, rect.height);
+            if (this.paperTexture) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'multiply';
+                ctx.globalAlpha = 0.38;
+                ctx.drawImage(this.paperTexture, rect.x, rect.y, rect.width, rect.height);
+                ctx.restore();
+            }
             const tint = this.seasonTintOverlay(width, height);
             if (tint) {
                 ctx.fillStyle = tint;
