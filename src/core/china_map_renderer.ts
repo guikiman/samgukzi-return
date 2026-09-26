@@ -142,12 +142,23 @@ export class ChinaMapRenderer {
     /** 육지 마스크 — 영토를 바다에 칠하지 않게 하는 알파 마스크. 비트맵에서 추출. */
     private landMask: HTMLCanvasElement | null = null;
 
+    /** 육지 판정용 마스크 알파 (0=바다, 255=육지). getLandMask가 함께 채운다. */
+    private landAlpha: Uint8Array | null = null;
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d')!;
         if (typeof Image === 'undefined') return;
         const img = new Image();
-        img.addEventListener('load', () => { this.mapImage = img; this.landMask = null; });
+        img.addEventListener('load', () => {
+            this.mapImage = img;
+            this.landMask = null;
+            this.landAlpha = null;
+            // 육지 판정 기준이 바뀌므로 영토·경계·라벨을 다시 만든다
+            this.territoryDirty = true;
+            this.territoryLayerDirty = true;
+            this.borderLayerDirty = true;
+        });
         img.src = 'assets/map-china-4096.webp';
     }
 
@@ -177,7 +188,19 @@ export class ChinaMapRenderer {
         }
         cx.putImageData(img, 0, 0);
         this.landMask = c;
+        this.landAlpha = new Uint8Array(S * S);
+        for (let i = 0; i < S * S; i++) this.landAlpha[i] = img.data[i * 4 + 3];
         return c;
+    }
+
+    /** 정규화 좌표가 육지인지 판정. 마스크 없으면 스케치 윤곽으로 폴백. */
+    private isLand(nx: number, ny: number): boolean {
+        if (this.mapImage) this.getLandMask();
+        if (!this.landAlpha) return pointInPolygon(nx, ny, CONTINENT_OUTLINE);
+        const S = 256;
+        const px = Math.min(S - 1, Math.max(0, Math.floor(nx * S)));
+        const py = Math.min(S - 1, Math.max(0, Math.floor(ny * S)));
+        return this.landAlpha[py * S + px] > 127;
     }
 
     /** 영토/경계 레이어를 육지에만 남긴다. 마스크가 없으면 아무것도 하지 않는다. */
@@ -252,8 +275,8 @@ export class ChinaMapRenderer {
                 const nx = (gx + 0.5) * ChinaMapRenderer.CELL_SIZE;
                 const ny = (gy + 0.5) * ChinaMapRenderer.CELL_SIZE;
 
-                // 대륙 내부인지 검사 (짝수 교차법, 정규화 좌표)
-                if (!pointInPolygon(nx, ny, CONTINENT_OUTLINE)) {
+                // 육지 판정 — 비트맵 마스크 우선, 없으면 스케치 윤곽 (홀짝 교차법)
+                if (!this.isLand(nx, ny)) {
                     cells[gy * cols + gx] = { ownerColor: null, cityId: null, isPlayer: false, pattern: 'none' };
                     continue;
                 }
@@ -262,8 +285,9 @@ export class ChinaMapRenderer {
                 let bestDist = Infinity;
                 let bestCity: MapCityView | null = null;
                 for (const city of owned) {
-                    const dx = city.x - nx;
-                    const dy = city.y - ny;
+                    const c = this.cityNorm(city);
+                    const dx = c.x - nx;
+                    const dy = c.y - ny;
                     const d = dx * dx + dy * dy;
                     if (d < bestDist) {
                         bestDist = d;
@@ -279,30 +303,51 @@ export class ChinaMapRenderer {
 
         this.territoryCells = cells;
 
-        // ---- 세력 라벨 산출: 세력별 셀 무게중심 + 크기 ----
-        const acc = new Map<string, { name: string; color: string; sumX: number; sumY: number; n: number; isPlayer: boolean }>();
-        for (let gy = 0; gy < rows; gy++) {
-            for (let gx = 0; gx < cols; gx++) {
-                const cell = cells[gy * cols + gx];
-                if (!cell || !cell.ownerColor) continue;
-                // 해당 색의 도시에서 세력명/플레이어 여부 조회
-                const city = owned.find(c => c.ownerColor === cell.ownerColor);
-                if (!city) continue;
-                const key = cell.ownerColor + '|' + (city.factionName ?? '');
-                let a = acc.get(key);
-                if (!a) {
-                    a = { name: city.factionName ?? '', color: cell.ownerColor, sumX: 0, sumY: 0, n: 0, isPlayer: city.isPlayer };
-                    acc.set(key, a);
-                }
-                a.sumX += (gx + 0.5) * ChinaMapRenderer.CELL_SIZE;
-                a.sumY += (gy + 0.5) * ChinaMapRenderer.CELL_SIZE;
-                a.n++;
+        // ---- 세력 라벨 산출: 세력별 무게중심을 자기 영토 안으로 스냅 + 크기 ----
+        // 순수 무게중심은 오목한 해안선에서 바다에 떨어진다 (한반도+일본 영토의 중심은 동해 한가운데).
+        // BFS로 '가장 깊은 셀'을 고르면 영토가 지도 끝까지 뻔 세력이 북쪽 끝단에 라벨을 붙인다.
+        // 무게중심에 가장 가까운 '내 소유 셀'을 고르면 바다가 나올 수 없고 시각적 중심도 유지된다.
+        const acc = new Map<string, { name: string; color: string; sumX: number; sumY: number; n: number; isPlayer: boolean; mine: number[] }>();
+        for (let i = 0; i < cells.length; i++) {
+            const cell = cells[i];
+            if (!cell || !cell.ownerColor) continue;
+            const city = owned.find(c => c.ownerColor === cell.ownerColor);
+            if (!city) continue;
+            const key = cell.ownerColor + '|' + (city.factionName ?? '');
+            let a = acc.get(key);
+            if (!a) {
+                a = { name: city.factionName ?? '', color: cell.ownerColor, sumX: 0, sumY: 0, n: 0, isPlayer: city.isPlayer, mine: [] };
+                acc.set(key, a);
             }
+            a.sumX += ((i % cols) + 0.5) * ChinaMapRenderer.CELL_SIZE;
+            a.sumY += (((i / cols) | 0) + 0.5) * ChinaMapRenderer.CELL_SIZE;
+            a.n++;
+            a.mine.push(i);
         }
+
         this.factionLabels = Array.from(acc.values())
             // 작은 세력도 전국 지도에서 세력명을 표시하고, 겹칠 때만 안티오버랩 처리로 생략한다.
             .filter(a => a.n >= 16)
-            .map(a => ({ name: a.name, color: a.color, cx: a.sumX / a.n, cy: a.sumY / a.n, cells: a.n, isPlayer: a.isPlayer }));
+            .map(a => {
+                const ccx = a.sumX / a.n;
+                const ccy = a.sumY / a.n;
+                let best = a.mine[0];
+                let bestD = Infinity;
+                for (const i of a.mine) {
+                    const dx = ((i % cols) + 0.5) * ChinaMapRenderer.CELL_SIZE - ccx;
+                    const dy = (((i / cols) | 0) + 0.5) * ChinaMapRenderer.CELL_SIZE - ccy;
+                    const d = dx * dx + dy * dy;
+                    if (d < bestD) { bestD = d; best = i; }
+                }
+                return {
+                    name: a.name,
+                    color: a.color,
+                    cx: ((best % cols) + 0.5) * ChinaMapRenderer.CELL_SIZE,
+                    cy: (((best / cols) | 0) + 0.5) * ChinaMapRenderer.CELL_SIZE,
+                    cells: a.n,
+                    isPlayer: a.isPlayer,
+                };
+            });
 
         this.territoryDirty = false;
         this.territoryLayerDirty = true;
@@ -327,8 +372,14 @@ export class ChinaMapRenderer {
         return { px: rect.x + x * rect.width, py: rect.y + y * rect.height };
     }
 
+    /** 도시가 실제로 그려지는 정규화 좌표 — 비트맵 앵커가 있으면 그것을, 없으면 전술 좌표를 쓴다. */
+    private cityNorm(city: MapCityView): { x: number; y: number } {
+        return { x: city.imageX ?? city.x, y: city.imageY ?? city.y };
+    }
+
     private cityMapToPixel(city: MapCityView, width: number, height: number): { px: number; py: number } {
-        return this.normToPixel(city.imageX ?? city.x, city.imageY ?? city.y, width, height);
+        const n = this.cityNorm(city);
+        return this.normToPixel(n.x, n.y, width, height);
     }
 
     /** 화면 픽셀 → 정규화 좌표 (역변환) */
