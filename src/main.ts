@@ -3568,6 +3568,38 @@ function init(): void {
         chronicle.add('DESTROYED', `${event.payload.cityName}에서 민란이 일어나 도시가 세력에서 이탈했다`);
         fireFeedback('VENGEANCE_FAIL');
     });
+    engine.subscribe('BATTLE_START', () => {
+        addLog('⚔️ 전투가 개시되었습니다');
+    });
+    engine.subscribe('HISTORICAL_EVENT', (event: any) => {
+        const detail = event.payload.description ?? (event.payload.dialogueLines ?? []).join(' ');
+        addLog(`📜 ${event.payload.eventName}${detail ? ` — ${detail}` : ''}`);
+        chronicle.add('HISTORICAL', event.payload.eventName);
+    });
+    engine.subscribe('CAMPAIGN_ORDER_COMPLETED', (event: any) => {
+        const city = engine?.['store'].getCity(event.payload.targetCityId);
+        addLog(`🚩 원정 완료: ${city?.name ?? event.payload.targetCityId} (병력 ${event.payload.soldiers})`);
+        chronicle.add('HISTORICAL', `원정이 끝나 ${city?.name ?? '목표지'}에 도착했다`);
+    });
+    engine.subscribe('TRANSPORT_COMPLETED', (event: any) => {
+        addLog(`📦 수송 완료: 금 ${event.payload.gold} · 식량 ${event.payload.food} · 병력 ${event.payload.soldiers}`);
+    });
+    engine.subscribe('DOMESTIC_ASSIGNMENT_COMPLETED', (event: any) => {
+        const sign = event.payload.increment >= 0 ? '+' : '';
+        addLog(`🏛️ 내정 완료: ${event.payload.taskType} (${event.payload.statChanged} ${sign}${event.payload.increment})`);
+    });
+    engine.subscribe('OFFICER_RETIRED', (event: any) => {
+        addLog(`🎋 은퇴: ${event.payload.officerName}이(가) ${event.payload.age}세에 은퇴했습니다`);
+        chronicle.add('HISTORICAL', `${event.payload.officerName}이(가) ${event.payload.age}세에 은퇴했다`);
+    });
+    engine.subscribe('FACTION_VAGRANT', (event: any) => {
+        addLog(`🏳️ ${event.payload.factionName}이(가) 재야로 전락했다 (${event.payload.message})`);
+        chronicle.add('DESTROYED', `${event.payload.factionName} 세력이 재야로 전락했다`);
+    });
+    engine.subscribe('INTELLIGENCE_NETWORK_COLLAPSED', (event: any) => {
+        const city = engine?.['store'].getCity(event.payload.cityId);
+        addLog(`🕸️ 첩보망 붕괴: ${city?.name ?? event.payload.cityId}의 첩보 조직이 무너졌다`);
+    });
     // 포로 탈출 이벤트 [131-145]
     engine.subscribe('CAPTIVE_ESCAPED', (event: any) => {
         addLog(`🏃 포로 탈출: ${event.payload.officerName}이(가) 수용소에서 탈출했습니다`);
