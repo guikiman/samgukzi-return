@@ -59,6 +59,11 @@
  * 나머지 세 줄(trait/relation/career)은 `getBridgeDossierParagraphs()` 로 따로 열람한다.
  */
 
+// [부팅 수정] 이 모듈은 src/main.ts 를 통해 브라우저 모듈 그래프에 포함된다.
+// 브라우저는 확장자 자동 해석(extension resolution)을 하지 않으므로 상대 경로에는
+// 반드시 '.js' 를 붙여야 한다. tsc 는 스펙리파터를 재작성하지 않으므로
+// './foo' 로 쓰면 dist 에도 './foo' 가 그대로 남아 404 로 부팅이 실패한다.
+// 규약: 브라우저에 노출되는 모듈의 모든 상대 import 에 '.js' 를 명시한다.
 import { OfficerBiographyStore } from './officer_biography_store.js';
 import type { OfficerBio } from './officer_biography_store.js';
 import { buildOfficerDossierFromProfile, dossierParagraphs } from './officer_dossier.js';
