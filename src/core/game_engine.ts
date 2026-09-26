@@ -973,7 +973,6 @@ export class GameEngine {
                     eventId: node.eventId,
                     eventName: node.result.eventName,
                     dialogueLines: node.result.dialogueLines,
-                    rewards: node.result.rewards,
                 },
                 timestamp: Date.now(),
                 turn,

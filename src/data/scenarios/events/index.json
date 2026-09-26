@@ -22,11 +22,7 @@
             "dialogueLines": [
               "장각: 창천이 죽은 뒤에 황천이 당립떠 세상을 다스리리라.",
               "황건적의 기치 아래 수십만의 난민이 봉기했다!"
-            ],
-            "rewards": {
-              "moraleAll": -5,
-              "chaosFlag": "yellow_turban_rising"
-            }
+            ]
           }
         },
         {
@@ -44,10 +40,7 @@
             "dialogueLines": [
               "조정은 각지에 격문을 내려 의병 모집을 명했다.",
               "각지의 영웅들이 자신의 기치를 올리기 시작한다."
-            ],
-            "rewards": {
-              "fundsAll": 300
-            }
+            ]
           }
         }
       ]
@@ -77,10 +70,7 @@
             "dialogueLines": [
               "조조: 동탁을 토벌할 연합군의 깃발 아래 모여라!",
               "조조의 격문에 각지 제후들이 응답했다."
-            ],
-            "rewards": {
-              "diplomacyFlag": "coalition_formed"
-            }
+            ]
           }
         },
         {
@@ -102,10 +92,7 @@
             "dialogueLines": [
               "여포: 나는 날개 달린 악마, 사람들이 나를 비로소 두렵여하리라!",
               "호뢰관 앞 삼형제의 합세로 여포가 물러났다."
-            ],
-            "rewards": {
-              "reputationLiuBei": 10
-            }
+            ]
           }
         },
         {
@@ -127,10 +114,7 @@
             "dialogueLines": [
               "손견: 이것은... 전국샤가 아니냐. 하늘이 나에게 천하를 맡기신 것인가.",
               "손견이 낙양 폐허에서 전국새를 발견했다."
-            ],
-            "rewards": {
-              "ambitionSunJian": 20
-            }
+            ]
           }
         }
       ]
@@ -164,10 +148,7 @@
             "dialogueLines": [
               "진궁: 장군, 지금이 조조의 본거지를 노릴 절호의 기회입니다!",
               "여포가 진류를 비워 연주를 습격했다."
-            ],
-            "rewards": {
-              "chaosFlag": "yanzhou_crisis"
-            }
+            ]
           }
         },
         {
@@ -197,10 +178,7 @@
             "dialogueLines": [
               "유비: 우리 형제의 의는 하늘과 땅이 함께 알리니라.",
               "삼형제가 다시 한번 서약을 굳혔다."
-            ],
-            "rewards": {
-              "moraleLiuBeiFaction": 10
-            }
+            ]
           }
         }
       ]
@@ -234,12 +212,7 @@
             "dialogueLines": [
               "허유: 원소공은 모사의 계를 받아들이지 않으십니다. 이제 화북의 주인은 정해졌습니다.",
               "조조가 허유의 항복을 받고 원소의 병참기지 오소를 불태웠다. 관도의 승패가 갈렸다."
-            ],
-            "rewards": {
-              "moraleAll": -5,
-              "fundsAll": 500,
-              "strategicFlag": "wuchao_burned"
-            }
+            ]
           }
         },
         {
@@ -262,11 +235,7 @@
             "dialogueLines": [
               "곽도: 저수공은 패전의 책임을 물어 형명에 처해질 것입니다.",
               "원소는 패전 후 저수를 사형했다. 원씨 진영의 모사들이 떨어져 나갔다."
-            ],
-            "rewards": {
-              "moraleAll": -3,
-              "chaosFlag": "yuan_clinic_strife"
-            }
+            ]
           }
         }
       ]
@@ -299,10 +268,7 @@
             "dialogueLines": [
               "제갈량: 천하가 이미 삼분되어 장군이 익주를 차지하면 대업을 이룰 수 있습니다.",
               "유비가 융중에서 제갈량의 천하 삼분계를 들었다."
-            ],
-            "rewards": {
-              "strategicFlag": "longzhong_plan_heard"
-            }
+            ]
           }
         },
         {
@@ -328,10 +294,7 @@
             "dialogueLines": [
               "제갈량: 동풍을 빌려 드리지요.",
               "동풍이 일어나 화공이 조조의 연합 함대를 집어삼켰다!"
-            ],
-            "rewards": {
-              "fireAttackReady": true
-            }
+            ]
           }
         }
       ]
@@ -364,11 +327,7 @@
             "dialogueLines": [
               "제갈량: 신본은 본래 남양에서 밭을 가던 일개 평민이었습니다. 선제께서 신의 비루함을 아랑곳하지 않으시고 초려에 삼고초려하여 주셨습니다.",
               "제갈량이 출사표를 올리고 북벌의 대원정에 나섰다. 한나라의 부흥을 바라는 마지막 충의였다."
-            ],
-            "rewards": {
-              "moraleAll": 5,
-              "strategicFlag": "northern_expedition_begun"
-            }
+            ]
           }
         },
         {
@@ -390,11 +349,7 @@
             "dialogueLines": [
               "큰 별이 오장원 하늘에서 붉게 떨어졌다.",
               "제갈량이 오장원에서 별이 되었다. 슬픔에 잠긴 촉군의 병사들이 물러났다."
-            ],
-            "rewards": {
-              "moraleAll": -8,
-              "chaosFlag": "zhuge_liang_fallen"
-            }
+            ]
           }
         }
       ]
@@ -424,11 +379,7 @@
             "dialogueLines": [
               "사오필: 승상은 적벽에서 살아남아 신하의 마음을 묶었다.",
               "강완을 지켜낸 헌정은 새 천하의 질서를 예고했다."
-            ],
-            "rewards": {
-              "fundsAll": 450,
-              "diplomacyFlag": "jiangwan_peace"
-            }
+            ]
           }
         },
         {
@@ -451,11 +402,7 @@
             "dialogueLines": [
               "여순: 오의 수장은 진명을 참지 못하고 산길에 머물렀다. 불길이 그 끝을 기다렸다.",
               "夷陵의 대결과는 오군의 전 구도를 바꿨다."
-            ],
-            "rewards": {
-              "fundsAll": 300,
-              "reputationSunHao": 15
-            }
+            ]
           }
         }
       ]
@@ -489,11 +436,7 @@
             "dialogueLines": [
               "제갈격: 남방의 마을과 산을 사람마다 다스리며, 서로의 길을 잇는 교역로가 되었다.",
               "강릉의 정비가 시작되자 촉의 남쪽 경로가 빠르게 살아났다."
-            ],
-            "rewards": {
-              "fundsAll": 280,
-              "strategicFlag": "southern_reform_started"
-            }
+            ]
           }
         }
       ]

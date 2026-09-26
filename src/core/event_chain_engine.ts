@@ -43,7 +43,6 @@ export interface EventResult {
     eventName: string;
     eventType: string;
     dialogueLines: string[];
-    rewards: Record<string, unknown>;
     nextEventId: string | null;
 }
 
@@ -74,7 +73,6 @@ export function createEventChainNode(
             eventName,
             eventType: result.eventType ?? 'SCENE',
             dialogueLines: result.dialogueLines ?? [],
-            rewards: result.rewards ?? {},
             nextEventId: result.nextEventId ?? null,
         },
         chainNextId,

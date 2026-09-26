@@ -114,7 +114,6 @@ export class SpecialEventTrigger {
                 eventName: `특수 이벤트 — ${eventType}`,
                 eventType: 'SPECIAL',
                 dialogueLines: [],
-                rewards: { specialType: eventType, targetId },
                 nextEventId: null,
             },
             chainNextId: null,

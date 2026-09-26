@@ -120,4 +120,11 @@ describe('연의전 체인 데이터 [300][106-114]', () => {
             expect(Number.isInteger(node.priority), node.eventId).toBe(true);
         }
     });
+
+    it('rewards 를 싣지 않는다 — 적용 경로가 없다', () => {
+        // scanAndActivate 는 조건 평가와 큐 적재만 하고 국고·사기에 손대지 않는다.
+        // 보상 데이터를 넣어 두면 아무 일도 일어나지 않으면서 구현된 것처럼 보인다.
+        const withRewards = ALL.filter(x => 'rewards' in (x.node.result as object));
+        expect(withRewards.map(x => x.node.eventId)).toEqual([]);
+    });
 });

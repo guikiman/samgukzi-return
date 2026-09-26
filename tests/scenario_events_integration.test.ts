@@ -62,7 +62,6 @@ describe('시나리오 연의전 데이터 로더 [300][301]', () => {
             result: { dialogueLines: ['대사'] },
         });
         expect(node.result.eventType).toBe('SCENE');
-        expect(node.result.rewards).toEqual({});
         expect(node.result.nextEventId).toBeNull();
         expect(node.priority).toBe(0);
         expect(node.conditions[0].type as string).toBe('year');
@@ -248,7 +247,7 @@ describe('시나리오 04 관도 대전 — 오소 야습 실발동 통합 [300]
         expect(engine.eventEngine.queueMgr.isQueued('ev_04_guojia_plan')).toBe(false);
     });
 
-    it('200년 턴 진행 시 조건 충족 노드가 HISTORICAL_EVENT로 발화되고 보상이 적용된다', async () => {
+    it('200년 턴 진행 시 조건 충족 노드가 HISTORICAL_EVENT로 발화되고 연대기에 기록된다', async () => {
         const { store, engine } = setup04();
         const fired: Array<Record<string, unknown>> = [];
         engine.subscribe('HISTORICAL_EVENT', (e) => fired.push(e.payload));
@@ -260,9 +259,8 @@ describe('시나리오 04 관도 대전 — 오소 야습 실발동 통합 [300]
         expect(wuchao).toBeDefined();
         expect(wuchao!.eventName).toBe('오소 야습 — 허유의 배신');
 
-        // 보상 검증 — fundsAll 500이 전 세력 국고에 반영 (발동 전 대비 증가)
-        const processed = engine.eventEngine.queueMgr.isProcessed('ev_04_wuchao_plot');
-        expect(processed).toBe(true);
+        // 발동 처리 완료 — 큐에서 제거되어 재발동하지 않는다
+        expect(engine.eventEngine.queueMgr.isProcessed('ev_04_wuchao_plot')).toBe(true);
 
         // 연대기에 기록
         const hit = engine.chronicle.list().find(e => e.text.includes('오소 야습'));

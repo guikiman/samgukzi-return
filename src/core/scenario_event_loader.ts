@@ -35,7 +35,6 @@ export interface EventChainJsonNode {
     result?: {
         eventType?: string;
         dialogueLines?: string[];
-        rewards?: Record<string, unknown>;
         nextEventId?: string | null;
     };
 }
@@ -144,7 +143,6 @@ export function toEventChainNode(raw: EventChainJsonNode): EventChainNode {
         {
             eventType: raw.result?.eventType,
             dialogueLines: raw.result?.dialogueLines,
-            rewards: raw.result?.rewards,
             nextEventId: raw.result?.nextEventId ?? null,
         },
         null, // 체인 연결은 노드 배열 순서(getNextInChain)로 결정
