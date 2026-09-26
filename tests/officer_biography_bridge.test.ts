@@ -4,7 +4,7 @@
  * 검증 축
  *   1. 도장 문단이 있는 무장은 전원 비어 있지 않은 열전을 갖는다.
  *   2. 열전에 `null` / `undefined` / `NaN` 리터럴이 새지 않는다.
- *   3. 손으로 쓴 17개 bio 가 원문과 바이트 단위로 같다.
+ *   3. 손으로 쓴 bio 가 원문과 바이트 단위로 같다.
  *   4. 사망 연도가 0 / null / 실연도일 때 저장소 규약(isAlive·calculateAge·
  *      checkNaturalDeaths)이 제대로 읽는다.
  *   5. 동명이인은 고르지 않고 보고만 한다.
@@ -39,6 +39,7 @@ import { OfficerBiographyStore } from '../src/core/officer_biography_store';
 const ALL: readonly OfficerProfile[] = OFFICER_PROFILES.all();
 const ALL_IDS: readonly string[] = ALL.map(p => p.id);
 const HANDWRITTEN: readonly OfficerProfile[] = ALL.filter(p => p.bio !== null && p.bio !== undefined);
+const HANDWRITTEN_EXPECTED = 48;
 const { store: STORE, report: REPORT } = buildBridgedBiographyStore();
 
 
@@ -65,7 +66,7 @@ describe('bridge coverage', () => {
 
     it('reports the split between hand-authored and generated bios', () => {
         expect(REPORT.handwritten).toBe(HANDWRITTEN.length);
-        expect(REPORT.handwritten).toBe(17);
+        expect(REPORT.handwritten).toBe(HANDWRITTEN_EXPECTED);
         expect(REPORT.generated).toBe(REPORT.bridged - REPORT.handwritten);
         expect(REPORT.handwritten + REPORT.generated).toBe(REPORT.bridged);
     });
@@ -131,8 +132,8 @@ describe('biography text integrity', () => {
 // ---------------------------------------------------------------- 3. 손글씨 17개
 
 describe('hand-authored bios pass through verbatim', () => {
-    it('finds exactly 17 hand-authored profiles', () => {
-        expect(HANDWRITTEN.length).toBe(17);
+    it('finds every hand-authored profile', () => {
+        expect(HANDWRITTEN.length).toBe(HANDWRITTEN_EXPECTED);
     });
 
     it('stores each hand-authored bio byte-identical to the source', () => {
@@ -154,7 +155,7 @@ describe('hand-authored bios pass through verbatim', () => {
 
     it('marks exactly the hand-authored profiles as such', () => {
         const marked = ALL.filter(p => buildOfficerDossierFromProfile(p).isHandwritten);
-        expect(marked.length).toBe(17);
+        expect(marked.length).toBe(HANDWRITTEN_EXPECTED);
         for (const p of marked) {
             expect(getBridgeOfficer(p.id)!.biography).toBe(p.bio);
         }
