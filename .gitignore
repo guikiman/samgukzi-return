@@ -31,6 +31,7 @@ tauri-assets/
 src-tauri/target/
 src-tauri/gen/
 
-# Total War: Three Kingdoms 파생 지도 — 저작권. 커밋 금지.
-# 원본 대체본이 준비되면 이 줄을 제거하고 의도적으로 커밋할 것.
+# Total War: Three Kingdoms 파생 지도 — 저작권. 영구 커밋 금지.
+# 대체본 assets/map-china-4096.webp (Natural Earth 공개 도메인)로 교체됨.
+# 이 줄은 삭제하지 않는다 — 삭제하면 4MB 원본이 실수로 커밋된다.
 assets/china-national-map.png

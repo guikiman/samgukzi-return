@@ -25,7 +25,7 @@ const PRECACHE_PATHS = [
     '.',
     'index.html',
     'style.css',
-    'assets/china-national-map.png',
+    'assets/map-china-4096.webp',
     'src/data/scenarios/index.json',
 ];
 
