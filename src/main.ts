@@ -171,6 +171,11 @@ function addLog(msg: string): void {
     logContent.scrollTop = logContent.scrollHeight;
 }
 
+/** 배관 메시지 — 기록창이 아니라 개발자 콘솔로. 단, 오류는 반드시 addLog 를 쓴다. */
+function debugLog(msg: string): void {
+    console.debug(`[samgukzi] ${msg}`);
+}
+
 // ============================================================
 // 복수 미니게임 모달 [32][33] — 플레이어 관여 일기토/설전
 // ============================================================
@@ -2304,7 +2309,7 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
     if (isRunning) return;
 
     if (world) {
-        addLog('게임 월드 초기화 중...');
+        debugLog('게임 월드 초기화 중...');
         statusText.textContent = '월드 생성 중...';
 
         // 시나리오 기반 월드 구성
@@ -2313,7 +2318,7 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
             // [269][33] 시나리오 데이터에 포함된 초기 인맥을 정규화 스토어와 그래프 인덱스에 주입
             for (const relationship of world.relationships) engine['store'].addRelationship(relationship);
             engine['store'].rebuildGraphIndex();
-            addLog(`월드 생성 완료 — ${world.factions.length}세력, ${world.cities.length}도시, ${world.officers.length}무장`);
+            debugLog(`월드 생성 완료 — ${world.factions.length}세력, ${world.cities.length}도시, ${world.officers.length}무장`);
             // 플레이어 세력/군주 지정 (개인 행동 페이즈용) + 시나리오 난이도 주입 [X-난이도]
             const difficulty = world.scenario?.difficulty ?? 3;
             engine['store'].setGlobalState({
@@ -2370,7 +2375,7 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
     statusText.textContent = '게임 실행 중';
     lastFrameTime = 0;
 
-    addLog('게임 루프 시작');
+    debugLog('게임 루프 시작');
     animFrameId = requestAnimationFrame(gameLoop);
 }
 
@@ -3445,7 +3450,7 @@ btnNextMonth.addEventListener('click', async () => {
 // ============================================================
 
 function init(): void {
-    addLog('엔진 초기화 중...');
+    debugLog('엔진 초기화 중...');
     statusText.textContent = '엔진 초기화 중...';
 
     resizeCanvas();
@@ -3478,7 +3483,7 @@ function init(): void {
 
     // Subscribe to engine events
     engine.subscribe('PHASE_CHANGE', (event: any) => {
-        addLog(`페이즈 전환: ${event.payload.from} → ${event.payload.to}`);
+        debugLog(`페이즈 전환: ${event.payload.from} → ${event.payload.to}`);
     });
 
     // AI 세력 월간 외교 이벤트 [341-360]
@@ -3582,7 +3587,7 @@ function init(): void {
     engine.subscribe('GAME_ROAMING_EVENT', (event: any) => {
         addLog(`${event.payload.message}`);
         chronicle.add('VISIT', event.payload.message as string);
-        if (event.payload.roamingType === 'BANDIT') fireFeedback('VENGEANCE_FAIL'); // 산적 약탈 — 경고 톤
+        if (event.payload.type === 'BANDIT') fireFeedback('VENGEANCE_FAIL'); // 산적 약탈 — 경고 톤
         else fireFeedback('RESCUE'); // 현자/상인 방문 — 밝은 톤
     });
     // 재야 무장 출사 타진 이벤트 [24][421-440]
@@ -3620,7 +3625,7 @@ function init(): void {
         fireFeedback('VENGEANCE_FAIL');
     });
 
-    addLog('엔진 준비 완료 — 게임 시작을 눌러주세요');
+    debugLog('엔진 준비 완료 — 게임 시작을 눌러주세요');
     statusText.textContent = '게임 시작 대기 중';
 
     // Initial render

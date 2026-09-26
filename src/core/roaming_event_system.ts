@@ -51,6 +51,8 @@ export const HERMIT_FAME_BOOST = 15;
 export const TRAVELER_ORDER_BOOST = 5;
 /** 산적 약탈 금액 */
 export const BANDIT_PLUNDER = 200;
+export const HUNT_GRAIN = 240;
+export const BEAST_ORDER_LOSS = 8;
 
 /** 계절 이름 → encounter_matcher 계절 키 */
 function seasonKey(month: number): string {
@@ -109,16 +111,6 @@ export function processMonthlyRoamingEvents(store: GameStore): RoamingEventRepor
 
         const faction = city.ownerId ? store.getFaction(city.ownerId) : null;
         const factionName = faction?.name ?? null;
-        // 플레이어 세력 도시 → 선택지 대기 (자동 적용하지 않음) [25][461-480]
-        const needsPlayerChoice = faction?.isPlayerControlled === true;
-        if (needsPlayerChoice) {
-            events.push({
-                type: result.type, cityId: city.id, cityName: city.name, factionName,
-                needsPlayerChoice: true,
-                message: `📍 ${city.name}에 방문객이 찾아왔습니다 — 대기 중`,
-            });
-            continue;
-        }
 
         switch (result.type) {
             case 'SAGE': {
@@ -176,7 +168,7 @@ export function processMonthlyRoamingEvents(store: GameStore): RoamingEventRepor
                 events.push({
                     type: 'TRAVELER', cityId: city.id, cityName: city.name, factionName,
                     needsPlayerChoice: false,
-                    message: `🧳 행상인이 온 사방의 소문을 전했습니다 (치안 +${TRAVELER_ORDER_BOOST})`,
+                    message: `🧳 행상인이 ${city.name}의 온갖 소문을 전했습니다 (치안 +${TRAVELER_ORDER_BOOST})`,
                 });
                 break;
             }
@@ -194,10 +186,32 @@ export function processMonthlyRoamingEvents(store: GameStore): RoamingEventRepor
                 });
                 break;
             }
-            case 'HUNT':
-            case 'BEAST':
-                // 사냥/야수는 월간 로밍에서는 생략 (전투/개인 행동 페이즈 이벤트로 이관 예정)
+            case 'HUNT': {
+                if (faction) {
+                    store.updateFaction(faction.id, { food: faction.food + HUNT_GRAIN });
+                }
+                events.push({
+                    type: 'HUNT', cityId: city.id, cityName: city.name, factionName,
+                    needsPlayerChoice: false,
+                    message: `🏹 사냥꾼이 ${city.name} 근처에서 식량을 얻었습니다 (식량 +${HUNT_GRAIN})`,
+                });
                 break;
+            }
+            case 'BEAST': {
+                const ds = city.developmentStats;
+                store.updateCity(city.id, {
+                    developmentStats: {
+                        ...ds,
+                        publicOrder: Math.max(0, ds.publicOrder - BEAST_ORDER_LOSS),
+                    },
+                });
+                events.push({
+                    type: 'BEAST', cityId: city.id, cityName: city.name, factionName,
+                    needsPlayerChoice: false,
+                    message: `🐗 야수가 ${city.name} 근처를 헤집고 다녔습니다 (치안 −${BEAST_ORDER_LOSS})`,
+                });
+                break;
+            }
         }
     }
 
