@@ -352,7 +352,7 @@ async function main() {
             "for(var frame=0;frame<12;frame++){await new Promise(function(r){requestAnimationFrame(function(){r();});});var current=sample();if(current===previous){stable=true;break;}previous=current;}" +
             "var second=previous,corner=Array.from(ctx.getImageData(2,2,1,1).data);" +
             "var imageRequests=performance.getEntriesByType('resource').map(function(e){return e.name;}).filter(function(u){return /\\.(png|jpe?g|webp|gif|svg)(\\?|$)/i.test(u);});" +
-            "return {width:c.width,height:c.height,pngLength:png.length,hashStable:stable,corner:corner,imageRequests:imageRequests,mapImageReady:window.__game.getChinaMap().isMapImageReady()};})()");
+            "return {width:c.width,height:c.height,pngLength:png.length,hashStable:stable,corner:corner,imageRequests:imageRequests,hasBitmapApi:typeof window.__game.getChinaMap().isMapImageReady==='function'};})()");
 
         // 중국 전도 실제 캔버스 클릭 — 모든 도시가 pointerup에서 선택되는지 검증 [461-480]
         const mapClickPoints = await cdp.evalJson(
@@ -639,7 +639,7 @@ async function main() {
             cityChronicle: cityChronicleProbe.hasHistory === true,
             chronicleFilter: chronicleFilterProbe.factionFilters > 0 && chronicleFilterProbe.hasCapture === true,
             map: mapClickProbe.points === 6 && mapVisibilityProbe.initial.mode === 'all' && mapVisibilityProbe.initial.visible === mapVisibilityProbe.initial.all && mapVisibilityProbe.discovered.mode === 'discovered' && mapVisibilityProbe.discovered.visible > 0 && mapVisibilityProbe.discovered.visible < mapVisibilityProbe.discovered.all && mapVisibilityProbe.discovered.factions.length >= 3 && mapVisibilityProbe.restored === 'all',
-            screenshot: mapScreenshotProbe.width > 0 && mapScreenshotProbe.height > 0 && mapScreenshotProbe.pngLength > 1000 && mapScreenshotProbe.hashStable && mapScreenshotProbe.corner.length === 4 && mapScreenshotProbe.imageRequests.some(url => url.includes('assets/china-national-map.png')) && mapScreenshotProbe.imageRequests.every(url => url.includes('assets/china-national-map.png')),
+            screenshot: mapScreenshotProbe.width > 0 && mapScreenshotProbe.height > 0 && mapScreenshotProbe.pngLength > 1000 && mapScreenshotProbe.hashStable && mapScreenshotProbe.corner.length === 4 && mapScreenshotProbe.hasBitmapApi === false && !mapScreenshotProbe.imageRequests.some(url => url.includes('china-national-map')),
             mapClicks: mapClickProbe.results.every(item => item.actual === item.expected),
             dialogue: dialogueProbe.facilityOpen && dialogueProbe.facilityCount === 8 && dialogueProbe.facilityNames.some(name => name.includes('훈련장')) && dialogueProbe.officerOpen && dialogueProbe.choices >= 2 && dialogueProbe.giftPreview.includes('옥비') && dialogueProbe.giftPreview.includes('희귀') && dialogueProbe.giftPreview.includes('+14') && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500 && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity && dialogueProbe.page === '1 / 3' && dialogueProbe.nextPage === '2 / 3' && dialogueProbe.prevPage === '1 / 3',
             buildings: buildingProbe.count >= 5 && buildingProbe.selected.includes('누적 투자') && buildingProbe.invested && buildingProbe.stateCount >= 1,
@@ -734,9 +734,8 @@ async function main() {
             && mapScreenshotProbe.pngLength > 1000
             && mapScreenshotProbe.hashStable === true
             && mapScreenshotProbe.corner.length === 4
-            && mapScreenshotProbe.mapImageReady
-            && mapScreenshotProbe.imageRequests.some(url => url.includes('assets/china-national-map.png'))
-            && mapScreenshotProbe.imageRequests.every(url => url.includes('assets/china-national-map.png'))
+            && mapScreenshotProbe.hasBitmapApi === false
+            && !mapScreenshotProbe.imageRequests.some(url => url.includes('china-national-map'))
             && mapClickProbe.results.every(item => item.actual === item.expected)
             && dialogueProbe.facilityOpen === true
             && dialogueProbe.facilityCount === 8
