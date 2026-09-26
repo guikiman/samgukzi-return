@@ -139,13 +139,54 @@ export class ChinaMapRenderer {
     /** [지도][1:1] Natural Earth 실제 지형 비트맵. 미로딩이면 스케치 지도로 폴백. */
     private mapImage: HTMLImageElement | null = null;
 
+    /** 육지 마스크 — 영토를 바다에 칠하지 않게 하는 알파 마스크. 비트맵에서 추출. */
+    private landMask: HTMLCanvasElement | null = null;
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d')!;
         if (typeof Image === 'undefined') return;
         const img = new Image();
-        img.addEventListener('load', () => { this.mapImage = img; });
+        img.addEventListener('load', () => { this.mapImage = img; this.landMask = null; });
         img.src = 'assets/map-china-4096.webp';
+    }
+
+    /**
+     * 비트맵의 바다색을 투명 처리해 육지만 남기는 마스크를 만든다.
+     * generate_map.py 의 SEAFILL 값과 일치해야 하며, 해안선 안티에일리어싱은 여유 있게 판정한다.
+     */
+    private getLandMask(): HTMLCanvasElement | null {
+        if (!this.mapImage) return null;
+        if (this.landMask) return this.landMask;
+        const S = 256;
+        const c = document.createElement('canvas');
+        c.width = S;
+        c.height = S;
+        const cx = c.getContext('2d')!;
+        cx.drawImage(this.mapImage, 0, 0, S, S);
+        const px = cx.getImageData(0, 0, S, S).data;
+        const img = cx.createImageData(S, S);
+        for (let i = 0; i < S * S; i++) {
+            const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
+            const isSea = Math.abs(r - 198) < 26 && Math.abs(g - 214) < 26 && Math.abs(b - 214) < 26;
+            const o = i * 4;
+            img.data[o] = 255;
+            img.data[o + 1] = 255;
+            img.data[o + 2] = 255;
+            img.data[o + 3] = isSea ? 0 : 255;
+        }
+        cx.putImageData(img, 0, 0);
+        this.landMask = c;
+        return c;
+    }
+
+    /** 영토/경계 레이어를 육지에만 남긴다. 마스크가 없으면 아무것도 하지 않는다. */
+    private clipToLand(octx: CanvasRenderingContext2D, w: number, h: number): void {
+        const mask = this.getLandMask();
+        if (!mask) return;
+        octx.globalCompositeOperation = 'destination-in';
+        octx.drawImage(mask, 0, 0, w, h);
+        octx.globalCompositeOperation = 'source-over';
     }
 
     setView(view: Partial<ChinaMapView>): void {
@@ -508,6 +549,7 @@ export class ChinaMapRenderer {
             }
         }
         octx.globalAlpha = 1.0;
+        this.clipToLand(octx, lw, lh);
 
         this.territoryLayerDirty = false;
         return off;
@@ -587,6 +629,7 @@ export class ChinaMapRenderer {
                     }
                 }
             }
+            this.clipToLand(bctx, lw, lh);
             this.borderLayerDirty = false;
         }
 
