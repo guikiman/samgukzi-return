@@ -415,31 +415,46 @@
 
 <!-- 범용 선택형 대화 모달: 무장·도시 시설·사건 상세 [24][49][441-460] -->
 <div id="dialogue-modal" role="dialog" aria-modal="true" aria-labelledby="dialogue-title" tabindex="-1" style="display:none;">
-    <div class="dialogue-frame" data-faction="">
-        <button id="dialogue-close" class="dlg-x" title="닫기" aria-label="닫기">✕</button>
-        <div class="dlg-left">
-            <div class="dlg-portrait" id="dialogue-portrait" aria-hidden="true"></div>
-            <div class="dlg-identity">
-                <div class="dlg-identity-name" id="dialogue-speaker"></div>
-                <div class="dlg-identity-org" id="dialogue-org"></div>
-                <div class="dlg-identity-rank" id="dialogue-rank"></div>
-            </div>
+    <div class="dlg-stage" data-accent="#4a5160">
+        <!-- 무대: 좌측 화자 / 우측 상대 -->
+        <div class="dlg-cast">
+            <figure class="dlg-slot dlg-slot-left">
+                <div class="dlg-figure" id="dlg-left-figure"></div>
+                <figcaption class="dlg-nameplate"><span id="dlg-left-name"></span></figcaption>
+                <div class="dlg-identity">
+                    <div class="dlg-org" id="dlg-left-org"></div>
+                    <div class="dlg-rank" id="dlg-left-rank"></div>
+                </div>
+            </figure>
+            <figure class="dlg-slot dlg-slot-right">
+                <div class="dlg-figure" id="dlg-right-figure"></div>
+                <figcaption class="dlg-nameplate"><span id="dlg-right-name"></span></figcaption>
+                <div class="dlg-identity">
+                    <div class="dlg-org" id="dlg-right-org"></div>
+                    <div class="dlg-rank" id="dlg-right-rank"></div>
+                </div>
+            </figure>
         </div>
-        <div class="dlg-right">
-            <header class="dlg-head">
+
+        <!-- 하단 텍스트 바 -->
+        <div class="dlg-bar">
+            <div class="dlg-bar-head">
                 <h3 id="dialogue-title" class="dlg-title">대화</h3>
-                <div id="dialogue-subtitle" class="dlg-subtitle"></div>
-            </header>
-            <div class="dlg-body" id="dialogue-text"></div>
+                <span id="dialogue-progress-label" class="dlg-step"></span>
+                <button id="dialogue-close" class="dlg-x" title="닫기" aria-label="닫기">✕</button>
+            </div>
+            <div class="dlg-body" id="dialogue-text" tabindex="0"></div>
             <div class="dlg-notes" id="dialogue-notes" style="display:none;"></div>
             <div id="dialogue-detail" class="dlg-detail"></div>
-            <div class="dlg-options-head">
-                <span class="dlg-options-label">선택</span>
-                <span id="dialogue-progress-label" class="dlg-step"></span>
+            <!-- 교역 패널: 텍스트 바 아래에서 물품을 사고팔고 한다 -->
+            <div id="dialogue-trade" class="dlg-trade" style="display:none;"></div>
+            <div class="dlg-actions">
+                <div id="dialogue-choices" class="dlg-options"></div>
+                <button id="dlg-continue" class="dlg-continue" title="계속 (Space)">▼</button>
             </div>
-            <div id="dialogue-choices" class="dlg-options"></div>
             <div id="dialogue-result" class="dlg-result" style="display:none;" role="status"></div>
         </div>
+
         <footer class="dlg-foot">
             <button id="dialogue-prev" class="dlg-nav">◀ 이전</button>
             <span id="dialogue-page" class="dlg-page"></span>

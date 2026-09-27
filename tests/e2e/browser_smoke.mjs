@@ -1,4 +1,30 @@
 /**
+main();
+            // 시장 클릭 -> 불량배 연쇄 대화 / 교역소 구매 [신규 기능]
+            "document.getElementById('dialogue-close').click();" +
+            "var city2=s.getAllCities().find(function(c){return c.ownerId===s.getGlobalState().playerFactionId;})||s.getAllCities()[0];" +
+            "city2.developmentStats.publicOrder=8;city2.developmentStats.commerce=12;g.openCity(city2.id);" +
+            "var mk=document.querySelector('[data-facility=MARKET]');if(mk)mk.click();" +
+            "var mktOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
+            "var mktVisit1=document.getElementById('dialogue-page').textContent;" +
+            "var mktCh1=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
+            "var mktFirst=(document.querySelectorAll('#dialogue-choices .dlg-choice')[0]||{disabled:true});" +
+            "if(!mktFirst.disabled)mktFirst.click();" +
+            "var mktVisit2=document.getElementById('dialogue-page').textContent;" +
+            "var mktText2=document.getElementById('dialogue-text').textContent;" +
+            "var mktCh2=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
+            "document.getElementById('dialogue-close').click();" +
+            "g.openTradeDialogue(city2.id);" +
+            "var trOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
+            "var trRows=document.querySelectorAll('#dialogue-trade .dlg-trade-row').length;" +
+            "var trGold0=s.getFaction(s.getGlobalState().playerFactionId).gold;" +
+            "var trDeal=document.querySelectorAll('#dialogue-choices .dlg-choice')[0];if(trDeal)trDeal.click();" +
+                        "var trPrice=parseInt(document.querySelectorAll('#dialogue-trade .dlg-trade-row')[0].querySelectorAll('.dlg-trade-price')[1].textContent,10);" +
+"var trBuy=document.querySelector('[data-trade-buy=grain]');if(trBuy&amp;&amp;!trBuy.disabled)trBuy.click();" +
+            "var trGold1=s.getFaction(s.getGlobalState().playerFactionId).gold;" +
+            "var trNote=document.getElementById('dialogue-result').textContent;" +
+            "document.getElementById('dialogue-close').click();" +
+/**
  * 브라우저 E2E 스모크 테스트 (headless Chrome + CDP)
  * 파일: tests/e2e/browser_smoke.mjs
  *
@@ -564,16 +590,17 @@ async function main() {
             "document.getElementById('dialogue-close').click();" +
             // San8/San14 대화창 개편: 좌측 화자 열 + 번호 선택지 [신규 기능]
             "var o2=document.querySelector('.cdp-officer-clickable');if(o2)o2.click();" +
-            "var dlgFrame=document.querySelector('#dialogue-modal .dialogue-frame');" +
-            "var dlgPortraitSvg=!!document.querySelector('#dialogue-portrait svg');" +
-            "var dlgSpeakerText=document.getElementById('dialogue-speaker').textContent.trim();" +
-            "var dlgOrgText=document.getElementById('dialogue-org').textContent.trim();" +
-            "var dlgRankText=document.getElementById('dialogue-rank').textContent.trim();" +
+            "var dlgFrame=document.querySelector('#dialogue-modal .dlg-stage');" +
+            "var dlgPortraitSvg=!!document.querySelector('#dlg-left-figure svg');" +
+            "var dlgSpeakerText=document.getElementById('dlg-left-name').textContent.trim();" +
+            "var dlgOrgText=document.getElementById('dlg-left-org').textContent.trim();" +
+            "var dlgRankText=document.getElementById('dlg-left-rank').textContent.trim();" +
             "var dlgBodyText=document.getElementById('dialogue-text').textContent;" +
             "var dlgChoiceIdx=document.querySelectorAll('#dialogue-choices .dlg-choice-idx').length;" +
             "var dlgStepText=document.getElementById('dialogue-progress-label').textContent.trim();" +
             "var dlgPrevDisabled=document.getElementById('dialogue-prev').disabled;" +
             "var accent=dlgFrame?dlgFrame.style.getPropertyValue('--dlg-accent'):'';" +
+            "var dlgRightHidden=document.querySelector('.dlg-slot-right').dataset.empty==='1';" +
             // 키보드 조작: → 다음, ← 이전, 숫자 선택지 [신규 기능]
             "document.getElementById('dialogue-modal').focus();" +
             "var kbdBefore=document.getElementById('dialogue-page').textContent;" +
@@ -587,16 +614,46 @@ async function main() {
             "document.getElementById('dialogue-close').click();" +
             // 시설 대화는 사람이 아니라 글자 표식이 왼쪽에 있어야 한다
             "var f2=document.querySelector('.cdp-facility');if(f2)f2.click();" +
-            "var placeGlyph=document.querySelector('#dialogue-portrait.dlg-place')?.textContent||'';" +
-            "var placeIsGlyph=!!document.querySelector('#dialogue-portrait.dlg-place') && !document.querySelector('#dialogue-portrait svg');" +
+            "var placeGlyph=document.querySelector('#dlg-left-figure.dlg-place')?.textContent||'';" +
+            "var placeIsGlyph=!!document.querySelector('#dlg-left-figure.dlg-place') && !document.querySelector('#dlg-left-figure svg');" +
+            "document.getElementById('dialogue-close').click();" +
+            // 시장 클릭 -> 불량배 연쇄 대화 / 교역소 구매 [신규 기능]
+            "document.getElementById('dialogue-close').click();" +
+            "var city2=s.getAllCities().find(function(c){return c.ownerId===s.getGlobalState().playerFactionId;})||s.getAllCities()[0];" +
+            "city2.developmentStats.publicOrder=8;city2.developmentStats.commerce=12;g.openCity(city2.id);" +
+            "var mk=document.querySelector('[data-facility=MARKET]');if(mk)mk.click();" +
+            "var mktOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
+            "var mktVisit1=document.getElementById('dialogue-page').textContent;" +
+            "var mktCh1=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
+            "var mktFirst=document.querySelectorAll('#dialogue-choices .dlg-choice')[0]||{disabled:true};" +
+            "if(!mktFirst.disabled)mktFirst.click();" +
+            "var mktVisit2=document.getElementById('dialogue-page').textContent;" +
+            "var mktText2=document.getElementById('dialogue-text').textContent;" +
+            "var mktCh2=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
+            "document.getElementById('dialogue-close').click();" +
+            "g.openTradeDialogue(city2.id);" +
+            "var trOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
+            "var trRows=document.querySelectorAll('#dialogue-trade .dlg-trade-row').length;" +
+            "var trGold0=s.getFaction(s.getGlobalState().playerFactionId).gold;" +
+            "var trDeal=document.querySelectorAll('#dialogue-choices .dlg-choice')[0];if(trDeal)trDeal.click();" +
+                        "var trPrice=parseInt(document.querySelectorAll('#dialogue-trade .dlg-trade-row')[0].querySelectorAll('.dlg-trade-price')[1].textContent,10);" +
+"var trBuy=document.querySelector('[data-trade-buy=grain]');if(trBuy&&!trBuy.disabled)trBuy.click();" +
+            "var trGold1=s.getFaction(s.getGlobalState().playerFactionId).gold;" +
+            "var trNote=document.getElementById('dialogue-result').textContent;" +
             "document.getElementById('dialogue-close').click();" +
             "var scene=document.getElementById('city-scene-canvas'),chips=document.querySelectorAll('#city-scene-summary .city-building-chip');" +
             "return {facilityOpen:facilityOpen,facilityTitle:facilityTitle,facilityCount:facilities.length,facilityNames:facilityNames,officerOpen:officerOpen," +
             "officerTitle:officerTitle,choices:choices,giftBeforeGold:giftBeforeGold,giftBeforeAffinity:giftBeforeAffinity,giftPreview:giftPreview,giftResult:giftResult,giftAfterGold:giftAfterGold,giftAfterAffinity:giftAfterAffinity,page:page,nextPage:nextPage,prevPage:prevPage," +
-            "dlgPortraitSvg:dlgPortraitSvg,dlgSpeakerText:dlgSpeakerText,dlgOrgText:dlgOrgText,dlgRankText:dlgRankText," +
+            "dlgPortraitSvg:dlgPortraitSvg,dlgRightHidden:dlgRightHidden,dlgSpeakerText:dlgSpeakerText,dlgOrgText:dlgOrgText,dlgRankText:dlgRankText," +
             "dlgBodyText:dlgBodyText,dlgChoiceIdx:dlgChoiceIdx,dlgStepText:dlgStepText,dlgPrevDisabled:dlgPrevDisabled," +
             "kbdBefore:kbdBefore,kbdNext:kbdNext,kbdPrev:kbdPrev,kbdChoiceShown:kbdChoiceShown,kbdChoiceResult:kbdChoiceResult," +
-            "accent:accent,placeGlyph:placeGlyph,placeIsGlyph:placeIsGlyph,citySceneWidth:scene.width,citySceneHeight:scene.height,buildingChips:chips.length,buildingDetail:buildingDetail,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode')};})()");
+            "accent:accent,placeGlyph:placeGlyph,placeIsGlyph:placeIsGlyph,dlgRightHidden:dlgRightHidden," +
+            "mktOpen:mktOpen,mktVisit1:mktVisit1,mktVisit2:mktVisit2,mktCh1:mktCh1,mktCh2:mktCh2,mktText2:mktText2," +
+            "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice," +
+            "accent:accent,placeGlyph:placeGlyph,placeIsGlyph:placeIsGlyph,dlgRightHidden:dlgRightHidden," +
+            "mktOpen:mktOpen,mktVisit1:mktVisit1,mktVisit2:mktVisit2,mktCh1:mktCh1,mktCh2:mktCh2,mktText2:mktText2," +
+            "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice," +
+            "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice,citySceneWidth:scene.width,citySceneHeight:scene.height,buildingChips:chips.length,buildingDetail:buildingDetail,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode')};})()");
 
         // 도시 건물 투자·운영 상태와 지도 카메라 보존 [49][D32]
         const buildingProbe = await cdp.evalJson(
@@ -981,6 +1038,21 @@ async function main() {
             && dialogueProbe.kbdPrev === dialogueProbe.kbdBefore
             && dialogueProbe.kbdChoiceShown === true
             && dialogueProbe.kbdChoiceResult.length > 0
+            // 상대 슬롯이 비어 있으면 숨겨진다
+            && dialogueProbe.dlgRightHidden === true
+            // 시장 클릭 -> 불량배 사건 대화가 열린다
+            && dialogueProbe.mktOpen === true
+            && dialogueProbe.mktCh1 >= 2
+            // 선택하면 이어지는 장면으로 넘어간다 (방문 수 증가 + 새 대사)
+            && dialogueProbe.mktVisit2 !== dialogueProbe.mktVisit1
+            && dialogueProbe.mktText2.length > 0
+            // 그 장면에서 다시 선택할 수 있다
+            && dialogueProbe.mktCh2 >= 1
+            // 교역소는 물자 5종을 사고팔 수 있다
+            && dialogueProbe.trOpen === true
+            && dialogueProbe.trRows >= 3
+            && dialogueProbe.trGold0 - dialogueProbe.trGold1 === dialogueProbe.trPrice * 10
+            && dialogueProbe.trNote.length > 0
             && buildingProbe.count >= 5
             && buildingProbe.selected.includes('누적 투자')
             && buildingProbe.invested

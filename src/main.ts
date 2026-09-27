@@ -25,6 +25,14 @@ import { renderPortraitSvg } from './core/officer_portrait.js';
 import { renderRadarSvg } from './core/officer_radar.js';
 import { composeDialogue, composeResponse } from './core/dialogue_composer.js';
 import type { DialogueTopic } from './core/dialogue_composer.js';
+import {
+    ScriptRunner,
+    buildMarketScript,
+    buildTradeOffer,
+    buildTradeScript,
+    hasTradePost,
+} from './core/dialogue_script.js';
+import type { DialogueEffect, ScriptNode, TradeOfferRow } from './core/dialogue_script.js';
 import { MonthlyReportSystem } from './core/monthly_report.js';
 import { assembleReinforcements } from './core/reinforcement_system.js';
 import { SaveSlotManager } from './core/save_slot_manager.js';
@@ -102,7 +110,8 @@ const engineRef: { current: import('./core/game_engine.js').GameEngine | null } 
 import type { DuelMinigame } from './core/duel_minigame.js';
 import type { DebateMinigame } from './core/debate_minigame.js';
 import { getCaptivesInCity } from './core/captive_escape_system.js';
-import { FacilityType, type CityBuildingState } from './core/types.js';
+import { FacilityType, type CityBuildingState, type OfficerID } from './core/types.js';
+import type { GameStore } from './core/game_store.js';
 import { DomesticTaskType } from './core/domestic_scheduler.js';
 // [Auth] 계약 + 백엔드 스토어 + UI 흐름을 조립하는 통합 글루
 import { bootstrapAuth, type AuthRuntime } from './integration/auth_bootstrap.js';
@@ -1002,6 +1011,11 @@ type DialoguePage = {
     /** 사람이 아닌 화자(시설/장소)의 표식 한 글자. */
     placeMark?: string;
     text: string;
+    /** 우측(상대편) 무장 id. 없으면 빈 슬롯이 된다. */
+    rightOfficerId?: string;
+    rightSpeaker?: string;
+    rightPlaceMark?: string;
+    rightOrg?: string;
     detail?: string[];
     choices?: DialogueChoice[];
     giftComposer?: {
@@ -1029,52 +1043,393 @@ const dialogueResult = document.getElementById('dialogue-result')!;
 const dialoguePrev = document.getElementById('dialogue-prev') as HTMLButtonElement;
 const dialogueNext = document.getElementById('dialogue-next') as HTMLButtonElement;
 const dialoguePageLabel = document.getElementById('dialogue-page')!;
-const dialoguePortrait = document.getElementById('dialogue-portrait')!;
-const dialogueOrg = document.getElementById('dialogue-org')!;
-const dialogueRank = document.getElementById('dialogue-rank')!;
-const dialogueFrame = document.querySelector<HTMLElement>('#dialogue-modal .dialogue-frame')!;
 const dialogueStep = document.getElementById('dialogue-progress-label')!;
 const dialogueNotes = document.getElementById('dialogue-notes')!;
+const dialogueStage = document.querySelector<HTMLElement>('#dialogue-modal .dlg-stage')!;
+const dlgFigure = {
+    left: document.getElementById('dlg-left-figure')!,
+    right: document.getElementById('dlg-right-figure')!,
+};
+const dlgName = {
+    left: document.getElementById('dlg-left-name')!,
+    right: document.getElementById('dlg-right-name')!,
+};
+const dlgOrg = { left: document.getElementById('dlg-left-org')!, right: document.getElementById('dlg-right-org')! };
+const dlgRank = { left: document.getElementById('dlg-left-rank')!, right: document.getElementById('dlg-right-rank')! };
+const dialogueTrade = document.getElementById('dialogue-trade')!;
+const dlgContinue = document.getElementById('dlg-continue') as HTMLButtonElement;
 
-/**
- * 화자 신분을 채운다. San8/San14 톤 — 왼쪽 열이 정보다.
- * speakerId 가 없으면 '사람이 아닌' 화자(시설/장소)이므로 글자 표식을 쓴다.
- */
-function paintDialogueIdentity(page: DialoguePage): void {
-    const { speakerId, placeMark } = page;
-    if (speakerId && engine) {
-        const o = engine['store'].getOfficer(speakerId);
+/** 무대 한쪽(좌/우)을 채운다. officerId 가 없으면 표식 글자를 쓴다. */
+function paintSlot(side: 'left' | 'right', spec: {
+    speaker: string; officerId?: string; placeMark?: string; org?: string; rank?: string;
+}): void {
+    const fig = dlgFigure[side];
+    const slot = fig.closest('.dlg-slot') as HTMLElement | null;
+    // 자리를 채울 상대가 없으면 슬롯을 비운다 — 빈 자리에 표식이 서 있으면 이상하다.
+    if (!spec.officerId && !spec.placeMark) {
+        fig.classList.remove('dlg-place');
+        fig.innerHTML = '';
+        dlgName[side].textContent = '';
+        dlgOrg[side].textContent = '';
+        dlgRank[side].textContent = '';
+        if (slot) slot.dataset.empty = '1';
+        return;
+    }
+    if (slot) delete slot.dataset.empty;
+    if (spec.officerId && engine) {
+        const o = engine['store'].getOfficer(spec.officerId);
         if (o) {
-            dialoguePortrait.classList.remove('dlg-place');
-            dialoguePortrait.innerHTML = renderPortraitSvg({
-                id: o.id, name: o.name, gender: o.gender === 'F' ? 'F' : 'M', grade: Math.max(0, Math.min(9, o.rank)),
+            fig.classList.remove('dlg-place');
+            fig.innerHTML = renderPortraitSvg({
+                id: o.id, name: o.name, gender: o.gender === 'F' ? 'F' : 'M',
+                grade: Math.max(0, Math.min(9, o.rank)),
             });
-            const faction = o.factionId ? engine['store'].getFaction(o.factionId) : null;
-            dialogueSpeaker.textContent = o.name;
-            dialogueOrg.textContent = faction?.name ?? '재야';
-            dialogueRank.textContent = o.status === 'FREE' ? '재야 무장' : `${o.rank}품`;
-            // 세력 색은 판 전체를 칠하지 않고 왼쪽 세로선/강조에만 쓴다.
-            dialogueFrame.style.setProperty('--dlg-accent', faction?.color ?? '#4a5160');
+            const f = o.factionId ? engine['store'].getFaction(o.factionId) : null;
+            dlgName[side].textContent = o.name;
+            dlgOrg[side].textContent = f?.name ?? '재야';
+            dlgRank[side].textContent = o.status === 'FREE' ? '재야' : `${o.rank}품`;
+            if (side === 'left') dialogueStage.style.setProperty('--dlg-accent', f?.color ?? '#4a5160');
             return;
         }
     }
     // 시설·장소 등 사람이 아닌 화자
-    dialoguePortrait.classList.add('dlg-place');
-    dialoguePortrait.textContent = placeMark ?? '址';
-    dialogueSpeaker.textContent = page.speaker;
-    dialogueOrg.textContent = page.subtitle ?? '';
-    dialogueRank.textContent = '';
-    dialogueFrame.style.setProperty('--dlg-accent', '#4a5160');
+    fig.classList.add('dlg-place');
+    fig.textContent = spec.placeMark ?? '址';
+    dlgName[side].textContent = spec.speaker;
+    dlgOrg[side].textContent = spec.org ?? '';
+    dlgRank[side].textContent = spec.rank ?? '';
 }
 
+/** 대화 페이지로 무대 양쪽을 채운다. 화자는 왼쪽, 상대는 오른쪽. */
+function paintDialogueStage(page: DialoguePage): void {
+    paintSlot('left', {
+        speaker: page.speaker,
+        officerId: page.speakerId,
+        placeMark: page.placeMark,
+        org: page.subtitle,
+    });
+    paintSlot('right', {
+        speaker: page.rightSpeaker ?? '',
+        officerId: page.rightOfficerId,
+        placeMark: page.rightPlaceMark,
+        org: page.rightOrg,
+    });
+    // 세력 색은 판 전체를 칠하지 않고 테두리/강조에만 쓴다.
+    if (!page.speakerId) dialogueStage.style.setProperty('--dlg-accent', '#4a5160');
+}
+
+
+/* ============================================================
+   연쇄 대화 재생기 [신규 기능]
+   스크립트(ScriptRunner)를 화면에 붙인다. 효과 적용은 여기서 한다.
+   ============================================================ */
+
+let activeRunner: ScriptRunner | null = null;
+
+/** 값을 범위 안으로 자른다. 도시 수치와 능력치가 범위를 벗어나면 게임이 깨진다. */
+function clamp(v: number, lo: number, hi: number): number {
+    return v < lo ? lo : v > hi ? hi : v;
+}
+
+/**
+ * 두 무장 사이의 우호도를 움직인다.
+ * 기존 코드에 setter 가 없어서 여기서 직접 만든다.
+ * a -> b 방향 엣지가 있으면 갱신하고, 없으면 새로 만든다.
+ * 반대 방향 엣지만 있으면 그쪽을 갱신한다(양방향으로 읽히므로).
+ */
+function addAffinity(store: GameStore, aId: string, bId: string, delta: number, label = '대화'): void {
+    if (!aId || !bId || aId === bId || delta === 0) return;
+    const forward = store.getRelationships(aId).find(e => e.target === bId);
+    const time = store.getGlobalState().time;
+    if (forward) {
+        forward.affinity = clamp(forward.affinity + delta, -100, 100);
+        store.addRelationship(forward);
+        return;
+    }
+    const reverse = store.getRelationships(bId).find(e => e.target === aId);
+    if (reverse) {
+        reverse.affinity = clamp(reverse.affinity + delta, -100, 100);
+        store.addRelationship(reverse);
+        return;
+    }
+    store.addRelationship({
+        source: aId as OfficerID, target: bId as OfficerID, type: 'SUBORDINATE',
+        affinity: clamp(delta, -100, 100),
+        history: [{ year: time.year, month: time.month, event: label, delta }],
+    });
+}
+let activeScriptContext: { cityId: string } | null = null;
+
+/** 효과를 스토어에 실제로 적용한다. 실패해도 대화는 계속된다. */
+function applyScriptEffects(
+    effects: readonly DialogueEffect[],
+    ctx: { cityId: string; officerId?: string },
+): string {
+    if (!engine) return '';
+    const store = engine['store'];
+    const gs = store.getGlobalState();
+    const city = store.getCity(ctx.cityId);
+    const faction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
+    const notes: string[] = [];
+
+    for (const e of effects) {
+        switch (e.kind) {
+            case 'gold': {
+                if (!faction) break;
+                const before = faction.gold;
+                faction.gold = Math.max(0, before + e.amount);
+                notes.push(`금화 ${e.amount >= 0 ? '+' : ''}${faction.gold - before}`);
+                break;
+            }
+            case 'city': {
+                if (!city) break;
+                const stats = city.developmentStats;
+                const key = e.field as keyof typeof stats;
+                const before = Number(stats[key] ?? 0);
+                // 도시 수치는 0~100 을 넘지 않게 잘라 넣는다. 값이 새면 도시가 무너진다.
+                (stats[key] as number) = clamp(before + e.amount, 0, 100);
+                notes.push(`${CITY_FIELD_LABEL[e.field]} ${e.amount >= 0 ? '+' : ''}${e.amount}`);
+                break;
+            }
+            case 'danger': {
+                if (!city) break;
+                city.danger = clamp(city.danger + e.amount, 0, 100);
+                notes.push(`위험 ${e.amount >= 0 ? '+' : ''}${e.amount}`);
+                break;
+            }
+            case 'affinity': {
+                if (!ctx.officerId) break;
+                const before = getAffinityBetween(store, gs.playerFactionId ?? '', ctx.officerId);
+                addAffinity(store, gs.playerFactionId ?? '', ctx.officerId, e.amount);
+                const after = getAffinityBetween(store, gs.playerFactionId ?? '', ctx.officerId);
+                if (after !== before) notes.push(`우호도 ${after - before >= 0 ? '+' : ''}${after - before}`);
+                break;
+            }
+            case 'stat': {
+                if (!ctx.officerId) break;
+                const o = store.getOfficer(ctx.officerId);
+                if (!o) break;
+                o.stats[e.stat] = clamp(o.stats[e.stat] + e.amount, 1, 100);
+                notes.push(`${STAT_LABEL_KO[e.stat]} ${e.amount >= 0 ? '+' : ''}${e.amount}`);
+                break;
+            }
+            case 'log':
+                addLog(e.text);
+                break;
+        }
+    }
+    return notes.join(' · ');
+}
+
+const CITY_FIELD_LABEL: Record<string, string> = {
+    publicOrder: '치안', commerce: '상업', agriculture: '농업',
+    loyalty: '충성', development: '개발',
+};
+const STAT_LABEL_KO: Record<string, string> = {
+    leadership: '통솔', might: '무력', intelligence: '지력',
+    politics: '정치', charisma: '매력',
+};
+
+/** 스크립트의 현재 노드를 대화창에 그린다. */
+function renderScriptNode(): void {
+    const node = activeRunner?.current;
+    if (!node || !activeScriptContext) return;
+
+    openDialogue({
+        pages: [{
+            title: node.speaker,
+            speaker: node.speaker,
+            speakerId: node.speakerId,
+            placeMark: node.placeMark,
+            text: node.lines.join('\n'),
+            detail: node.facts ? [...node.facts] : [],
+            choices: node.choices.map((c, i) => ({
+                id: c.id,
+                label: c.label,
+                description: c.desc ?? '',
+                disabled: c.enabled === false,
+                onSelect: () => {
+                    const applied = applyScriptEffects(c.effects, {
+                        cityId: activeScriptContext!.cityId,
+                    });
+                    if (activeRunner) activeRunner.choose(c.id);
+                    return applied || c.label;
+                },
+            })),
+        }],
+        index: 0,
+    });
+
+    // 계속 화살표: 선택지가 없고 다음 장면이 있을 때만 살아 있다.
+    const canAdvance = node.choices.length === 0 && !!node.next && !activeRunner!.finished;
+    dlgContinue.disabled = !canAdvance;
+    dlgContinue.classList.toggle('dlg-bouncing', canAdvance);
+    dialoguePrev.disabled = !activeRunner!.canGoBack;
+    dialoguePageLabel.textContent = `방문 ${activeRunner!.visitedCount}`;
+    renderTradePanel();
+}
+
+/* ============================================================
+   교역 패널 — 텍스트 바 아래에서 사고팔기 [신규 기능]
+   대화가 이어지는 동안 계속 열려 있다.
+   ============================================================ */
+
+/** 세력별 물자 소지량. 세이브에 섞이지 않도록 rtk8_ 접두 키를 쓴다. */
+function tradeStockKey(factionId: string): string {
+    return `rtk8_trade_stock_${factionId}`;
+}
+function loadTradeStock(factionId: string): Record<string, number> {
+    try {
+        const raw = localStorage.getItem(tradeStockKey(factionId));
+        const parsed = raw ? JSON.parse(raw) as unknown : {};
+        if (parsed && typeof parsed === 'object') return parsed as Record<string, number>;
+    } catch { /* 저장소가 깨졌으면 빈 것으로 시작한다. */ }
+    return {};
+}
+function saveTradeStock(factionId: string, stock: Record<string, number>): void {
+    try { localStorage.setItem(tradeStockKey(factionId), JSON.stringify(stock)); } catch { /* 용량 초과면 조용히 넘긴다. */ }
+}
+
+let tradeOffer: TradeOfferRow[] = [];
+let tradeCityId: string | null = null;
+
+/** 현재 대화 페이지가 교역 장면인지. */
+function isTradeScene(node: ScriptNode | undefined): boolean {
+    return !!node && node.placeMark === '貿';
+}
+
+function renderTradePanel(): void {
+    const node = activeRunner?.current;
+    if (!isTradeScene(node) || !engine || !tradeCityId) {
+        dialogueTrade.style.display = 'none';
+        dialogueTrade.innerHTML = '';
+        return;
+    }
+    const store = engine['store'];
+    const gs = store.getGlobalState();
+    const faction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
+    if (!faction) { dialogueTrade.style.display = 'none'; return; }
+    const stock = loadTradeStock(faction.id);
+
+    const rows = tradeOffer.map(r => {
+        const have = stock[r.good.id] ?? 0;
+        return '<div class="dlg-trade-row">'
+            + '<span class="dlg-trade-name">' + r.good.name
+            + '<span class="dlg-trade-note"> ' + have + ' 보유</span></span>'
+            + '<span class="dlg-trade-price">' + r.buy + '</span>'
+            + '<span class="dlg-trade-price">' + r.sell + '</span>'
+            + '<span class="dlg-trade-btns">'
+            + '<button data-trade-buy="' + r.good.id + '" ' + (faction.gold < r.sell ? 'disabled' : '') + '>매입</button>'
+            + '<button data-trade-sell="' + r.good.id + '" ' + (have > 0 ? '' : 'disabled') + '>매도</button>'
+            + '</span></div>';
+    }).join('');
+
+    dialogueTrade.innerHTML = '<div class="dlg-trade-head">'
+        + '<span>물자</span><span>도시 매입가</span><span>도시 매도가</span><span></span>'
+        + '<span class="dlg-trade-gold">보유 ' + faction.gold.toLocaleString() + '金</span>'
+        + '</div>'
+        + '<div class="dlg-trade-rows">' + rows + '</div>'
+        + '<div class="dlg-trade-note">10자 단위로 거래한다. 대화가 끝나도 물자는 남는다.</div>';
+    dialogueTrade.style.display = 'flex';
+}
+/** 매입/매도 실행. 10자 단위. */
+function runTrade(goodId: string, mode: 'buy' | 'sell'): void {
+    if (!engine || !tradeCityId) return;
+    const row = tradeOffer.find(r => r.good.id === goodId);
+    if (!row) return;
+    const store = engine['store'];
+    const faction = store.getFaction(store.getGlobalState().playerFactionId ?? '');
+    if (!faction) return;
+    const stock = loadTradeStock(faction.id);
+    const unit = 10;
+    const price = mode === 'buy' ? row.sell : row.buy;
+
+    if (mode === 'buy') {
+        if (faction.gold < price * unit) {
+            dialogueResult.textContent = '금화가 부족합니다.';
+            dialogueResult.style.display = 'block';
+            return;
+        }
+        faction.gold -= price * unit;
+        stock[goodId] = (stock[goodId] ?? 0) + unit;
+        dialogueResult.textContent = `${row.good.name} ${unit}자 매입 (${price * unit}金)`;
+    } else {
+        const have = stock[goodId] ?? 0;
+        if (have < unit) {
+            dialogueResult.textContent = '가진 물자가 부족합니다.';
+            dialogueResult.style.display = 'block';
+            return;
+        }
+        stock[goodId] = have - unit;
+        faction.gold += price * unit;
+        dialogueResult.textContent = `${row.good.name} ${unit}자 매도 (${price * unit}金)`;
+    }
+    saveTradeStock(faction.id, stock);
+    dialogueResult.style.display = 'block';
+    renderTradePanel();
+}
+
+/* ============================================================
+   진입점 — 시설 클릭
+   ============================================================ */
+
+/** 시장 클릭 -> 불량배 사건 대화. */
+function openMarketDialogue(cityId: string): void {
+    if (!engine) return;
+    const store = engine['store'];
+    const city = store.getCity(cityId);
+    if (!city) return;
+    const gs = store.getGlobalState();
+    const time = gs.time;
+
+    const script = buildMarketScript({
+        cityName: city.name,
+        commerce: city.developmentStats.commerce,
+        publicOrder: city.developmentStats.publicOrder,
+        danger: city.danger,
+        gold: city.funds,
+        population: city.population,
+        isCapital: city.isCapital,
+        seed: `${city.id}|${time.year}|${time.month}`,
+    });
+    activeRunner = new ScriptRunner(script);
+    activeScriptContext = { cityId };
+    renderScriptNode();
+}
+
+/** 교역소/시장 클릭 -> 교역 대화. 대도시면 교역소가 있다. */
+function openTradeDialogue(cityId: string): void {
+    if (!engine) return;
+    const store = engine['store'];
+    const city = store.getCity(cityId);
+    if (!city) return;
+    const gs = store.getGlobalState();
+    const seed = `${city.id}|${gs.time.year}|${gs.time.month}`;
+    const isTradePost = hasTradePost({
+        population: city.population, isCapital: city.isCapital, seed,
+    });
+    const input = {
+        cityName: city.name,
+        commerce: city.developmentStats.commerce,
+        publicOrder: city.developmentStats.publicOrder,
+        month: gs.time.month,
+        gold: (store.getFaction(gs.playerFactionId ?? '')?.gold) ?? 0,
+        isTradePost,
+        seed,
+    };
+    tradeOffer = buildTradeOffer(input);
+    tradeCityId = cityId;
+    activeRunner = new ScriptRunner(buildTradeScript(input));
+    activeScriptContext = { cityId };
+    renderScriptNode();
+}
 function renderDialoguePage(): void {
     if (!dialogueState) return;
     const state = dialogueState;
     const page = state.pages[state.index];
     if (!page) return;
     dialogueTitle.textContent = page.title;
-    dialogueSubtitle.textContent = page.subtitle ?? '';
-    paintDialogueIdentity(page);
+    paintDialogueStage(page);
     // 대사(빈 줄 앞)와 참고(빈 줄 뒤)를 나눠 그린다.
     // 참고를 같은 크기로 꿰으면 '말'인지 '정보'인지 읽을 수 없다.
     const sep = page.text.indexOf('\n\n');
@@ -1152,19 +1507,46 @@ function closeDialogue(): void {
     const onClose = dialogueState?.onClose;
     dialogueState = null;
     dialogueModal.style.display = 'none';
+    // 스크립트 대화가 끝났으면 상태를 버린다. 다음 클릭에 이전 대화가 남으면 안 된다.
+    endScript();
     onClose?.();
 }
 
-dialoguePrev.addEventListener('click', () => {
-    if (!dialogueState || dialogueState.index <= 0) return;
-    dialogueState.index -= 1;
+/** 연쇄 대화가 떠 있으면 일반 페이지 이동 대신 스크립트를 움직인다. */
+function stepDialogue(delta: 1 | -1): void {
+    if (activeRunner) {
+        if (delta === 1) {
+            const r = activeRunner.advance();
+            if (r.ended) { closeDialogue(); return; }
+        } else {
+            if (!activeRunner.canGoBack) return;
+            activeRunner.back();
+        }
+        renderScriptNode();
+        return;
+    }
+    if (!dialogueState) return;
+    if (delta === 1 && dialogueState.index >= dialogueState.pages.length - 1) return;
+    if (delta === -1 && dialogueState.index <= 0) return;
+    dialogueState.index += delta;
     renderDialoguePage();
+}
+
+/** 대화가 닫히면 스크립트 상태를 버린다 — 다음 클릭에 이전 대화가 남으면 안 된다. */
+function endScript(): void {
+    activeRunner = null;
+    activeScriptContext = null;
+    tradeCityId = null;
+    dialogueTrade.style.display = 'none';
+}
+
+dialoguePrev.addEventListener('click', () => stepDialogue(-1));
+dialogueNext.addEventListener('click', () => stepDialogue(1));
+dlgContinue.addEventListener('click', () => {
+    if (dlgContinue.disabled) return;
+    stepDialogue(1);
 });
-dialogueNext.addEventListener('click', () => {
-    if (!dialogueState || dialogueState.index >= dialogueState.pages.length - 1) return;
-    dialogueState.index += 1;
-    renderDialoguePage();
-});
+document.getElementById('dialogue-close')!.addEventListener('click', closeDialogue);
 document.getElementById('dialogue-close')!.addEventListener('click', closeDialogue);
 
 /**
@@ -1200,8 +1582,20 @@ dialogueModal.addEventListener('keydown', (event) => {
     target.click();
 });
 
+// 교역 패널은 dialogue-choices 의 형제라 별도 핸들러가 필요하다.
+// 이 등록은 반드시 모듈 최상단에서 한 번만 한다.
+// dialogueChoices 핸들러 안에 넣으면 선택지를 누를 때마다 리스너가 하나씩 늘어난다.
+dialogueTrade.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement;
+    const buyBtn = target.closest('[data-trade-buy]') as HTMLElement | null;
+    if (buyBtn) { runTrade(buyBtn.dataset.tradeBuy!, 'buy'); return; }
+    const sellBtn = target.closest('[data-trade-sell]') as HTMLElement | null;
+    if (sellBtn) { runTrade(sellBtn.dataset.tradeSell!, 'sell'); return; }
+});
+
 dialogueChoices.addEventListener('click', (event) => {
     const target = event.target as HTMLElement;
+
     const giftSend = target.closest('[data-gift-send]') as HTMLButtonElement | null;
     if (giftSend && dialogueState) {
         const page = dialogueState.pages[dialogueState.index];
@@ -1229,8 +1623,9 @@ dialogueChoices.addEventListener('click', (event) => {
     dialogueResult.textContent = message;
     dialogueResult.style.display = 'block';
     button.disabled = true;
+    // 연쇄 대화면 선택한 자리에 이어지는 장면이 있다. 바로 넘어간다.
+    if (activeRunner) renderScriptNode();
 });
-
 // === 무장 상세 표시 [27][11] ===
 
 /**
@@ -1633,6 +2028,8 @@ function openFacilityDialogue(cityId: string, type: FacilityType): void {
     const store = engine['store'];
     const city = store.getCity(cityId);
     if (!city) return;
+    // 시장/창고는 '설비 투자' 창이 아니라 사건 대화가 먼저다. [신규 기능]
+    if (type === FacilityType.MARKET) { openMarketDialogue(cityId); return; }
     const isPlayerCity = city.ownerId === store.getGlobalState().playerFactionId;
     const row = getFacilityRows(city).find(item => item.type === type);
     if (!row) return;
@@ -4937,6 +5334,8 @@ window.__game = {
     getEngine: () => engine,
     getStore: () => engine?.['store'] ?? null,
     openCity: (cityId: string) => { showCityInfo(cityId); return true; },
+    /** E2E/디버그용: 교역소 대화를 직접 연다. */
+    openTradeDialogue: (cityId: string) => { openTradeDialogue(cityId); return true; },
     getCitySceneBuildings: () => citySceneBuildings.map(building => ({
         id: building.id, type: building.type, level: building.level,
         investment: building.investment, active: building.active, label: building.label,
