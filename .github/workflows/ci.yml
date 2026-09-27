@@ -2,11 +2,29 @@ name: CI
 
 on:
   push:
-    branches: [main, hippocamp]
+    branches: [master]
   pull_request:
-    branches: [main, hippocamp]
+    branches: [master]
 
 jobs:
+  ip-gate:
+    # 파생작 자산이 리모트에 올라가면 되돌릴 수 없다(공개 저장소).
+    # pre-push 훅은 clone 마다 설치해야 하지만 이 잡은 항상 돈다.
+    # 전체 히스토리를 스캔하므로 과거에 실렸던 경우에도 걸린다.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 전체 히스토리 스캔이 필요하다 — 얕은 clone 이면 최근 커밋만 보인다.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Block derived-work assets
+        run: node scripts/check_ip_assets.mjs --all
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -37,7 +55,7 @@ jobs:
   deploy:
     # 테스트 통과 시 기본 브랜치에 한해 GitHub Pages 배포
     needs: test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/hippocamp')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       pages: write
