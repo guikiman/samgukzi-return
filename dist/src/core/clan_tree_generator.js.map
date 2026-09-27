@@ -1,1 +1,0 @@
-{"version":3,"file":"clan_tree_generator.js","sourceRoot":"","sources":["../../../src/core/clan_tree_generator.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,iBAAiB;IACnB,QAAQ,CAAC,QAAa;QACzB,OAAO,CAAC,GAAG,CAAC,qBAAqB,CAAC,CAAC;QACnC,OAAO,EAAE,CAAC;IACd,CAAC;CACJ"}

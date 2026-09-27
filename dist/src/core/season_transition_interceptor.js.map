@@ -1,1 +1,0 @@
-{"version":3,"file":"season_transition_interceptor.js","sourceRoot":"","sources":["../../../src/core/season_transition_interceptor.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,2BAA2B;IAC7B,cAAc,CAAC,SAAiB;QACnC,OAAO,CAAC,GAAG,CAAC,cAAc,SAAS,OAAO,CAAC,CAAC;IAChD,CAAC;CACJ"}

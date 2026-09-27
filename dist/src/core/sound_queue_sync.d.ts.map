@@ -1,1 +1,0 @@
-{"version":3,"file":"sound_queue_sync.d.ts","sourceRoot":"","sources":["../../../src/core/sound_queue_sync.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,OAAO,EAAE,QAAQ,EAAE,MAAM,aAAa,CAAC;AAGvC,qBAAa,cAAc;IACb,OAAO,CAAC,QAAQ,CAAC,GAAG;gBAAH,GAAG,EAAE,QAAQ;IAE1C,SAAS,CAAC,OAAO,EAAE,MAAM,EAAE,MAAM,SAAI,EAAE,IAAI,UAAQ,GAAG,IAAI;CAI3D"}

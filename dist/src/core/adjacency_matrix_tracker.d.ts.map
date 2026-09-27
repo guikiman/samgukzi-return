@@ -1,1 +1,0 @@
-{"version":3,"file":"adjacency_matrix_tracker.d.ts","sourceRoot":"","sources":["../../../src/core/adjacency_matrix_tracker.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,qBAAa,sBAAsB;IAC/B,OAAO,CAAC,MAAM,CAA+C;IAEtD,WAAW,CAAC,CAAC,EAAE,MAAM,EAAE,CAAC,EAAE,MAAM,EAAE,MAAM,EAAE,MAAM,GAAG,IAAI;CAIjE"}

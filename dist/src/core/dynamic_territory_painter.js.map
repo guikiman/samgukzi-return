@@ -1,1 +1,0 @@
-{"version":3,"file":"dynamic_territory_painter.js","sourceRoot":"","sources":["../../../src/core/dynamic_territory_painter.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,uBAAuB;IACzB,cAAc,CAAC,aAAqB,EAAE,aAAqB;QAC9D,OAAO,CAAC,GAAG,CAAC,UAAU,aAAa,SAAS,aAAa,SAAS,CAAC,CAAC;IACxE,CAAC;CACJ"}

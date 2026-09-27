@@ -1,1 +1,0 @@
-{"version":3,"file":"state_immutability.d.ts","sourceRoot":"","sources":["../../../src/core/state_immutability.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,wBAAgB,UAAU,CAAC,CAAC,EAAE,GAAG,EAAE,CAAC,GAAG,CAAC,CAQvC;AAED,wBAAgB,SAAS,CAAC,CAAC,EAAE,GAAG,EAAE,CAAC,GAAG,CAAC,CAkBtC;AAED,wBAAgB,WAAW,CAAC,CAAC,SAAS,MAAM,EAAE,KAAK,EAAE,CAAC,GAAG,QAAQ,CAAC,CAAC,CAAC,CAEnE"}

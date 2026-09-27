@@ -1,1 +1,0 @@
-{"version":3,"file":"ap_calculator.js","sourceRoot":"","sources":["../../../src/core/ap_calculator.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,YAAY;IACd,WAAW,CAAC,YAAoB,EAAE,OAAe;QACpD,OAAO,IAAI,CAAC,KAAK,CAAC,YAAY,GAAG,GAAG,GAAG,OAAO,GAAG,IAAI,CAAC,CAAC;IAC3D,CAAC;CACJ"}

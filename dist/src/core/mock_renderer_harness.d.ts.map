@@ -1,1 +1,0 @@
-{"version":3,"file":"mock_renderer_harness.d.ts","sourceRoot":"","sources":["../../../src/core/mock_renderer_harness.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,OAAO,EAAE,SAAS,EAAa,MAAM,yBAAyB,CAAC;AAE/D,qBAAa,mBAAmB;IAC9B,MAAM,CAAC,KAAK,EAAE,SAAS,GAAG,MAAM;IAchC,aAAa,CAAC,KAAK,EAAE,SAAS,GAAG,MAAM;CAMxC"}

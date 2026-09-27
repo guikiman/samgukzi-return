@@ -1,1 +1,0 @@
-{"version":3,"file":"modding_schema_validator.js","sourceRoot":"","sources":["../../../src/core/modding_schema_validator.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,sBAAsB;IACxB,QAAQ,CAAC,IAAS;QACrB,OAAO,CAAC,GAAG,CAAC,eAAe,CAAC,CAAC;QAC7B,OAAO,IAAI,CAAC;IAChB,CAAC;CACJ"}

@@ -1,1 +1,0 @@
-{"version":3,"file":"cohabitation_manager.js","sourceRoot":"","sources":["../../../src/core/cohabitation_manager.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,mBAAmB;IACrB,iBAAiB,CAAC,OAAY,EAAE,IAAS;QAC5C,OAAO,CAAC,GAAG,CAAC,YAAY,OAAO,CAAC,IAAI,KAAK,IAAI,CAAC,IAAI,YAAY,CAAC,CAAC;IACpE,CAAC;CACJ"}

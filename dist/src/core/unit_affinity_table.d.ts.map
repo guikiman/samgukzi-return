@@ -1,1 +1,0 @@
-{"version":3,"file":"unit_affinity_table.d.ts","sourceRoot":"","sources":["../../../src/core/unit_affinity_table.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAEH,MAAM,MAAM,QAAQ,GAAG,UAAU,GAAG,SAAS,GAAG,QAAQ,GAAG,OAAO,CAAC;AAEnE,qBAAa,iBAAiB;IAC5B,OAAO,CAAC,MAAM,CAAC,QAAQ,CAAC,MAAM,CAK5B;IAEF,WAAW,CAAC,QAAQ,EAAE,QAAQ,EAAE,QAAQ,EAAE,QAAQ,GAAG,MAAM;CAG5D"}

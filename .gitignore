@@ -38,3 +38,9 @@ src-tauri/gen/
 #   scripts/check_ip_assets.mjs 가 경로와 blob id 를 함께 검사하고,
 #   .githooks/pre-push 와 CI(ip-gate) 가 그것을 강제한다.
 assets/china-national-map.png
+
+# 빌드 산출물 — 커밋하지 않는다. 배포는 CI 가 npm run build 로 만든다.
+# 추적을 끊어야 한다: 커밋된 dist 는 src/ 와 어긋나 새 클론에서 게임이 부팅되지 않는다.
+# (2026-09-27 실측: fresh clone 은 E2E 실패, build 후 19/19 통과)
+dist/
+sw-precache.json

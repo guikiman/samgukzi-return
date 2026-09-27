@@ -1,1 +1,0 @@
-{"version":3,"file":"resignation_ai.js","sourceRoot":"","sources":["../../../src/core/resignation_ai.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,aAAa;IACf,YAAY,CAAC,OAAY,EAAE,KAAU;QACxC,OAAO,OAAO,CAAC,OAAO,GAAG,EAAE,IAAI,CAAC,KAAK,CAAC,QAAQ,IAAI,OAAO,CAAC,IAAI,GAAG,EAAE,CAAC,CAAC;IACzE,CAAC;CACJ"}

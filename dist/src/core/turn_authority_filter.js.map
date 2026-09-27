@@ -1,1 +1,0 @@
-{"version":3,"file":"turn_authority_filter.js","sourceRoot":"","sources":["../../../src/core/turn_authority_filter.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,mBAAmB;IACrB,MAAM,CAAC,IAAY,EAAE,KAAa;QACrC,IAAI,IAAI,KAAK,OAAO;YAAE,OAAO,IAAI,CAAC;QAClC,IAAI,IAAI,KAAK,SAAS,IAAI,KAAK,KAAK,UAAU;YAAE,OAAO,IAAI,CAAC;QAC5D,OAAO,KAAK,CAAC;IACjB,CAAC;CACJ"}

@@ -1,1 +1,0 @@
-{"version":3,"file":"reverence_system.js","sourceRoot":"","sources":["../../../src/core/reverence_system.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,eAAe;IACjB,cAAc,CAAC,QAAa,EAAE,MAAW;QAC5C,OAAO,CAAC,MAAM,CAAC,GAAG,GAAG,QAAQ,CAAC,GAAG,CAAC,GAAG,EAAE,IAAI,CAAC,MAAM,CAAC,KAAK,GAAG,QAAQ,CAAC,KAAK,CAAC,GAAG,EAAE,CAAC;IACpF,CAAC;CACJ"}

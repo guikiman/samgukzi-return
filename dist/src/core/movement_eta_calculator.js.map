@@ -1,1 +1,0 @@
-{"version":3,"file":"movement_eta_calculator.js","sourceRoot":"","sources":["../../../src/core/movement_eta_calculator.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,qBAAqB;IACvB,YAAY,CAAC,QAAgB,EAAE,KAAa;QAC/C,OAAO,IAAI,CAAC,KAAK,CAAC,QAAQ,GAAG,KAAK,CAAC,CAAC;IACxC,CAAC;CACJ"}

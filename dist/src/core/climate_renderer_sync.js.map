@@ -1,1 +1,0 @@
-{"version":3,"file":"climate_renderer_sync.js","sourceRoot":"","sources":["../../../src/core/climate_renderer_sync.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,mBAAmB;IACrB,IAAI,CAAC,OAAe;QACvB,OAAO,CAAC,GAAG,CAAC,aAAa,OAAO,UAAU,CAAC,CAAC;IAChD,CAAC;CACJ"}

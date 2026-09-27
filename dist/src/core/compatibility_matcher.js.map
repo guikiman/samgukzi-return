@@ -1,1 +1,0 @@
-{"version":3,"file":"compatibility_matcher.js","sourceRoot":"","sources":["../../../src/core/compatibility_matcher.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,oBAAoB;IACtB,gBAAgB,CAAC,CAAM,EAAE,CAAM;QAClC,OAAO,IAAI,CAAC,GAAG,CAAC,CAAC,CAAC,WAAW,GAAG,CAAC,CAAC,WAAW,CAAC,GAAG,EAAE,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,CAAC;IAClE,CAAC;CACJ"}

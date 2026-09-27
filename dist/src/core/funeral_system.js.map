@@ -1,1 +1,0 @@
-{"version":3,"file":"funeral_system.js","sourceRoot":"","sources":["../../../src/core/funeral_system.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,aAAa;IACf,aAAa,CAAC,QAAa,EAAE,QAAa;QAC7C,OAAO,CAAC,GAAG,CAAC,YAAY,QAAQ,CAAC,IAAI,KAAK,QAAQ,CAAC,IAAI,WAAW,CAAC,CAAC;IACxE,CAAC;CACJ"}

@@ -1,1 +1,0 @@
-{"version":3,"file":"civil_petition_manager.js","sourceRoot":"","sources":["../../../src/core/civil_petition_manager.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,MAAM,OAAO,oBAAoB;IACtB,eAAe,CAAC,YAAoB,EAAE,MAA2B;QACpE,OAAO,CAAC,GAAG,CAAC,cAAc,YAAY,OAAO,CAAC,CAAC;QAC/C,OAAO,EAAE,SAAS,EAAE,MAAM,KAAK,QAAQ,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,CAAC,CAAC,EAAE,CAAC;IACxD,CAAC;CACJ"}

@@ -1,1 +1,0 @@
-{"version":3,"file":"event_reward_distributor.d.ts","sourceRoot":"","sources":["../../../src/core/event_reward_distributor.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AACH,qBAAa,sBAAsB;IACxB,UAAU,CAAC,OAAO,EAAE,GAAG,EAAE,OAAO,EAAE;QAAE,IAAI,EAAE,MAAM,CAAC;QAAC,KAAK,EAAE,MAAM,CAAA;KAAE,GAAG,IAAI;CAIlF"}
