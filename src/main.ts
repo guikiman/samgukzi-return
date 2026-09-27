@@ -53,6 +53,28 @@ import { resolveCityClimateRegion } from './core/monthly_report.js';
 import { computeVagrantStrength } from './core/vagrant_monthly_actions.js';
 import { DIFFICULTY_MULTIPLIERS } from './core/difficulty_balance_system.js';
 import { TutorialSystem } from './core/tutorial_system.js';
+// 온보딩 4-PR 통합 배선 [461-480] — 상태(PR1)/패널(PR2)/카피(PR3)가 여기서 만난다.
+import {
+    ONBOARDING_FACTION_OPTIONS,
+    ONBOARDING_TOTAL_STEPS,
+    completeOnboardingFlow,
+    deferOnboardingFlow,
+    dismissOnboardingFlow,
+    getOnboardingState,
+    setOnboardingStep,
+    shouldShowOnboarding,
+} from './core/onboarding_state.js';
+import {
+    parseOnboardingPanel,
+    renderOnboardingPanel,
+    type OnboardingPanelAction,
+    type OnboardingStepCopy,
+} from './ui/onboarding_panel.js';
+import onboardingCopyJson from './data/onboarding_copy.json' with { type: 'json' };
+
+/** 카피 카탈로그(JSON)를 패널이 쓰는 배열 형태로 펼친다 — 순서 보존이 단계 순서다. */
+const onboardingCopyEntries: readonly OnboardingStepCopy[] =
+    Object.values(onboardingCopyJson as Record<string, OnboardingStepCopy>);
 import { RelationshipGraphViewer } from './core/relationship_graph_viewer.js';
 import {
     loadAccessibilitySettings, saveAccessibilitySettings, accessibilityAttributes,
@@ -2360,8 +2382,17 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
     prevSettlement = computeSettlement(engine['store']);
     latestSettlement = prevSettlement;
 
-    // 첫 플레이 자동 튜토리얼 [461-480] — 신규 시작에서만 표시
-    if (world && tutorial.shouldShowOnStart()) openTutorial(true);
+    // 첫 플레이 자동 튜토리얼 [461-480] — 신규 시작에서만 표시.
+    // 온보딩이 활성 상태면 그 패널이 우선한다(안내 범위가 더 넓고 취향 선택까지 한다).
+    if (world && (isOnboardingActive() || tutorial.shouldShowOnStart())) {
+        if (isOnboardingActive()) {
+            renderGuidedStep();
+            tutorialPanel.style.display = 'block';
+            addLog('첫 플레이군요 — 온보딩을 시작합니다. 「❓ 도움말」로 언제든 다시 볼 수 있습니다.');
+        } else {
+            openTutorial(true);
+        }
+    }
 
     isRunning = true;
     isPaused = false;
@@ -3106,7 +3137,7 @@ function closeTutorial(markDone: boolean): void {
 }
 
 btnHelp.addEventListener('click', () => {
-    if (!tutorialPanel.style.display || tutorialPanel.style.display === 'none') openTutorial(false);
+    if (!tutorialPanel.style.display || tutorialPanel.style.display === 'none') openGuidedPanel();
     else closeTutorial(false);
 });
 document.getElementById('tut-prev')!.addEventListener('click', () => { tutorial.prev(); renderTutorialStep(); });
@@ -3117,6 +3148,111 @@ document.getElementById('tut-finish')!.addEventListener('click', () => {
     addLog('게임 안내 완료 — 중원 통일을 향해 나아가세요!');
 });
 document.getElementById('tut-close')!.addEventListener('click', () => closeTutorial(false));
+
+// ============================================================
+// 온보딩 상태 ↔ 튜토리얼 패널 배선 [461-480]
+// ============================================================
+// 4-PR 분할의 통합 지점. 이 블록이 없으면 상태·패널·카피가 서로 모른다.
+//
+// 설계:
+// - 상태는 src/core/onboarding_state.ts 가 단독 소유. 여기서 로컬 복제하지 않는다.
+// - 렌더는 src/ui/onboarding_panel.ts 가 단독 소유. DOM에 손대지 않는다.
+// - 이 블록은 그 둘을 잇는 배선만 한다: innerHTML 주입, 클릭 바인딩, 스포트라이트.
+// - 온보딩은 기본적으로 비활성이다. 온보딩 상태가 존재할 때만 기존 튜토리얼을 대체한다.
+
+const ONBOARDING_COPY: readonly OnboardingStepCopy[] = onboardingCopyEntries;
+
+/** 온보딩을 실제로 보여줄지. 완료·철회하면 영구적으로 false. */
+function isOnboardingActive(): boolean {
+    return shouldShowOnboarding(getOnboardingState());
+}
+
+/**
+ * 튜토리얼 패널을 온보딩 모드로 렌더한다.
+ * 온보딩이 비활성이면 기존 TutorialSystem 경로로 되돌린다.
+ */
+function renderGuidedStep(): void {
+    if (!isOnboardingActive()) {
+        renderTutorialStep();
+        return;
+    }
+    const state = getOnboardingState();
+    const html = renderOnboardingPanel(state, {
+        steps: ONBOARDING_COPY,
+        totalSteps: ONBOARDING_TOTAL_STEPS,
+        factionNames: Object.fromEntries(
+            ONBOARDING_FACTION_OPTIONS.map((f) => [f.id, `${f.name} ${f.leader}`]),
+        ),
+    });
+    document.getElementById('tut-step-content')!.innerHTML = html;
+
+    // 버튼 표시 제어 — 패널이 계산한 바인딩을 그대로 따른다.
+    const bindings = parseOnboardingPanel(html);
+    if (!bindings) return;
+    (document.getElementById('tut-prev') as HTMLButtonElement).disabled = bindings.isFirst;
+    document.getElementById('tut-next')!.style.display = bindings.isLast ? 'none' : '';
+    document.getElementById('tut-skip')!.style.display = bindings.isLast ? 'none' : '';
+    document.getElementById('tut-finish')!.style.display = bindings.isLast ? '' : 'none';
+
+    // 클릭 바인딩 — 패널이 낸 data-onboarding-action 을 상태 전이로 잇는다.
+    for (const el of Array.from(
+        document.querySelectorAll<HTMLElement>('[data-onboarding-action]'),
+    )) {
+        const action = el.dataset.onboardingAction as OnboardingPanelAction | undefined;
+        if (!action) continue;
+        el.addEventListener('click', () => {
+            const s = getOnboardingState();
+            if (action === 'prev') setOnboardingStep(s.stepIndex - 1);
+            else if (action === 'next') setOnboardingStep(s.stepIndex + 1);
+            else if (action === 'skip') { dismissOnboardingFlow(); closeTutorial(true); return; }
+            else if (action === 'defer') { deferOnboardingFlow(); closeTutorial(false); return; }
+            else if (action === 'finish') {
+                completeOnboardingFlow();
+                closeTutorial(true);
+                addLog('온보딩 완료 — 선택하신 설정으로 시작합니다.');
+                return;
+            }
+            renderGuidedStep();
+        });
+    }
+
+    // 폴백 문구는 단계 카피의 제목 — spotlight 을 못 찾았을 때 무엇을 찾는지 알려준다.
+    const stepCopy = ONBOARDING_COPY[state.stepIndex];
+    applyOnboardingSpotlight(bindings.spotlight, stepCopy?.title ?? '');
+}
+
+/** 온보딩 스포트라이트 — 기존 튜토리얼과 같은 클래스와 폴백 문구를 쓴다. */
+let obSpotlightEl: HTMLElement | null = null;
+
+function applyOnboardingSpotlight(selector: string | null, fallbackNote: string): void {
+    clearOnboardingSpotlight();
+    const el = selector ? document.querySelector<HTMLElement>(selector) : null;
+    if (el) {
+        el.classList.add('tut-spotlight');
+        obSpotlightEl = el;
+        try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { /* 구형 브라우저 무시 */ }
+    }
+    // 대상을 못 찾으면 위치 설명으로 대체 안내 [461-480] — 기존 튜토리얼과 같은 계약.
+    const note = document.getElementById('tut-spotlight-note');
+    if (note) note.textContent = !el && fallbackNote ? `▸ ${fallbackNote}` : '';
+}
+
+function clearOnboardingSpotlight(): void {
+    if (obSpotlightEl) {
+        obSpotlightEl.classList.remove('tut-spotlight');
+        obSpotlightEl = null;
+    }
+}
+
+/** 온보딩이 있으면 그것을, 없으면 기존 튜토리얼을 연다. */
+function openGuidedPanel(): void {
+    if (isOnboardingActive()) {
+        renderGuidedStep();
+    } else {
+        openTutorial(false);
+    }
+    tutorialPanel.style.display = 'block';
+}
 
 // ============================================================
 // 접근성 설정 패널 [461-480] — 글꼴 전환·글자 크기·화면 흔들림
