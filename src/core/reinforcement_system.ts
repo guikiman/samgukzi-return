@@ -9,8 +9,8 @@
  *     → 조회 실패로 항상 false, 증원 기능이 전 시나리오에서 무동작이었다.
  *  2) 좌표 스케일까지 달랐다(여기 pixel 0~800 vs scenario_system 0~1 정규화).
  * 도시 좌표는 scenario_system 의 CITY_MAP_COORDS(전술 좌표) 하나만 쓴다.
- * 스크립트도 도시 id 를 받도록 바꿔 호출부가 이름으로 우연히 동작하는
- * 경우를 막는다.
+ * id 와 이름 둘 다 받아들이지만, 좌표는 이름 기준으로만 해석한다 —
+ * 두 표가 어긋나던 근본 원인이 표를 복사하는 행위였기 때문이다.
  */
 
 import type { City, Officer, Army } from './types.js';
