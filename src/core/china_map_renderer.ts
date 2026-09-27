@@ -366,11 +366,23 @@ export class ChinaMapRenderer {
 
     /**
      * 정규화 좌표(0~1) → 화면 픽셀 사각형.
-     * 배경 비트맵 없이 스케치 데이터 지도 전용: 대륙 비율(1 : 0.92)에 맞춘 균일 배율.
+     *
+     * assets/map-china-4096.webp 는 4096×4096 정사각 이미지다. 이전 코드는
+     * 「대륙 비율 1 : 0.92」를 가정해 baseScale 을 Math.min(width, height/0.92)
+     * 로 잡았는데, 그 값은 height 를 초과해 아래쪽 44~69px 가 캔버스 밖으로
+     * 잘린다(1584×796 에서 51px). 남부 도시(계양 y=0.72, 교지 y=0.79)가
+     * 잘리는 쪽이라 실제로 보이지 않았다.
+     *
+     * 정사각 이미지를 캔버스에 contain 으로 넣는다: scale = min(w,h)·0.96.
      */
     private mapImageRect(width: number, height: number): { x: number; y: number; width: number; height: number } {
-        const baseScale = Math.min(width / 1.0, height / 0.92) * 0.96 * this.zoom;
-        return { x: width / 2 + this.offsetX - baseScale / 2, y: height / 2 + this.offsetY - baseScale * 0.46, width: baseScale, height: baseScale };
+        const baseScale = this.baseScale();
+        return {
+            x: width / 2 + this.offsetX - baseScale / 2,
+            y: height / 2 + this.offsetY - baseScale / 2,
+            width: baseScale,
+            height: baseScale,
+        };
     }
 
     private normToPixel(x: number, y: number, width: number, height: number): { px: number; py: number } {
@@ -997,7 +1009,10 @@ export class ChinaMapRenderer {
     private baseScale(): number {
         const width = this.canvas.width;
         const height = this.canvas.height;
-        return Math.min(width / 1.0, height / 0.92) * 0.96 * this.zoom;
+        // [수정] 정사각(4096×4096) 비트맵을 캔버스에 contain 으로 넣는다.
+        // 이전의 Math.min(width/1.0, height/0.92) 는 height 를 초과해
+        // 남부 44~69px 를 잘랐다. mapImageRect 도 이 값을 그대로 쓴다.
+        return Math.min(width, height) * 0.96 * this.zoom;
     }
 
     /** 테스트/디버그용: 현재 지도에 표시되는 세력 라벨 목록 */

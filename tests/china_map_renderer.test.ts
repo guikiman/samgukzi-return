@@ -6,6 +6,7 @@ import { ChinaMapRenderer, pointInPolygon } from '../src/core/china_map_renderer
 import type { MapCityView } from '../src/core/china_map_renderer';
 import { CITY_IMAGE_ANCHORS, MAP_FEATURE_ANCHORS } from '../src/core/scenario_system';
 import mapCoords from '../assets/map-coordinates-4096.json';
+import scenarioIndex from '../src/data/scenarios/index.json';
 
 function createMockCanvas(): HTMLCanvasElement {
     const canvas = {
@@ -79,7 +80,88 @@ describe('ChinaMapRenderer', () => {
         // 정규→픽셀→정규 roundtrip (screenToNorm은 public)
         const norm = renderer.screenToNorm(600, 350);
         expect(norm.x).toBeCloseTo(0.5, 5);
-        expect(norm.y).toBeCloseTo(0.46, 5);
+        expect(norm.y).toBeCloseTo(0.5, 5);
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // [회귀] 지도 사각형이 캔버스를 넘지 않는다
+    //
+    // 배경: mapImageRect 가 「대륙 비율 1:0.92」를 가정해
+    // baseScale = min(width, height/0.92)*0.96 을 쓰고 있었다. 이 값은 항상
+    // height 를 초과해 남부 44~69px 가 캔버스 밖으로 잘렸다.
+    // 비트맵은 4096×4096 정사각이므로 min(width, height) 가 맞다.
+    // ─────────────────────────────────────────────────────────────
+    it('[회귀] 지도 사각형이 캔버스를 아래·오른쪽으로 넘지 않는다', () => {
+        const sizes: Array<[number, number]> = [
+            [1584, 796], [1284, 817], [1600, 900], [1920, 1080], [1000, 700], [1200, 700],
+        ];
+        for (const [w, h] of sizes) {
+            const canvas = { ...createMockCanvas(), width: w, height: h } as HTMLCanvasElement;
+            const renderer = new ChinaMapRenderer(canvas);
+            const r = (renderer as unknown as { mapImageRect(w: number, h: number): { x: number; y: number; width: number; height: number } })
+                .mapImageRect(w, h);
+            expect(r.x, `${w}x${h} 왼쪽`).toBeGreaterThanOrEqual(0);
+            expect(r.y, `${w}x${h} 위쪽`).toBeGreaterThanOrEqual(0);
+            expect(r.x + r.width, `${w}x${h} 오른쪽`).toBeLessThanOrEqual(w + 0.5);
+            expect(r.y + r.height, `${w}x${h} 아래쪽`).toBeLessThanOrEqual(h + 0.5);
+        }
+    });
+
+    it('[회귀] 정사각 비트맵이 캔버스에 contain 으로 들어간다 (여백이 남는다)', () => {
+        const canvas = { ...createMockCanvas(), width: 1000, height: 700 } as HTMLCanvasElement;
+        const renderer = new ChinaMapRenderer(canvas);
+        const r = (renderer as unknown as { mapImageRect(w: number, h: number): { width: number; height: number } })
+            .mapImageRect(1000, 700);
+        // 정사각 이미지 → 사각형도 정사각, 짧은 변(높이)에 맞춰진다
+        expect(r.width).toBeCloseTo(r.height, 6);
+        expect(r.height).toBeLessThanOrEqual(700);
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // [회귀] 모든 시나리오 수도/2차도시에 이미지 앵커가 존재한다
+    //
+    // 배경: 앵커가 없으면 CITY_MAP_COORDS(전술 좌표)로 폴백하는데 두 표의
+    // 스케일이 다르다(낙양 전술 0.55,0.34 vs 이미지 0.39,0.40). 조용히
+    // 엉뚱한 자리에 그려져 도시 클릭이 안 되거나 영토가 어긋났다.
+    // ─────────────────────────────────────────────────────────────
+    it('[회귀] 모든 시나리오 수도·2차도시에 이미지 앵커가 있다', () => {
+        const scenarios = (scenarioIndex as Array<{ factions: Array<{ capital: string }>; cities?: Array<{ name: string }> }>);
+        for (const s of scenarios) {
+            for (const f of s.factions) {
+                expect(CITY_IMAGE_ANCHORS[f.capital], `${f.capital} 앵커 없음`).toBeDefined();
+            }
+            for (const c of s.cities ?? []) {
+                expect(CITY_IMAGE_ANCHORS[c.name], `${c.name} 앵커 없음`).toBeDefined();
+            }
+        }
+    });
+
+    it('[회귀] 앵커는 0~1 정규화 범위 안이다', () => {
+        for (const [name, p] of Object.entries(CITY_IMAGE_ANCHORS)) {
+            expect(p.x, `${name} x`).toBeGreaterThanOrEqual(0);
+            expect(p.x, `${name} x`).toBeLessThanOrEqual(1);
+            expect(p.y, `${name} y`).toBeGreaterThanOrEqual(0);
+            expect(p.y, `${name} y`).toBeLessThanOrEqual(1);
+        }
+    });
+
+    it('[회귀] 보강된 앵커는 실제 위경도 역산값과 일치한다', () => {
+        // assets/map-coordinates-4096.json 의 42개 도시로 역산한 등각 투영 계수.
+        // 아래 값은 scripts/_anchor_calc.mjs 산출 결과(역산 오차 0.5px)다.
+        const X_PER_LON = 100.1256, X_OFF = -9660.4;
+        const Y_PER_LAT = -116.8896, Y_OFF = 5681.9;
+        const W = 4096;
+        const geo: Record<string, [number, number]> = {
+            '거록': [37.35, 115.03], '연주': [35.60, 116.60], '하비': [34.10, 117.95],
+            '여강': [32.05, 118.78], '수춘': [32.58, 116.78], '진류': [34.80, 114.30],
+            '청두': [30.67, 104.07], '항양': [32.05, 112.12], '부경': [30.25, 120.10],
+        };
+        for (const [name, [lat, lon]] of Object.entries(geo)) {
+            const a = CITY_IMAGE_ANCHORS[name];
+            expect(a, `${name} 앵커 없음`).toBeDefined();
+            expect(a.x, `${name} x`).toBeCloseTo((X_PER_LON * lon + X_OFF) / W, 3);
+            expect(a.y, `${name} y`).toBeCloseTo((Y_PER_LAT * lat + Y_OFF) / W, 3);
+        }
     });
 
     it('이미지 앵커 좌표를 우선하여 도시를 1:1로 찾는다', () => {

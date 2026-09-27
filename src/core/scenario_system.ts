@@ -183,6 +183,27 @@ export const CITY_IMAGE_ANCHORS: Record<string, { x: number; y: number }> = {
     '구주': { x: 0.8291, y: 0.4287 },
     '오키나와': { x: 0.7627, y: 0.6392 },
     '대만': { x: 0.6130, y: 0.6729 },
+
+    // ── 시나리오 수도 중 위 42개 표에 없던 도시 ──
+    // 앵커가 없으면 CITY_MAP_COORDS(전술 좌표, 다른 스케일)로 폴백해
+    // 도시가 지도 위 엉뚱한 자리에 그려졌다. 아래는 assets/map-coordinates-4096.json
+    // 의 42개 도시로 역산한 등각 투영 계수
+    //   x = 100.1256 * lon - 9660.4   (최대오차 0.5px)
+    //   y = -116.8896 * lat + 5681.9  (최대오차 0.6px)
+    // 에 각 도시의 실제 위경도를 넣어 계산했다.
+    '거록': { x: 0.4534, y: 0.3213 },
+    '연주': { x: 0.4918, y: 0.3712 },
+    '하비': { x: 0.5248, y: 0.4141 },
+    '여강': { x: 0.5451, y: 0.4726 },
+    '수춘': { x: 0.4962, y: 0.4574 },
+    '진류': { x: 0.4355, y: 0.3941 },
+    '청두': { x: 0.1855, y: 0.5119 },
+    '항양': { x: 0.3823, y: 0.4726 },
+    '부경': { x: 0.5773, y: 0.5239 },
+    '동정': { x: 0.5084, y: 0.4780 },
+    '진주': { x: 0.5062, y: 0.4095 },
+    '복양': { x: 0.4600, y: 0.3655 },
+    '평원': { x: 0.4527, y: 0.3884 },
 };
 
 
@@ -528,7 +549,13 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
         const mapCoord = sf.map_x !== undefined && sf.map_y !== undefined
             ? { x: sf.map_x, y: sf.map_y }
             : CITY_MAP_COORDS[sf.capital] ?? { x: 0.3 + (idx % 4) * 0.15, y: 0.3 + Math.floor(idx / 4) * 0.25 };
+        // [수정] 앵커가 없으면 전술 좌표를 그대로 쓰면 안 된다.
+        // 두 표는 스케일이 다르다(예: 낙양 전술 0.55,0.34 / 이미지 0.39,0.40).
+        // 조용히 엉뚱한 자리에 그려지므로 개발 중에 눈에 띄게 경고한다.
         const imageCoord = CITY_IMAGE_ANCHORS[sf.capital] ?? mapCoord;
+        if (!CITY_IMAGE_ANCHORS[sf.capital]) {
+            console.warn(`[scenario] '${sf.capital}' 에 이미지 앵커가 없다 — 전술 좌표로 그린다 (${mapCoord.x}, ${mapCoord.y})`);
+        }
         const cityProfile = sf.city_profile ?? {};
         const population = cityProfile.population ?? 40000 + idx * 5000;
         const development = cityProfile.development ?? 45 + (idx % 4) * 5;
@@ -579,7 +606,11 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
         const mapCoord = cityData.map_x !== undefined && cityData.map_y !== undefined
             ? { x: cityData.map_x, y: cityData.map_y }
             : CITY_MAP_COORDS[cityData.name] ?? { x: 0.4 + (cityIndex % 3) * 0.12, y: 0.45 + Math.floor(cityIndex / 3) * 0.1 };
+        // 수도와 같은 이유로 앵커 누락을 조용히 넘기지 않는다.
         const imageCoord = CITY_IMAGE_ANCHORS[cityData.name] ?? mapCoord;
+        if (!CITY_IMAGE_ANCHORS[cityData.name]) {
+            console.warn(`[scenario] 2차도시 '${cityData.name}' 에 이미지 앵커가 없다 — 전술 좌표로 그린다 (${mapCoord.x}, ${mapCoord.y})`);
+        }
         const profile = cityData.profile ?? {};
         const development = profile.development ?? 38 + cityIndex * 4;
         cities.push({
