@@ -360,7 +360,66 @@ async function main() {
         if (!recruitOfficerVisible || recruitOfficerVisible.faction !== 'fac_custom') {
             throw new Error('생성된 장수가 스토어에서 조회되지 않는다');
         }
-        const recruitProbe = { titleLabels, editorOpen: true, existingPainted, newPainted, emptyNameBlocked: true, randomFilled, pickProbe, recruitStarted, officer: recruitOfficerVisible };
+        // 6) 실제무장편집 경로: 편집값이 월드에 반영되는가
+        //    (기존에는 선택이 화면에만 남고 월드는 그대로였다)
+        await cdp.evaluate("document.getElementById('btn-editor-back').click()");
+        await delay(400);
+        await cdp.call('Page.reload');
+        await delay(1200);
+        let existingReloaded = false;
+        for (let i = 0; i < 60; i++) {
+            const r = await cdp.evaluate("!!document.getElementById('btn-title-recruit')");
+            if (r.value) { existingReloaded = true; break; }
+            await delay(250);
+        }
+        if (!existingReloaded) throw new Error('실제무장편집 경로용 새로고침 실패');
+
+        await cdp.evaluate("document.getElementById('btn-title-recruit').click()");
+        await delay(500);
+        // 편집값을 만든다: 이름을 바꾸고 능력치 하나를 극단으로 밀어 둔다
+        const pickedName = await cdp.evalJson(
+            "(function(){var c=document.querySelector('.roster-card');if(!c)return {missing:true};c.click();" +
+            "var n=document.getElementById('ed-existing-name');n.value='편집테스트';" +
+            "var s=document.querySelector('#ed-existing-stats input[type=range]');s.value='99';s.dispatchEvent(new Event('input'));" +
+            "return {name:document.getElementById('ed-existing-name').value," +
+            "slider:document.querySelector('#ed-existing-stats input[type=range]').value};})()");
+        if (pickedName.missing) throw new Error('기존 무장 카드가 없다');
+        if (pickedName.name !== '편집테스트') throw new Error('실제무장편집 이름 입력이 되지 않는다');
+        if (pickedName.slider !== '99') throw new Error('실제무장편집 슬라이더가 값을 받지 않는다');
+        const slidersReady = await cdp.evaluate("document.querySelectorAll('#ed-existing-stats input[type=range]').length");
+        if (slidersReady.value !== 5) throw new Error(`실제무장편집 슬라이더가 5개여야 한다: ${slidersReady.value}`);
+
+        await cdp.evaluate("document.getElementById('btn-ed-apply-existing').click()");
+        await delay(500);
+        const pickCards = await cdp.evaluate("document.querySelectorAll('#pick-scenario-list .pick-card:not(.blocked)').length");
+        if (!pickCards.value) throw new Error('실제무장편집 경로에서 시나리오가 뜨지 않는다');
+        await cdp.evaluate("document.querySelector('#pick-scenario-list .pick-card:not(.blocked)').click()");
+        await delay(400);
+        await cdp.evaluate("document.querySelector('.faction-card').click()");
+
+        // 월드에서 실제로 '편집테스트' 가 존재하고 능력치가 반영됐는지 본다
+        let existingStart = null;
+        for (let i = 0; i < 60; i++) {
+            existingStart = await cdp.evalJson(
+                "(function(){var s=window.__game.getStore();if(!s)return null;" +
+                "var o=s.getAllOfficers().find(function(x){return x.name==='편집테스트';});" +
+                "if(!o)return null;var g=s.getGlobalState();" +
+                "return {faction:o.factionId,player:g.playerFactionId,leadership:o.stats.leadership,rank:o.rank};})()");
+            if (existingStart) break;
+            await delay(500);
+        }
+        if (!existingStart) throw new Error('편집한 무장이 월드에 반영되지 않았다');
+        if (existingStart.leadership !== 99) {
+            throw new Error(`편집한 능력치가 반영되지 않았다: ${existingStart.leadership}`);
+        }
+        if (existingStart.player !== existingStart.faction) {
+            throw new Error('플레이어 세력과 소속 세력이 다르다');
+        }
+        const recruitProbe = {
+            titleLabels, editorOpen: true, existingPainted, newPainted,
+            emptyNameBlocked: true, randomFilled, pickProbe,
+            recruitStarted, officer: recruitOfficerVisible, existingStart,
+        };
 
         // isRunning 가드를 풀기 위해 새로고침 — 아래 시나리오 경로를 위해 타이틀로 복귀
         await cdp.call('Page.reload');
@@ -743,6 +802,8 @@ async function main() {
                 && flowProbe.recruitProbe.newPainted.portrait
                 && flowProbe.recruitProbe.newPainted.radar
                 && flowProbe.recruitProbe.newPainted.deploy === 4
+                && flowProbe.recruitProbe.existingStart?.leadership === 99
+                && flowProbe.recruitProbe.existingStart?.player === flowProbe.recruitProbe.existingStart?.faction
                 && flowProbe.recruitProbe.emptyNameBlocked
                 && flowProbe.recruitProbe.randomFilled.birth !== ''
                 && flowProbe.recruitProbe.randomFilled.name !== ''

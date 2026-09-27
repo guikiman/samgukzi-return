@@ -9,6 +9,7 @@
 import { OFFICER_PROFILES } from './officer_profile_schema.js';
 import type { OfficerProfile } from './officer_profile_schema.js';
 // EditableOfficer 는 여기서 정의하지 않는다. 시나리오 판정 모듈이 소유자다.
+import { MIN_AGE, MAX_AGE } from './officer_editor_scenarios.js';
 import type { EditableOfficer } from './officer_editor_scenarios.js';
 
 /** 렌더 상한 — 이 이상은 스크롤을 만들어 UX 를 해친다. */
@@ -35,14 +36,24 @@ function roster(): OfficerProfile[] {
     return CACHE;
 }
 
+export type RosterSort = 'birth-asc' | 'birth-desc' | 'playable';
+
 export interface RosterQuery {
-    /** 이름/자(별명) 부분 일치. 한 글자면 성(姓)(prefix) 우선 */
+    /** 이름 부분 일치 */
     text?: string;
     gender?: 'M' | 'F' | null;
     /** null 이면 하한 없음 */
     birthMin?: number | null;
     birthMax?: number | null;
     limit?: number;
+    /**
+     * 정렬. 기본은 birth-asc (연생 순이라 예측 가능하다).
+     * 편집 화면은 'playable' 을 쓴다 — 맨 앞 카드가 반드시 탈 수 있어야 하기 때문이다.
+     * 연생/역연 어느 쪽으로도 이르지 못한다. 111년생은 너무 늙고 249년생은 아직 태어나지 않았다.
+     */
+    sort?: RosterSort;
+    /** sort='playable' 일 때 판정 기준 연도 (보통 시나리오 시작 연도) */
+    playableYears?: readonly number[];
 }
 
 /**
@@ -68,11 +79,30 @@ export function searchRoster(query: RosterQuery = {}): OfficerProfile[] {
         matched.push(p);
     }
     // 출생연도 미상은 뒤로 보낸다 (null 을 0 으로 두면 맨 앞에 몰린다).
+    // 출생 연도 미상은 항상 뒤로 보낸다 (null 을 0 으로 두면 맨 앞에 몰린다).
+    const sort = query.sort ?? 'birth-asc';
+    if (sort === 'playable') {
+        // 몇 개의 시나리오에서든 탈 수 있는 무장부터 온다.
+        const years = query.playableYears ?? [];
+        const score = (p: OfficerProfile): number => {
+            if (p.birthYear === null) return -1;
+            let n = 0;
+            for (const y of years) {
+                if (p.deathYear !== null && p.deathYear <= y) continue;
+                const age = y - p.birthYear;
+                if (age >= MIN_AGE && age <= MAX_AGE) n++;
+            }
+            return n;
+        };
+        matched.sort((a, b) =>
+            score(b) - score(a) || a.birthYear! - b.birthYear! || a.name.localeCompare(b.name, 'ko'));
+        return matched.slice(0, limit);
+    }
     matched.sort((a, b) => {
         if (a.birthYear === null && b.birthYear === null) return a.name.localeCompare(b.name, 'ko');
         if (a.birthYear === null) return 1;
         if (b.birthYear === null) return -1;
-        return a.birthYear - b.birthYear || a.name.localeCompare(b.name, 'ko');
+        return sort === 'birth-desc' ? b.birthYear - a.birthYear : a.birthYear - b.birthYear;
     });
     return matched.slice(0, limit);
 }

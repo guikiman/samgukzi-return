@@ -183,3 +183,105 @@ export function buildCustomOfficerWorld(scenario: ScenarioData, input: CustomOff
         relationships: base.relationships,
     };
 }
+
+// ============================================================
+// 실제무장편집 — 기존 무장을 고쳐서 출발 [신규 기능]
+// ============================================================
+
+/** 기존 무장 편집값. 편집 화면에서 고친 부분만 담는다. */
+export interface ExistingOfficerEdit {
+    name: string;
+    birthYear: number;
+    gender: 'M' | 'F';
+    rank: number;
+    stats: OfficerStats;
+    specialty: string | null;
+}
+
+/**
+ * 월드 안에서 이름으로 무장을 찾는다.
+ *
+ * 왜 이름으로 찾는가:
+ * - 월드 무장 id 는 'cao_cao' 처럼 로마자 키이고 프로필 1200명의 id 는 'off_0123' 이다.
+ *   두 id 공간이 겹치지 않으므로 id 로는 이어지지 않는다.
+ * - 이름은 실제로 겹친다 (월드 68명 중 61명이 프로필 데이터셋에 존재).
+ * - 그래도 못 찾는 경우를 반드시 처리한다 — 그때는 새로 편입한다.
+ */
+export function findWorldOfficerByName(world: BuiltWorld, name: string): Officer | null {
+    const target = name.trim();
+    if (target === '') return null;
+    return world.officers.find(o => o.name === target) ?? null;
+}
+
+/**
+ * 기존 무장을 편집값으로 출발하는 월드를 만든다.
+ *
+ * 두 갈래로 갈린다:
+ * - 월드에 이미 있는 무장이면 → 그 무장을 고쳐서 쓴다 (역사적 위치 유지)
+ * - 없으면 → 고른 세력에 새로 편입한다
+ *
+ * 어느 쪽이든 플레이어는 '고른 세력'을 조종한다. 새 세력을 세우지 않는다.
+ * 실제무장편집의 의미가 그것이기 때문이다.
+ */
+export function buildExistingOfficerWorld(
+    scenario: ScenarioData,
+    factionIndex: number,
+    profileName: string,
+    profileId: string,
+    edit: ExistingOfficerEdit,
+): BuiltWorld {
+    const world = buildWorld(scenario, factionIndex);
+    const faction = world.factions.find(f => f.id === world.playerFactionId);
+    if (!faction) return world; // 방어적: 세력이 없으면 원본 그대로
+    const capital = world.cities.find(c => c.id === faction.capitalCityId) ?? world.cities[0];
+
+    const stats: OfficerStats = {
+        leadership: clamp(edit.stats.leadership, 1, 100, 50),
+        might: clamp(edit.stats.might, 1, 100, 50),
+        intelligence: clamp(edit.stats.intelligence, 1, 100, 50),
+        politics: clamp(edit.stats.politics, 1, 100, 50),
+        charisma: clamp(edit.stats.charisma, 1, 100, 50),
+    };
+    const name = edit.name.trim() || profileName;
+    const birthYear = clamp(edit.birthYear, 110, 230, 184);
+    const rank = clamp(edit.rank, 0, 9, 5);
+
+    const target = findWorldOfficerByName(world, profileName);
+    if (target) {
+        // 이미 있는 무장: 값을 덮어쓴다. 소속/위치는 그대로 둔다.
+        target.name = name;
+        target.birthYear = birthYear;
+        target.gender = edit.gender;
+        target.rank = rank;
+        target.stats = { ...target.stats, ...stats };
+        target.specialty = edit.specialty;
+        target.skills = edit.specialty ? [edit.specialty] : [];
+        target.personality = derivePersonality(stats, rank);
+        // runtime 은 소속/위치를 따로 들고 있다. 갱신하지 않으면 어긋난다.
+        target.runtime.factionId = target.factionId;
+        if (target.cityId) target.runtime.locationId = target.cityId;
+        return world;
+    }
+
+    // 월드에 없는 무장: 고른 세력에 편입한다.
+    const officerId = `off_profile_${profileId}`;
+    const officer: Officer = OfficerBuilder.create(officerId, name)
+        .setCourtesyName('')
+        .setGender(edit.gender)
+        .setBirthYear(birthYear)
+        .setStats(stats)
+        .setRank(rank)
+        .setStatus(OfficerStatus.OFFICER)
+        .setFactionId(faction.id)
+        .setCityId(capital?.id ?? null)
+        .setLoyalty(90)
+        .setSpecialty(edit.specialty)
+        .setSkills(edit.specialty ? [edit.specialty] : [])
+        .build();
+    officer.personality = derivePersonality(stats, rank);
+
+    world.officers.push(officer);
+    faction.officers.push(officerId);
+    if (capital) capital.officerIds.push(officerId);
+    return world;
+}

@@ -14,7 +14,7 @@ import { BattleFrontend, DeployableUnit, BattlePhase } from './core/battle_front
 import { TitleScreen } from './core/title_screen.js';
 import { loadScenarios, getCachedScenarios, buildWorld, getKnownOfficerName } from './core/scenario_system.js';
 import type { BuiltWorld, ScenarioData } from './core/scenario_system.js';
-import { buildCustomOfficerWorld, validateCustomOfficer, rollCustomStats, hashSeed } from './core/custom_officer_start.js';
+import { buildCustomOfficerWorld, validateCustomOfficer, rollCustomStats, hashSeed, buildExistingOfficerWorld } from './core/custom_officer_start.js';
 import { evaluateScenarios, playableScenarios } from './core/officer_editor_scenarios.js';
 import type { EditableOfficer } from './core/officer_editor_scenarios.js';
 import { searchRoster, countRoster, toEditable, randomProfile } from './core/officer_roster_picker.js';
@@ -4117,6 +4117,46 @@ const edExistingAgeText = document.getElementById('ed-existing-age-text')!;
 const edExistingLevel = document.getElementById('ed-existing-level')!;
 const edExistingTraits = document.getElementById('ed-existing-traits')!;
 const edExistingClassify = document.getElementById('ed-existing-classify')!;
+const edExistingStatsBox = document.getElementById('ed-existing-stats')!;
+const edExistingName = document.getElementById('ed-existing-name') as HTMLInputElement;
+const edExistingRank = document.getElementById('ed-existing-rank') as HTMLInputElement;
+const edExistingSpecialty = document.getElementById('ed-existing-specialty') as HTMLInputElement;
+
+/** 실제무장편집 탭의 능력치 슬라이더 — 신규 탭 것과 별개다 (값이 서로 덮어쓰이면 안 된다). */
+const edExistingStatInputs = {} as Record<string, HTMLInputElement>;
+for (const s of EDITOR_STATS) {
+    const wrap = document.createElement('div');
+    wrap.className = 'editor-stat';
+    const head = document.createElement('div');
+    head.className = 'editor-stat-head';
+    const label = document.createElement('span');
+    label.textContent = s.label;
+    const value = document.createElement('span');
+    value.textContent = '50';
+    head.append(label, value);
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = '1';
+    range.max = '100';
+    range.value = '50';
+    range.setAttribute('aria-label', `${s.label} 능력치 (실제무장편집)`);
+    range.addEventListener('input', () => { value.textContent = range.value; });
+    wrap.append(head, range);
+    edExistingStatsBox.append(wrap);
+    edExistingStatInputs[s.key] = range;
+}
+
+/** 실제무장편집 슬라이더 5개를 읽는다. */
+function readExistingStatsFromSliders(): typeof EMPTY_STATS {
+    return {
+        leadership: Number.parseInt(edExistingStatInputs.leadership.value, 10) || 0,
+        might: Number.parseInt(edExistingStatInputs.might.value, 10) || 0,
+        intelligence: Number.parseInt(edExistingStatInputs.intelligence.value, 10) || 0,
+        politics: Number.parseInt(edExistingStatInputs.politics.value, 10) || 0,
+        charisma: Number.parseInt(edExistingStatInputs.charisma.value, 10) || 0,
+    };
+}
+
 
 const EMPTY_STATS = { leadership: 0, might: 0, intelligence: 0, politics: 0, charisma: 0 };
 
@@ -4225,6 +4265,8 @@ function paintExistingPanels(): void {
         paintAge(edExistingAgeFill, edExistingAgeText, null, editorReferenceYear());
         paintTraits(edExistingTraits, []);
         edExistingRadar.innerHTML = renderRadarSvg({ stats: EMPTY_STATS });
+        // 편집 필드는 고른 무장이 없으니 잠근다.
+        for (const el of [edExistingName, edExistingRank, edExistingSpecialty]) el.disabled = true;
         return;
     }
     const profile = getOfficerProfile(p.id);
@@ -4242,6 +4284,18 @@ function paintExistingPanels(): void {
     if (p.grade !== null) parts.push(`${p.grade}급`);
     if (profile?.affiliationLabel) parts.push(profile.affiliationLabel);
     edExistingClassify.textContent = parts.join(' · ');
+
+    // 편집 필드에 프로필 값을 싣는다. 슬라이더는 별도 세트라 안 겹친다.
+    for (const s of EDITOR_STATS) {
+        const input = edExistingStatInputs[s.key];
+        const v = stats[s.key] ?? 50;
+        input.value = String(Math.max(1, Math.min(100, Math.round(v))));
+        input.dispatchEvent(new Event('input'));
+    }
+    edExistingName.value = p.name;
+    edExistingRank.value = String(p.grade ?? 5);
+    edExistingSpecialty.value = profile?.policyLabel ? String(profile.policyLabel) : '';
+    for (const el of [edExistingName, edExistingRank, edExistingSpecialty]) el.disabled = false;
 }
 
 
@@ -4269,7 +4323,12 @@ function renderRoster(): void {
         gender: edFilterGender.value === '' ? null : (edFilterGender.value as 'M' | 'F'),
         birthMin: decade, birthMax: decade === null ? null : decade + 9,
     };
-    const results = searchRoster(query);
+    const results = searchRoster({
+        ...query,
+        // 맨 앞 카드가 반드시 탈 수 있어야 한다. 연생/역연 정렬은 어느 쪽도 이를 못 보장한다.
+        sort: 'playable',
+        playableYears: getCachedScenarios().map(s => Number.parseInt(s.start_date.slice(0, 4), 10)),
+    });
     const total = countRoster(query);
     edRosterCount.textContent = total === 0
         ? '조건에 맞는 무장이 없습니다.'
@@ -4646,6 +4705,28 @@ factionList.addEventListener('click', (e) => {
     if (!card || !selectedScenario) return;
     const idx = Number(card.dataset.idx);
     factionScreen.style.display = 'none';
+
+    if (editorChoice?.kind === 'existing') {
+        // 실제무장편집: 고른 무장의 편집값을 고른 세력에 반영한다.
+        if (!editorSelectedProfile) {
+            setEditorWarn('무장을 먼저 선택해 주세요.');
+            addLog('무장 미선택 — 기존 시나리오 경로로 진행합니다.');
+        } else {
+            const profile = editorSelectedProfile;
+            const world = buildExistingOfficerWorld(
+                selectedScenario, idx, profile.name, profile.id, {
+                    name: edExistingName.value.trim() || profile.name,
+                    birthYear: profile.birthYear ?? Number.parseInt(selectedScenario.start_date.slice(0, 4), 10) - 30,
+                    gender: profile.gender,
+                    rank: Number.parseInt(edExistingRank.value, 10) || 5,
+                    stats: readExistingStatsFromSliders(),
+                    specialty: edExistingSpecialty.value.trim() || null,
+                });
+            addLog(`${edExistingName.value.trim() || profile.name} — ${selectedScenario.title_kr}의 ${selectedScenario.factions[idx].name}으로 합류합니다.`);
+            void startGame(world);
+            return;
+        }
+    }
 
     if (editorChoice?.kind === 'new') {
         const stage = selectedScenario;

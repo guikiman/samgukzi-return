@@ -20,12 +20,49 @@ describe('searchRoster', () => {
         expect(r.length).toBeLessThan(OFFICER_PROFILES.size);
     });
 
-    it('결과가 출생 연도 오름차순이다 (미상은 뒤로)', () => {
+    it('기본 정렬은 연생 순이다 (예측 가능해야 한다)', () => {
         const r = searchRoster({ limit: 300 });
         for (let i = 1; i < r.length; i++) {
             const a = r[i - 1].birthYear, b = r[i].birthYear;
             if (a === null || b === null) continue;
             expect(b).toBeGreaterThanOrEqual(a);
+        }
+    });
+
+    it("sort='playable' 이면 맨 앞 카드가 어떤 시나리오에서든 탈 수 있다", () => {
+        const years = [184, 190, 194, 200, 207, 220, 234];
+        const r = searchRoster({ sort: 'playable', playableYears: years, limit: 20 });
+        expect(r.length).toBeGreaterThan(0);
+        for (const p of r) {
+            if (p.birthYear === null) continue;
+            const ok = years.some(y => {
+                if (p.deathYear !== null && p.deathYear <= y) return false;
+                const age = y - p.birthYear;
+                return age >= 16 && age <= 60;
+            });
+            expect(ok, `${p.name} 이 어느 시나리오에서도 탈 수 없다`).toBe(true);
+        }
+    });
+
+    it("sort='playable' 은 111년생(어느 시나리오에서도 탈 수 없음)을 맨 뒤로 보낸다", () => {
+        const years = [184, 194, 220];
+        const r = searchRoster({ sort: 'playable', playableYears: years, limit: 200 });
+        // 맨 앞은 반드시 '어떤 연도에든 탈 수 있는' 무장이므로 111년생일 수 없다.
+        const first = r[0];
+        expect(first.birthYear).not.toBeNull();
+        expect(first.birthYear!).toBeGreaterThan(111);
+    });
+
+    it("sort='playable' 에서 연도 목록이 비면 예외 없이 정렬된다", () => {
+        expect(() => searchRoster({ sort: 'playable', playableYears: [], limit: 5 })).not.toThrow();
+    });
+
+    it("sort='birth-desc' 는 역순이다", () => {
+        const r = searchRoster({ sort: 'birth-desc', limit: 50 });
+        for (let i = 1; i < r.length; i++) {
+            const a = r[i - 1].birthYear, b = r[i].birthYear;
+            if (a === null || b === null) continue;
+            expect(a).toBeGreaterThanOrEqual(b);
         }
     });
 
