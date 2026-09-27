@@ -48,6 +48,37 @@ master                ← 통합 전용. 직접 개발 금지
   장기 작업 시에만 유지하고, 갱신은 **rebase 가 아니라 merge**로 합니다
   (fast-forward 가능할 때만 ff).
 
+> 2026-09-27 갱신 — `hippocamp` worktree·로컬 브랜치·리모트 브랜치를 모두 삭제하고
+> `master` 로 통합했습니다. 리모트 기본 브랜치도 이제 `master` 이므로,
+> `hippocamp` 를 새로 만들지 마세요. 워크플로는 `master` 만 봅니다.
+
+### 🧹 임시 정리 대기 (다음 세션이 반드시 확인할 것)
+
+`PENDING-CLEANUP.md` 에 아직 삭제하지 않은 임시 파일이 기록되어 있습니다.
+**세션이 끝나면 에이전트는 기억을 잃습니다.** 새 세션을 시작하면 그 파일을 먼저
+읽고, 기한이 지났으면 정리한 뒤 체크를 갱신하십시오.
+
+- `D:\samgukzi8-pre-rewrite.bundle` (85.8 MB) — **2026-10-11 삭제 예정**
+  히스토리 재작성 전 유일한 복구 지점. 되돌릴 방법이 문서에 적혀 있습니다.
+
+### 🚫 저작권 자산 게이트 (2026-09-27 도입)
+
+`assets/china-national-map.png` 은 Total War: Three Kingdoms(Creative Assembly/Sega)
+파생 지도였습니다. 렌더러에서 제거하고 untrack 했고, `git filter-repo` 로
+히스토리 136커밋에서도 제거했습니다. 대체본은 `assets/map-china-4096.webp`
+(Natural Earth 퍼블릭 도메인)입니다.
+
+**`.gitignore` 는 이걸 재발시키지 못합니다.** `git add -f` 는 막지 못하고,
+CI 도 아무것도 검사하지 않았습니다. 그래서 강제 게이트를 넣었습니다.
+
+- `scripts/check_ip_assets.mjs` — 경로와 **git blob id** 를 함께 검사합니다.
+  blob id 를 보는 이유는 이름만 바꿔서 되돌리는 경우를 잡기 위해서입니다.
+  (`ls-tree` 가 주는 값은 sha256 이 아니라 sha1 blob id 입니다.)
+- `.githooks/pre-push` + `core.hooksPath` — clone 마다 자동 적용
+- `.github/workflows/ci.yml` 의 `ip-gate` 잡 — fork 의 PR 에도 적용됨
+
+누군가 이 자산(또는 이름만 바꾼 복사본)을 되돌리려 하면 세 층 전부에서 막힙니다.
+
 ### 파일 소유권 분할 (충돌 회피의 실제 조건)
 
 브랜치 구조보다 **수정 파일의 중복 금지**가 병렬성의 전제입니다.
