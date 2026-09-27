@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { GameStore } from '../src/core/game_store.js';
 import { GameEngine } from '../src/core/game_engine.js';
 import { buildWorld } from '../src/core/scenario_system.js';
@@ -107,5 +107,67 @@ describe('재야 무장 방문 시스템 [24][421-440]', () => {
 
     it('방문 확률 상수는 명세 범위 내다', () => {
         expect(BASE_VISIT_CHANCE).toBe(0.3);
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // [회귀] FREE_OFFICER_VISIT 이벤트 payload 무결성
+    //
+    // 배경: 엔진이 payload 에 일부 필드만 실어 보내면 UI 의 openVisitModal 이
+    // visit.stats.leadership 에서 TypeError 를 던진다. 그 예외는 executeTurn 의
+    // 이벤트 큐 안에서 동기 전파되므로 그 달 전체 처리가 중단되어
+    // 「턴 진행 실패」 로그와 함께 게임이 멈춘 것처럼 보인다.
+    // payload 는 UI 가 FreeOfficerVisit 전체로 캐스팅해 쓰므로 빠짐없이 실려야 한다.
+    // ─────────────────────────────────────────────────────────────
+    it('[회귀] FREE_OFFICER_VISIT payload 에 UI 가 읽는 필드가 모두 실린다', async () => {
+        // 엔진이 Math.random 을 직접 쓰므로 방문 발생을 확정시켜야 결정적이다.
+        const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+        try {
+            const { engine } = setupWorld(2); // 유비(플레이어) — 신야 재야 무장이 방문해 선택 모달이 열린다
+            const payloads: Array<Record<string, unknown>> = [];
+            engine.subscribe('FREE_OFFICER_VISIT', (e: any) => { payloads.push(e.payload); });
+
+            await engine.executeTurn();
+
+            expect(payloads.length).toBeGreaterThan(0);
+            for (const p of payloads) {
+                // openVisitModal 이 합산/막대 렌더에 쓰는 능력치 5종
+                expect(p.stats).toBeDefined();
+                const stats = p.stats as Record<string, number>;
+                for (const key of ['leadership', 'might', 'intelligence', 'politics', 'charisma']) {
+                    expect(typeof stats[key]).toBe('number');
+                }
+                // 카드 문구용 메타
+                expect(typeof p.ambition).toBe('number');
+                expect(typeof p.fame).toBe('number');
+                expect(typeof p.personalityLabel).toBe('string');
+                // acceptVisit 이 군주 조회에 쓰는 식별자
+                expect(p.factionId === null || typeof p.factionId === 'string').toBe(true);
+                expect(typeof p.cityId).toBe('string');
+            }
+        } finally {
+            randomSpy.mockRestore();
+        }
+    });
+
+    it('[회귀] 플레이어 세력 방문으로 executeTurn 이 예외 없이 끝난다', async () => {
+        // 엔진이 Math.random 을 직접 쓰므로 방문 발생을 확정시켜야 결정적이다.
+        const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+        try {
+            const { engine } = setupWorld(2);
+            // payload 를 그대로 소비하는 UI 와 같은 형태 — 여기서 터지면 안 된다.
+            let consumed = 0;
+            engine.subscribe('FREE_OFFICER_VISIT', (e: any) => {
+                const visit = e.payload;
+                const sum = visit.stats.leadership + visit.stats.might + visit.stats.intelligence
+                    + visit.stats.politics + visit.stats.charisma;
+                expect(sum).toBeGreaterThan(0);
+                consumed++;
+            });
+
+            await expect(engine.executeTurn()).resolves.toBeUndefined();
+            expect(consumed).toBeGreaterThan(0);
+        } finally {
+            randomSpy.mockRestore();
+        }
     });
 });

@@ -647,6 +647,9 @@ export class GameEngine {
                 this.emitEvent({
                     id: `free_visit_${visit.officerId}_${Date.now()}`,
                     type: 'FREE_OFFICER_VISIT',
+                    // payload 는 UI(main.ts openVisitModal)가 FreeOfficerVisit 전체로 캐스팅해 쓴다.
+                    // stats/ambition/fame/personalityLabel 을 빠뜨리면 모달이 visit.stats.leadership 에서
+                    // 터져 이벤트 큐가 중단된다(턴 진행 실패). 빠짐없이 실어 보낸다.
                     payload: {
                         officerId: visit.officerId,
                         officerName: visit.officerName,
@@ -654,10 +657,17 @@ export class GameEngine {
                         cityName: visit.cityName,
                         factionId: visit.factionId,
                         factionName: visit.factionName,
+                        leaderId: visit.leaderId,
+                        leaderName: visit.leaderName,
                         chance: visit.chance,
-                        needsPlayerChoice: visit.needsPlayerChoice,
+                        roll: visit.roll,
                         joined: visit.joined,
+                        needsPlayerChoice: visit.needsPlayerChoice,
                         message: visit.message,
+                        stats: visit.stats,
+                        ambition: visit.ambition,
+                        fame: visit.fame,
+                        personalityLabel: visit.personalityLabel,
                     },
                     timestamp: Date.now(),
                     turn: this.store.getGlobalState().turnCount,

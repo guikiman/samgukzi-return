@@ -1749,6 +1749,19 @@ button:focus-visible, select:focus-visible, input:focus-visible, [tabindex]:focu
 }
 
 /* ---------- 인증 패널 [Auth] ---------- */
+/* 오버레이로 띄운다. 일반 흐름에 두면 #game-container(100vh) 뒤에 80px가 붙어
+   문서가 스크롤 가능해지고, 온보딩 스포트라이트의 scrollIntoView 가 본문을 밀어
+   상단바(게임 시작 · 다음 月)가 화면 위로 사라진다. */
+.auth-panel-container {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 380;
+    max-width: min(440px, calc(100vw - 32px));
+    max-height: min(60vh, 520px);
+    overflow-y: auto;
+    pointer-events: auto;
+}
 .auth-panel-root {
     width: min(100% - 32px, 440px);
     margin: 0 auto;

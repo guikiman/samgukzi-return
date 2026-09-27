@@ -620,7 +620,10 @@ function openVisitModal(visit: FreeOfficerVisit): void {
     const modal = document.getElementById('roaming-modal')!;
     document.getElementById('rm-title')!.textContent = `🚶 출사 타진 — ${visit.cityName}`;
     // 방문 무장 상세 카드 [461-480] — 입사 판단 근거 제공
-    const s = visit.stats;
+    // 이벤트 payload 가 불완전해도 턴을 죽이지 않는다 — 이 핸들러는 executeTurn 의
+    // 이벤트 큐 안에서 동기 호출되므로 여기서 던지면 그 달 전체 처리가 중단된다.
+    const s = visit.stats
+        ?? { leadership: 50, might: 50, intelligence: 50, politics: 50, charisma: 50 };
     const sum = s.leadership + s.might + s.intelligence + s.politics + s.charisma;
     const statBar = (label: string, v: number, max = 100) => {
         const pct = Math.min(100, Math.round((v / max) * 100));
