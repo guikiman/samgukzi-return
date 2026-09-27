@@ -41,5 +41,21 @@ SHA 만 바뀌고 실체는 같았다. 번들은 독립적인 가치가 없었�
 - [x] `hippocamp` 브랜치와 worktree 정리 완료 (2026-09-27) — 리모트 `master` 로 통합
 - [x] 저작권 게이트 `scripts/check_ip_assets.mjs` 가 커밋·push 를 막는지 확인 완료
 - [x] 히스토리 재작성 — `filter-repo` 로 136커밋에서 blob 제거, 리모트 반영 완료
-- [ ] `guikiman/*` 브랜치 18개는 모두 `master` 에 병합 완료. 정리 여부는 미결
-- [ ] `backup-before-rewrite` 로컬 브랜치 정리 여부 미결
+- [x] `backup-before-rewrite` 삭제 (2026-09-27) — 34커밋 전부 `master` 안에 있음을 확인 후 삭제
+- [ ] `guikiman/*` 브랜치 16개 — 전부 `master` 에 병합 완료. 정리 여부는 미결
+
+### `guikiman/*` 를 지울 때 (아직 안 함)
+
+16개 모두 `master` 에 완전히 병합되어 있어 지워도 커밋 손실이 없다.
+worktree 에 붙어 있는 것(`auth-backend`, `fix-boot` 2개)이 있어 순서가 필요하다.
+
+```
+git worktree remove <경로>        # 붙어 있는 것부터
+git branch -D <브랜치>            # 그 다음 브랜치
+git worktree prune
+```
+
+### 남은 stash
+
+`stash@{0}: On master: pre-hippocamp-merge master worktree changes` — 200개 파일.
+저작권 blob 은 들어 있지 않다. 필요 없으면 `git stash drop` 으로 지울 수 있다.
