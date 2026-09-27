@@ -84,3 +84,32 @@ worktree 를 지우기 전에 실제 작업 8개 파일을 복사해 두었다
 - ONBOARDING-4PR-POSTMORTEM.md — 병렬 작업 4건의 통합 기록과 규칙.
   다음에 병렬 작업을 시작하면 **반드시 먼저 읽을 것.**
   특히 규칙 1(계약을 worktree 생성 전에 커밋)을 지키지 않으면 워커가 멈춘다.
+
+### ⚠️ stash 복구 사고 (2026-09-27)
+
+git stash list 가 빈 목록을 반환하지만 **efs/stash 는 살아 있다**.
+git stash list 는 reflog 을 읽는데 그 reflog 파일이 0바이트다.
+
+`powershell
+git rev-parse refs/stash                       # 살아 있음
+git stash list                                  # 빈 목록 — reflog 이 비어서
+git tag salvage-stash-2026-09-27 refs/stash    # GC 방지 (필수, 먼저 할 것)
+`
+
+stash SHA: 89eee9eeec7a0fd0293dc08a194dfaca4d9dcb49 (5,382 파일)
+**git stash drop 하지 말 것.** absorption 시도는 아래 이유로 불가능했다.
+
+#### absorption 이 불가한 이유 (실측)
+
+stash 의 소스 34개 파일은 **과거 스키마**에 맞춰져 있다. master 에 그대로 올리면
+	sc 43 에러:
+
+- Officer.relations / Officer.affinity — 이 필드는 master 의 	ypes.ts 에 없다.
+  관계 데이터는 officer_profile_schema.ts 로 옮겨졌다 (정적 프로필 계층).
+- ./geo_data.js , ./officer_graph_helper.js — **master 와 stash 양쪽 다 없다.**
+  stash 생성 시점에 이미 존재하지 않았던 모듈을 import 한다.
+
+즉 이 stash 는 **버전 간 어긋난 백업**이지 미흡수 작업이 아니다.
+34개에 구현이 더 많더라도(예: title_merit_manager 180줄 vs 10줄) 지금 흡수하면
+프로젝트를 컴파일 불가능하게 만든다. 되돌릴 때는 stash 를 건드리지 말고
+master 위에서 cherry-pick 하는 것이 맞다.
