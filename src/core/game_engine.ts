@@ -1436,7 +1436,16 @@ export class GameEngine {
             const listeners = this.eventListeners.get(event.type);
             if (listeners) {
                 for (const listener of listeners) {
-                    listener(event);
+                    // [결함 방지] 리스너는 UI(main.ts) 를 포함해 외부에서 등록된다.
+                    // 여기서 던진 예외가 executeTurn 전체를 중단시켜 그 달 처리와
+                    // 남은 이벤트 발화가 함께 사라진다 — 실제로 FREE_OFFICER_VISIT
+                    // payload 결손으로 턴이 멈췄던 사례가 있다.
+                    // 리스너 하나가 죽어도 나머지와 남은 이벤트는 계속 처리한다.
+                    try {
+                        listener(event);
+                    } catch (err) {
+                        console.error(`[Engine] 이벤트 리스너 실패 (${event.type}) — 나머지 처리를 계속합니다`, err);
+                    }
                 }
             }
         }

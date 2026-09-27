@@ -337,6 +337,52 @@ describe('GameEngine', () => {
         expect(listener).not.toHaveBeenCalled();
     });
 
+    // ─────────────────────────────────────────────────────────────
+    // [회귀] 이벤트 리스너 예외가 턴 전체를 중단시키지 않는다
+    //
+    // 배경: 리스너는 UI(main.ts) 를 포함해 외부에서 등록된다. 여기서 던진
+    // 예외가 processEventQueue 를 뚫고 executeTurn 을 중단시키면 그 달
+    // 처리와 남은 이벤트 발화가 함께 사라진다. 실제로 FREE_OFFICER_VISIT
+    // payload 결손으로 턴이 멈췄던 사례가 있다.
+    // ─────────────────────────────────────────────────────────────
+    it('[회귀] 리스너 하나가 던져도 같은 이벤트의 나머지 리스너가 발화된다', () => {
+        const boom = vi.fn(() => { throw new TypeError('리스너 내부 오류'); });
+        const after = vi.fn();
+        engine.subscribe('TEST_EVENT', boom);
+        engine.subscribe('TEST_EVENT', after);
+
+        engine.emitEvent({ id: 'e1', type: 'TEST_EVENT', payload: {}, timestamp: Date.now(), turn: 0 });
+        expect(() => (engine as unknown as { processEventQueue(): void }).processEventQueue()).not.toThrow();
+
+        expect(boom).toHaveBeenCalledTimes(1);
+        expect(after).toHaveBeenCalledTimes(1);
+    });
+
+    it('[회귀] 리스너 예외가 나도 큐에 남은 이벤트는 계속 발화된다', () => {
+        const boom = vi.fn(() => { throw new Error('첫 이벤트 처리 실패'); });
+        const later = vi.fn();
+        engine.subscribe('TEST_EVENT', boom);
+        engine.subscribe('LATER_EVENT', later);
+
+        engine.emitEvent({ id: 'e1', type: 'TEST_EVENT', payload: {}, timestamp: Date.now(), turn: 0 });
+        engine.emitEvent({ id: 'e2', type: 'LATER_EVENT', payload: {}, timestamp: Date.now(), turn: 0 });
+        (engine as unknown as { processEventQueue(): void }).processEventQueue();
+
+        expect(later).toHaveBeenCalledTimes(1);
+        expect(engine.getPendingEvents()).toHaveLength(0);
+    });
+
+    it('[회귀] 예외를 낸 리스너는 구독이 유지된다 (한 번의 실패로 소멸하지 않는다)', () => {
+        let calls = 0;
+        engine.subscribe('TEST_EVENT', () => { calls++; if (calls === 1) throw new Error('첫 발화만 실패'); });
+
+        for (let i = 0; i < 2; i++) {
+            engine.emitEvent({ id: `e${i}`, type: 'TEST_EVENT', payload: {}, timestamp: Date.now(), turn: 0 });
+            (engine as unknown as { processEventQueue(): void }).processEventQueue();
+        }
+        expect(calls).toBe(2);
+    });
+
     it('save/load serialization roundtrip', () => {
         const o = makeOfficer('o1');
         store.addOfficer(o);
