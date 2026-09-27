@@ -4,57 +4,57 @@
  * 공성전이 벌어지는 방어 도시에 대해 인접(직선거리 기준) 아군 도시가
  * 병력·무장을 지원하는 시스템. 플레이어 출진과 AI 공성 양쪽에서 사용한다.
  *
- * 도시 간 인접 판정은 전도 좌표(mapX/mapY) 유클리드 거리로 하며,
- * CITY_MAP_COORDS에 없는 도시(커스텀 모드 등)는 배제한다.
+ * [결함 수정] 인접 판정 좌표표를 이 파일에 복사해 두었더니 두 가지가 어긋났다.
+ *  1) 게임은 도시 id('city_낙양')로 호출하는데 표의 키는 도시명('낙양')이었다.
+ *     → 조회 실패로 항상 false, 증원 기능이 전 시나리오에서 무동작이었다.
+ *  2) 좌표 스케일까지 달랐다(여기 pixel 0~800 vs scenario_system 0~1 정규화).
+ * 도시 좌표는 scenario_system 의 CITY_MAP_COORDS(전술 좌표) 하나만 쓴다.
+ * 스크립트도 도시 id 를 받도록 바꿔 호출부가 이름으로 우연히 동작하는
+ * 경우를 막는다.
  */
 
 import type { City, Officer, Army } from './types.js';
+import { CITY_MAP_COORDS } from './scenario_system.js';
 
-/** 도시 간 거리 단위(px) — 이 거리 이하를 "인접"으로 본다 */
-const ADJACENT_DISTANCE = 220;
+/** 도시 간 거리 임계값 — 정규화 좌표(0~1) 기준. [결함 수정] */
+const ADJACENT_DISTANCE = 0.16;
 
-/** 도시 좌표 테이블 (scenario_system의 CITY_MAP_COORDS와 동일 기준) */
-const CITY_MAP_COORDS: Record<string, { x: number; y: number }> = {
-    허창: { x: 560, y: 130 },
-    업: { x: 505, y: 90 },
-    낙양: { x: 500, y: 160 },
-    거록: { x: 570, y: 55 },
-    하내: { x: 440, y: 120 },
-    상당: { x: 425, y: 75 },
-    진류: { x: 590, y: 185 },
-    여남: { x: 580, y: 250 },
-    서주: { x: 690, y: 190 },
-    하비: { x: 705, y: 130 },
-    복양: { x: 630, y: 110 },
-    평원: { x: 665, y: 60 },
-    건업: { x: 775, y: 230 },
-    오: { x: 790, y: 280 },
-    회계: { x: 810, y: 340 },
-    시상: { x: 740, y: 355 },
-    무창: { x: 620, y: 330 },
-    강릉: { x: 555, y: 330 },
-    장사: { x: 600, y: 400 },
-    무릉: { x: 520, y: 395 },
-    성도: { x: 230, y: 300 },
-    자동: { x: 300, y: 275 },
-    강주: { x: 330, y: 360 },
-    한중: { x: 330, y: 170 },
-    천수: { x: 230, y: 150 },
-    무도: { x: 295, y: 115 },
-    남양: { x: 500, y: 225 },
-    신야: { x: 545, y: 265 },
-    강하: { x: 620, y: 275 },
-    수춘: { x: 660, y: 210 },
-};
+/** 거리 비교의 부동소수 여유 (0.40 - 0.24 = 0.16000000000000003 같은 오차 대비) */
+const DISTANCE_EPSILON = 1e-9;
 
-/** 두 도시가 인접한지 (거리 기반) */
+/**
+ * [결함 수정] 도시 id 또는 이름 어느 쪽이든 좌표를 찾는다.
+ * 게임은 'city_낙양' 형태의 id 로, 테스트 픽스처는 '낙양' 으로 부른다.
+ *
+ * 중복 도시명 때문에 scenario_system 이 'city_낙양_3' 처럼 접미사를 붙이는
+ * 경우가 있어 접미사도 잘라 낸다. 표에 없으면 undefined 를 돌려주고,
+ * 호출부가 조용히 무시한다(오탐 없는 조용한 실패가 조회 실패의 대가다).
+ */
+function coordOf(key: string): { x: number; y: number } | undefined {
+    const direct = CITY_MAP_COORDS[key];
+    if (direct) return direct;
+    if (!key.startsWith('city_')) return undefined;
+    // 'city_낙양_3' → '낙양_3' → '낙양'
+    const name = key.slice(5);
+    return CITY_MAP_COORDS[name] ?? CITY_MAP_COORDS[name.replace(/_\d+$/, '')];
+}
+
+/**
+ * 두 도시가 인접한지 (거리 기반)
+ *
+ * [결함 수정] 임계값 비교에 여유를 둔다. 표에 실린 좌표에는
+ * 허창-업처럼 정규화 거리로 딱 0.16 인 쌍이 있고, 0.40 - 0.24 를 빼면
+ * 0.16000000000000003 이 나와 `<= 0.16` 이 거짓말을 한다.
+ * 좌표는 소수 둘째 자리 근처에서만 나오므로 1e-9 여유는 판정을 뒤집지 않는다.
+ */
 export function areCitiesAdjacent(cityAId: string, cityBId: string): boolean {
-    const a = CITY_MAP_COORDS[cityAId];
-    const b = CITY_MAP_COORDS[cityBId];
-    if (!a || !b || cityAId === cityBId) return false;
+    if (cityAId === cityBId) return false;
+    const a = coordOf(cityAId);
+    const b = coordOf(cityBId);
+    if (!a || !b) return false;
     const dx = a.x - b.x;
     const dy = a.y - b.y;
-    return Math.sqrt(dx * dx + dy * dy) <= ADJACENT_DISTANCE;
+    return Math.sqrt(dx * dx + dy * dy) <= ADJACENT_DISTANCE + DISTANCE_EPSILON;
 }
 
 /** 방어 도시에 증원 가능한 인접 아군 도시 목록 */

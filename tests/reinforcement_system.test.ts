@@ -6,6 +6,8 @@ import {
     canAttackFrom,
 } from '../src/core/reinforcement_system';
 import type { City, Officer, Army } from '../src/core/types';
+import { buildWorld, CITY_MAP_COORDS } from '../src/core/scenario_system';
+import scenarioIndex from '../src/data/scenarios/index.json';
 
 // ============================================================
 // 테스트용 픽스처 생성 헬퍼
@@ -109,6 +111,34 @@ describe('도시 인접 판정', () => {
         expect(canAttackFrom('허창', '낙양')).toBe(true);
         expect(canAttackFrom('허창', '오')).toBe(false);
     });
+
+    // ── 회귀: 게임은 이름이 아니라 'city_이름' id 로 호출한다 ──
+    // 아래가 없으면 표 키를 이름으로만 맞춰 둔 구현이 그대로 통과해 버린다.
+    it('도시 id(city_낙양)로 불러도 이름과 똑같이 판정한다', () => {
+        for (const [a, b] of [['허창', '업'], ['허창', '건업'], ['낙양', '진류']] as const) {
+            expect(areCitiesAdjacent(`city_${a}`, `city_${b}`), `${a}-${b}`).toBe(
+                areCitiesAdjacent(a, b),
+            );
+        }
+    });
+
+    it('중복 도시명용 접미사 id(city_낙양_3)도 좌표를 찾는다', () => {
+        expect(areCitiesAdjacent('city_낙양_3', 'city_허창_7')).toBe(
+            areCitiesAdjacent('낙양', '허창'),
+        );
+    });
+
+    it('표에 없는 도시는 조용히 인접하지 않은 것으로 본다', () => {
+        expect(areCitiesAdjacent('존재하지않는도시', 'city_허창')).toBe(false);
+        expect(areCitiesAdjacent('city_존재하지않는도시', 'city_허창')).toBe(false);
+    });
+
+    it('임계값 경계에 걸린 도시 쌍도 인접으로 판정한다 (부동소수 오차 회귀)', () => {
+        // 허창(0.60,0.40) - 업(0.60,0.24) = 0.16 으로 딱 임계값이다.
+        // 0.40 - 0.24 를 계산하면 0.16000000000000003 이 되어
+        // 여유 없이 비교하면 인접인 쌍을 떨어뜨린다.
+        expect(areCitiesAdjacent('허창', '업')).toBe(true);
+    });
 });
 
 // ============================================================
@@ -192,5 +222,66 @@ describe('증원 편성', () => {
         const officers = [makeOfficer('o1', '여포', '낙양', 'fac_2', 95)];
         const result = assembleReinforcements('허창', 'fac_1', cities, officers, []);
         expect(result.totalTroops).toBe(0);
+    });
+
+    // ── 회귀: 게임은 이름이 아니라 id 로 부른다 ──
+    // 위 테스트들은 전부 '허창' 처럼 이름으로만 픽스처를 만들어서,
+    // "이름이 id 를 대신하던" 원래 결함을 통과시켜 버렸다.
+    it('city_ 접두사가 붙은 id 로도 같은 결과를 낸다', () => {
+        const cities = [
+            makeCity('city_허창', '허창', 'fac_1'),
+            makeCity('city_낙양', '낙양', 'fac_1'),
+            makeCity('city_서주', '서주', 'fac_2'),
+        ];
+        const officers = [
+            makeOfficer('o1', '하후돈', 'city_낙양', 'fac_1', 90),
+            makeOfficer('o2', '하후연', 'city_낙양', 'fac_1', 85),
+            makeOfficer('o3', '순욱', 'city_낙양', 'fac_1', 40),
+        ];
+        const armies = [makeArmy('a1', 'o1', 'city_낙양', 3000)];
+
+        const result = assembleReinforcements('city_허창', 'fac_1', cities, officers, armies);
+
+        expect(result.totalTroops).toBe(3000);
+        expect(result.contingents[0].sourceCityId).toBe('city_낙양');
+        expect(result.officerIds).toEqual(['o1', 'o2']);
+    });
+});
+
+// ============================================================
+// 실제 시나리오 데이터와의 계약
+// ============================================================
+
+describe('실제 시나리오와의 계약', () => {
+    const index = scenarioIndex as ReadonlyArray<{ id: string; title_kr: string }>;
+
+    it('모든 시나리오의 모든 도시가 좌표 표에서 조회된다', () => {
+        // 표에 없는 도시는 조용히 인접하지 않은 것으로 취급되므로
+        // 표 누락이 있으면 "기능이 조용히 꺼진다" 형태로만 드러난다.
+        const missing: string[] = [];
+        for (const s of index) {
+            const world = buildWorld(s as never, 0);
+            for (const c of world.cities) {
+                const name = c.id.replace(/^city_/, '').replace(/_\d+$/, '');
+                if (!CITY_MAP_COORDS[name]) missing.push(`${s.id}:${c.id}`);
+            }
+        }
+        expect(missing).toEqual([]);
+    });
+
+    it('도시가 둘 이상인 세력이 있으면 실제 증원이 발생한다', () => {
+        // 원래 결함 상태에서는 모든 시나리오에서 증원 병력이 0 이었다.
+        // 전 시나리오가 0 이면 기능이 꺼져 있다는 뜻이므로 실패시켜야 한다.
+        let totalTroops = 0;
+        for (const s of index) {
+            const world = buildWorld(s as never, 0);
+            for (const c of world.cities) {
+                if (!c.ownerId) continue;
+                totalTroops += assembleReinforcements(
+                    c.id, c.ownerId, world.cities, world.officers, world.armies ?? [],
+                ).totalTroops;
+            }
+        }
+        expect(totalTroops).toBeGreaterThan(0);
     });
 });
