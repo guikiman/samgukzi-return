@@ -547,7 +547,7 @@ async function main() {
             "var officer=document.querySelector('.cdp-officer-clickable');if(officer)officer.click();" +
             "var officerOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
             "var officerTitle=document.getElementById('dialogue-title').textContent;" +
-            "var choices=document.querySelectorAll('#dialogue-choices .dialogue-choice').length;" +
+            "var choices=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
             "var giftBeforeGold=g.getStore().getFaction(g.getStore().getGlobalState().playerFactionId).gold;" +
             "var giftBeforeAffinity=document.querySelector('.od-affinity-row b')?.textContent||'';" +
             "var giftItem=document.querySelector('[data-gift-item]');" +
@@ -562,9 +562,41 @@ async function main() {
             "document.getElementById('dialogue-next').click();var nextPage=document.getElementById('dialogue-page').textContent;" +
             "document.getElementById('dialogue-prev').click();var prevPage=document.getElementById('dialogue-page').textContent;" +
             "document.getElementById('dialogue-close').click();" +
+            // San8/San14 대화창 개편: 좌측 화자 열 + 번호 선택지 [신규 기능]
+            "var o2=document.querySelector('.cdp-officer-clickable');if(o2)o2.click();" +
+            "var dlgFrame=document.querySelector('#dialogue-modal .dialogue-frame');" +
+            "var dlgPortraitSvg=!!document.querySelector('#dialogue-portrait svg');" +
+            "var dlgSpeakerText=document.getElementById('dialogue-speaker').textContent.trim();" +
+            "var dlgOrgText=document.getElementById('dialogue-org').textContent.trim();" +
+            "var dlgRankText=document.getElementById('dialogue-rank').textContent.trim();" +
+            "var dlgBodyText=document.getElementById('dialogue-text').textContent;" +
+            "var dlgChoiceIdx=document.querySelectorAll('#dialogue-choices .dlg-choice-idx').length;" +
+            "var dlgStepText=document.getElementById('dialogue-progress-label').textContent.trim();" +
+            "var dlgPrevDisabled=document.getElementById('dialogue-prev').disabled;" +
+            "var accent=dlgFrame?dlgFrame.style.getPropertyValue('--dlg-accent'):'';" +
+            // 키보드 조작: → 다음, ← 이전, 숫자 선택지 [신규 기능]
+            "document.getElementById('dialogue-modal').focus();" +
+            "var kbdBefore=document.getElementById('dialogue-page').textContent;" +
+            "document.getElementById('dialogue-modal').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));" +
+            "var kbdNext=document.getElementById('dialogue-page').textContent;" +
+            "document.getElementById('dialogue-modal').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));" +
+            "var kbdPrev=document.getElementById('dialogue-page').textContent;" +
+            "document.getElementById('dialogue-modal').dispatchEvent(new KeyboardEvent('keydown',{key:'1',bubbles:true}));" +
+            "var kbdChoiceResult=document.getElementById('dialogue-result').textContent;" +
+            "var kbdChoiceShown=document.getElementById('dialogue-result').style.display!=='none';" +
+            "document.getElementById('dialogue-close').click();" +
+            // 시설 대화는 사람이 아니라 글자 표식이 왼쪽에 있어야 한다
+            "var f2=document.querySelector('.cdp-facility');if(f2)f2.click();" +
+            "var placeGlyph=document.querySelector('#dialogue-portrait.dlg-place')?.textContent||'';" +
+            "var placeIsGlyph=!!document.querySelector('#dialogue-portrait.dlg-place') && !document.querySelector('#dialogue-portrait svg');" +
+            "document.getElementById('dialogue-close').click();" +
             "var scene=document.getElementById('city-scene-canvas'),chips=document.querySelectorAll('#city-scene-summary .city-building-chip');" +
             "return {facilityOpen:facilityOpen,facilityTitle:facilityTitle,facilityCount:facilities.length,facilityNames:facilityNames,officerOpen:officerOpen," +
-            "officerTitle:officerTitle,choices:choices,giftBeforeGold:giftBeforeGold,giftBeforeAffinity:giftBeforeAffinity,giftPreview:giftPreview,giftResult:giftResult,giftAfterGold:giftAfterGold,giftAfterAffinity:giftAfterAffinity,page:page,nextPage:nextPage,prevPage:prevPage,citySceneWidth:scene.width,citySceneHeight:scene.height,buildingChips:chips.length,buildingDetail:buildingDetail,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode')};})()");
+            "officerTitle:officerTitle,choices:choices,giftBeforeGold:giftBeforeGold,giftBeforeAffinity:giftBeforeAffinity,giftPreview:giftPreview,giftResult:giftResult,giftAfterGold:giftAfterGold,giftAfterAffinity:giftAfterAffinity,page:page,nextPage:nextPage,prevPage:prevPage," +
+            "dlgPortraitSvg:dlgPortraitSvg,dlgSpeakerText:dlgSpeakerText,dlgOrgText:dlgOrgText,dlgRankText:dlgRankText," +
+            "dlgBodyText:dlgBodyText,dlgChoiceIdx:dlgChoiceIdx,dlgStepText:dlgStepText,dlgPrevDisabled:dlgPrevDisabled," +
+            "kbdBefore:kbdBefore,kbdNext:kbdNext,kbdPrev:kbdPrev,kbdChoiceShown:kbdChoiceShown,kbdChoiceResult:kbdChoiceResult," +
+            "accent:accent,placeGlyph:placeGlyph,placeIsGlyph:placeIsGlyph,citySceneWidth:scene.width,citySceneHeight:scene.height,buildingChips:chips.length,buildingDetail:buildingDetail,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode')};})()");
 
         // 도시 건물 투자·운영 상태와 지도 카메라 보존 [49][D32]
         const buildingProbe = await cdp.evalJson(
@@ -933,6 +965,22 @@ async function main() {
             && dialogueProbe.buildingChips >= 4
             && dialogueProbe.buildingDetail.includes('· Lv.')
             && dialogueProbe.entryMode === true
+            // San8/San14 대화창 개편 회귀 [신규 기능]
+            && dialogueProbe.dlgPortraitSvg === true
+            && dialogueProbe.dlgSpeakerText.length > 0
+            && dialogueProbe.dlgOrgText.length > 0
+            && dialogueProbe.dlgRankText.length > 0
+            && dialogueProbe.dlgBodyText.length > 20
+            && dialogueProbe.dlgChoiceIdx >= 1
+            && dialogueProbe.dlgPrevDisabled === true
+            && dialogueProbe.accent.length > 0
+            && dialogueProbe.placeIsGlyph === true
+            && dialogueProbe.placeGlyph.length > 0
+            // 키보드만으로 다음/이전 이동과 선택지 실행이 된다
+            && dialogueProbe.kbdNext === '2 / 3'
+            && dialogueProbe.kbdPrev === dialogueProbe.kbdBefore
+            && dialogueProbe.kbdChoiceShown === true
+            && dialogueProbe.kbdChoiceResult.length > 0
             && buildingProbe.count >= 5
             && buildingProbe.selected.includes('누적 투자')
             && buildingProbe.invested

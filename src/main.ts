@@ -23,6 +23,8 @@ import { randomField, rollWholeOfficer } from './core/officer_editor_random.js';
 import type { EditorField } from './core/officer_editor_random.js';
 import { renderPortraitSvg } from './core/officer_portrait.js';
 import { renderRadarSvg } from './core/officer_radar.js';
+import { composeDialogue, composeResponse } from './core/dialogue_composer.js';
+import type { DialogueTopic } from './core/dialogue_composer.js';
 import { MonthlyReportSystem } from './core/monthly_report.js';
 import { assembleReinforcements } from './core/reinforcement_system.js';
 import { SaveSlotManager } from './core/save_slot_manager.js';
@@ -995,6 +997,10 @@ type DialoguePage = {
     title: string;
     subtitle?: string;
     speaker: string;
+    /** 화자 무장 id — 있으면 왼쪽 열에 초상·세력·품계를 그린다. */
+    speakerId?: string;
+    /** 사람이 아닌 화자(시설/장소)의 표식 한 글자. */
+    placeMark?: string;
     text: string;
     detail?: string[];
     choices?: DialogueChoice[];
@@ -1015,7 +1021,6 @@ let dialogueState: DialogueState | null = null;
 const dialogueModal = document.getElementById('dialogue-modal')!;
 const dialogueTitle = document.getElementById('dialogue-title')!;
 const dialogueSubtitle = document.getElementById('dialogue-subtitle')!;
-const dialogueProgress = document.getElementById('dialogue-progress')!;
 const dialogueSpeaker = document.getElementById('dialogue-speaker')!;
 const dialogueText = document.getElementById('dialogue-text')!;
 const dialogueDetail = document.getElementById('dialogue-detail')!;
@@ -1024,6 +1029,43 @@ const dialogueResult = document.getElementById('dialogue-result')!;
 const dialoguePrev = document.getElementById('dialogue-prev') as HTMLButtonElement;
 const dialogueNext = document.getElementById('dialogue-next') as HTMLButtonElement;
 const dialoguePageLabel = document.getElementById('dialogue-page')!;
+const dialoguePortrait = document.getElementById('dialogue-portrait')!;
+const dialogueOrg = document.getElementById('dialogue-org')!;
+const dialogueRank = document.getElementById('dialogue-rank')!;
+const dialogueFrame = document.querySelector<HTMLElement>('#dialogue-modal .dialogue-frame')!;
+const dialogueStep = document.getElementById('dialogue-progress-label')!;
+const dialogueNotes = document.getElementById('dialogue-notes')!;
+
+/**
+ * 화자 신분을 채운다. San8/San14 톤 — 왼쪽 열이 정보다.
+ * speakerId 가 없으면 '사람이 아닌' 화자(시설/장소)이므로 글자 표식을 쓴다.
+ */
+function paintDialogueIdentity(page: DialoguePage): void {
+    const { speakerId, placeMark } = page;
+    if (speakerId && engine) {
+        const o = engine['store'].getOfficer(speakerId);
+        if (o) {
+            dialoguePortrait.classList.remove('dlg-place');
+            dialoguePortrait.innerHTML = renderPortraitSvg({
+                id: o.id, name: o.name, gender: o.gender === 'F' ? 'F' : 'M', grade: Math.max(0, Math.min(9, o.rank)),
+            });
+            const faction = o.factionId ? engine['store'].getFaction(o.factionId) : null;
+            dialogueSpeaker.textContent = o.name;
+            dialogueOrg.textContent = faction?.name ?? '재야';
+            dialogueRank.textContent = o.status === 'FREE' ? '재야 무장' : `${o.rank}품`;
+            // 세력 색은 판 전체를 칠하지 않고 왼쪽 세로선/강조에만 쓴다.
+            dialogueFrame.style.setProperty('--dlg-accent', faction?.color ?? '#4a5160');
+            return;
+        }
+    }
+    // 시설·장소 등 사람이 아닌 화자
+    dialoguePortrait.classList.add('dlg-place');
+    dialoguePortrait.textContent = placeMark ?? '址';
+    dialogueSpeaker.textContent = page.speaker;
+    dialogueOrg.textContent = page.subtitle ?? '';
+    dialogueRank.textContent = '';
+    dialogueFrame.style.setProperty('--dlg-accent', '#4a5160');
+}
 
 function renderDialoguePage(): void {
     if (!dialogueState) return;
@@ -1032,29 +1074,49 @@ function renderDialoguePage(): void {
     if (!page) return;
     dialogueTitle.textContent = page.title;
     dialogueSubtitle.textContent = page.subtitle ?? '';
-    dialogueSpeaker.textContent = page.speaker;
-    dialogueText.textContent = page.text;
+    paintDialogueIdentity(page);
+    // 대사(빈 줄 앞)와 참고(빈 줄 뒤)를 나눠 그린다.
+    // 참고를 같은 크기로 꿰으면 '말'인지 '정보'인지 읽을 수 없다.
+    const sep = page.text.indexOf('\n\n');
+    if (sep >= 0) {
+        dialogueText.textContent = page.text.slice(0, sep);
+        dialogueNotes.textContent = page.text.slice(sep + 2);
+        dialogueNotes.style.display = 'block';
+    } else {
+        dialogueText.textContent = page.text;
+        dialogueNotes.textContent = '';
+        dialogueNotes.style.display = 'none';
+    }
     dialogueDetail.innerHTML = (page.detail ?? []).map(line => `<span>${line}</span>`).join('');
     dialogueDetail.style.display = page.detail && page.detail.length > 0 ? 'grid' : 'none';
-    dialogueChoices.innerHTML = (page.choices ?? []).map(choice =>
-        `<button class="dialogue-choice" data-choice="${choice.id}" ${choice.disabled ? 'disabled' : ''}>
-            <span class="dialogue-choice-label">${choice.label}</span>
-            <span class="dialogue-choice-desc">${choice.description}</span>
+    dialogueStep.textContent = state.pages.length > 1 ? `단계 ${state.index + 1} / ${state.pages.length}` : '';
+    dialogueChoices.innerHTML = (page.choices ?? []).map((choice, i) =>
+        `<button class="dlg-choice" data-choice="${choice.id}" ${choice.disabled ? 'disabled' : ''}>
+            <span class="dlg-choice-idx">${i + 1}</span>
+            <span class="dlg-choice-label">${choice.label}</span>
+            <span class="dlg-choice-desc">${choice.description}</span>
         </button>`).join('');
     if (page.giftComposer) {
         const gift = page.giftComposer;
         const items = Object.values(GIFT_ITEMS);
         dialogueChoices.insertAdjacentHTML('beforeend', `
             <div class="gift-composer" data-gift-composer>
-                <div class="gift-composer-title">🎁 선물 구성</div>
-                <label>아이템 <select data-gift-item>
-                    ${items.map(item => `<option value="${item.id}">${item.name} · ${item.gradeLabel} (+${item.affinity})</option>`).join('')}
-                </select></label>
-                <label>금화 <input data-gift-gold type="number" min="0" step="100" value="200" inputmode="numeric" />金</label>
+                <div class="gift-composer-title">선물 구성</div>
+                <label class="gift-row gift-row-wide">
+                    <span class="gift-label">아이템</span>
+                    <select data-gift-item>
+                        ${items.map(item => `<option value="${item.id}">${item.name} · ${item.gradeLabel} (+${item.affinity})</option>`).join('')}
+                    </select>
+                </label>
+                <label class="gift-row">
+                    <span class="gift-label">금화</span>
+                    <input data-gift-gold type="number" min="0" step="100" value="200" inputmode="numeric" />
+                </label>
                 <div class="gift-preview" data-gift-preview aria-live="polite"></div>
-                <button class="dialogue-choice gift-send-choice" data-gift-send>
-                    <span class="dialogue-choice-label">선물 보내기</span>
-                    <span class="dialogue-choice-desc">선택한 구성으로 우호도 상승</span>
+                <button class="dlg-choice gift-send-choice" data-gift-send>
+                    <span class="dlg-choice-idx">✦</span>
+                    <span class="dlg-choice-label">선물 보내기</span>
+                    <span class="dlg-choice-desc">선택한 구성으로 우호도 상승</span>
                 </button>
             </div>`);
         const updatePreview = () => {
@@ -1076,7 +1138,6 @@ function renderDialoguePage(): void {
     dialoguePrev.disabled = state.index <= 0;
     dialogueNext.disabled = state.index >= state.pages.length - 1;
     dialoguePageLabel.textContent = `${state.index + 1} / ${state.pages.length}`;
-    dialogueProgress.innerHTML = `<span style="width:${((state.index + 1) / state.pages.length) * 100}%"></span>`;
 }
 
 function openDialogue(state: DialogueState): void {
@@ -1105,6 +1166,40 @@ dialogueNext.addEventListener('click', () => {
     renderDialoguePage();
 });
 document.getElementById('dialogue-close')!.addEventListener('click', closeDialogue);
+
+/**
+ * 대화창 키보드 조작 [신규 기능] — San14 PK 방식.
+ *  - 1~9 : 해당 번호 선택지 누르기 (선택지에 적힌 번호 그대로)
+ *  - ←/→ : 이전/다음 단계
+ *  - Esc  : 닫기 (전역 핸들러가 담당)
+ * 입력칸에 커서가 있을 때는 건드리지 않는다 — 숫자를 못 찍게 하면 안 된다.
+ */
+dialogueModal.addEventListener('keydown', (event) => {
+    if (!dialogueState) return;
+    const t = event.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+
+    if (event.key === 'ArrowRight') {
+        if (dialogueNext.disabled) return;
+        event.preventDefault();
+        dialogueNext.click();
+        return;
+    }
+    if (event.key === 'ArrowLeft') {
+        if (dialoguePrev.disabled) return;
+        event.preventDefault();
+        dialoguePrev.click();
+        return;
+    }
+    // 숫자/숫자키패드만 받는다. 선택지가 9개를 넘으면 넘긴다.
+    if (!/^[1-9]$/.test(event.key)) return;
+    const buttons = dialogueChoices.querySelectorAll<HTMLButtonElement>('.dlg-choice:not([data-gift-send])');
+    const target = buttons[Number(event.key) - 1];
+    if (!target || target.disabled) return;
+    event.preventDefault();
+    target.click();
+});
+
 dialogueChoices.addEventListener('click', (event) => {
     const target = event.target as HTMLElement;
     const giftSend = target.closest('[data-gift-send]') as HTMLButtonElement | null;
@@ -1125,7 +1220,7 @@ dialogueChoices.addEventListener('click', (event) => {
         }
         return;
     }
-    const button = target.closest('.dialogue-choice') as HTMLButtonElement | null;
+    const button = target.closest('.dlg-choice') as HTMLButtonElement | null;
     if (!button || button.disabled || !dialogueState) return;
     const page = dialogueState.pages[dialogueState.index];
     const choice = page.choices?.find(item => item.id === button.dataset.choice);
@@ -1303,6 +1398,7 @@ function openOfficerDialogue(officerId: string): void {
                 title: `${target.name} — 무장 기록`,
                 subtitle: target.factionId ? store.getFaction(target.factionId)?.name ?? '무소속' : '재야',
                 speaker: target.name,
+                speakerId: target.id,
                 text: '대화를 시작할 행위자를 먼저 선택하세요.',
                 detail: [
                     `統率 ${target.stats.leadership} · 武力 ${target.stats.might}`,
@@ -1344,13 +1440,33 @@ function openOfficerDialogue(officerId: string): void {
         };
     };
 
+    // San8/San14 톤: 좌측 상단에 화자 정보, 본문은 새 조립기가 만든다.
+    const gsNow = store.getGlobalState();
+    const topicOf = (branchId: string): DialogueTopic =>
+        (['military', 'strategy', 'domestic', 'diplomacy', 'personal'] as const)
+            .find(t => t === branchId) ?? 'personal';
+    const composed = composeDialogue({
+        speaker: {
+            name: target.name,
+            traitLine: conversationBranch.traitLine,
+            factionName: status,
+        },
+        listener: { name: actor.name },
+        topic: topicOf(conversationBranch.id),
+        affinity,
+        year: gsNow.time.year,
+        month: gsNow.time.month,
+        stateLine: `통솔 ${target.stats.leadership} · 무력 ${target.stats.might} · 지력 ${target.stats.intelligence}`,
+    });
+
     openDialogue({
         pages: [
             {
                 title: conversationBranch.title,
-                subtitle: `${status} · 우호도 ${affinity >= 0 ? '+' : ''}${affinity} · ${conversationBranch.id}`,
-                speaker: `${actor.name} → ${target.name}`,
-                text: conversationBranch.text,
+                subtitle: `${status} · 우호도 ${affinity >= 0 ? '+' : ''}${affinity}`,
+                speaker: target.name,
+                speakerId: target.id,
+                text: composed,
                 detail: [
                     `현재 우호도 ${affinity >= 0 ? '+' : ''}${affinity}`,
                     `장기 ${target.personality} · 충성도 ${target.loyalty} · 명성 ${target.fame}`,
@@ -1528,6 +1644,8 @@ function openFacilityDialogue(cityId: string, type: FacilityType): void {
                 title: `${city.name} · ${info.label}`,
                 subtitle: `도시 시설 Lv.${row.level}/${row.maxLevel}`,
                 speaker: `${info.icon} ${info.label}`,
+                // 시설은 사람이 아니다 — 왼쪽 열에 글자 표식을 쓴다.
+                placeMark: info.icon,
                 text: `${info.label}은(는) ${city.name}의 운영 능력을 보여줍니다. 현재 투자는 ${row.investment}金, 다음 단계 투자는 ${cost}金입니다.`,
                 detail: [
                     `현재 효과 ${info.effect}`,
