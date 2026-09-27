@@ -273,6 +273,52 @@ async function main() {
             }
             return false;
         };
+        // 타이틀 메뉴 3항목: 시작하기 / 이어하기 / 신규 장수 생성 [신규 기능]
+        // 신규 장수 생성은 시나리오 화면을 거치지 않으므로 별도 경로로 확인한다.
+        // startGame 은 isRunning 가드 때문에 한 번만 성공하므로, 여기서 먼저 구동한 뒤
+        // 페이지를 새로고침해서 아래 시나리오 07 경로를 깨끗하게 다시 시작한다.
+        const titleLabels = await cdp.evalJson(
+            "(function(){return Array.from(document.querySelectorAll('.title-menu .btn-label')).map(e=>e.textContent.trim());})()");
+        if (titleLabels.length !== 3) throw new Error(`title menu expected 3 items, got ${titleLabels.length}`);
+        const recruitBtnVisible = await cdp.evaluate("!!document.getElementById('btn-title-recruit') && document.getElementById('btn-title-recruit').offsetParent !== null");
+        if (!recruitBtnVisible.value) throw new Error('신규 장수 생성 버튼이 보이지 않는다');
+
+        // 빈 성명으로 확정하면 시작되지 않고 경고가 떠야 한다 (검증 배선 확인)
+        await cdp.evaluate("document.getElementById('btn-title-recruit').click()");
+        const recruitOpen = await cdp.evaluate("document.getElementById('recruit-screen').classList.contains('open')");
+        if (!recruitOpen.value) throw new Error('신규 장수 생성 화면이 열리지 않는다');
+        await cdp.evaluate("document.getElementById('recruit-name').value=''; document.getElementById('btn-recruit-confirm').click()");
+        const emptyNameBlocked = await cdp.evaluate("document.getElementById('recruit-warn').style.display === 'block' && document.getElementById('recruit-screen').classList.contains('open')");
+        if (!emptyNameBlocked.value) throw new Error('빈 성명으로 방어되지 않았다');
+
+        // 정상 입력 후 확정 -> 플레이어 세력이 custom 으로 시작
+        await cdp.evaluate("(function(){var n=document.getElementById('recruit-name');n.value='한중윤';n.dispatchEvent(new Event('input'));var c=document.getElementById('recruit-courtesy');c.value='중윤';c.dispatchEvent(new Event('input'));document.getElementById('btn-recruit-confirm').click();})()");
+        let recruitStarted = false;
+        for (let i = 0; i < 60; i++) {
+            const rs = await cdp.evalJson(
+                "(function(){var s=window.__game.getStore().getGlobalState();return {pf:s.playerFactionId,y:s.time.year};})()");
+            if (rs.pf === 'fac_custom') { recruitStarted = true; break; }
+            await delay(500);
+        }
+        if (!recruitStarted) throw new Error('신규 장수 세력(fac_custom)으로 시작되지 않았다');
+        // 생성된 장수가 실제로 조회되는지 (월드에 잘 들어갔는지)
+        const recruitOfficerVisible = await cdp.evalJson(
+            "(function(){var s=window.__game.getStore();var o=s.getOfficer('off_custom_player');return o?{name:o.name,status:o.status,faction:o.factionId,rank:o.rank}:null;})()");
+        if (!recruitOfficerVisible || recruitOfficerVisible.faction !== 'fac_custom') {
+            throw new Error('생성된 장수가 스토어에서 조회되지 않는다');
+        }
+        const recruitProbe = { titleLabels, recruitOpen: true, emptyNameBlocked: true, recruitStarted, officer: recruitOfficerVisible };
+
+        // isRunning 가드를 풀기 위해 새로고침 — 아래 시나리오 경로를 위해 타이틀로 복귀
+        await cdp.call('Page.reload');
+        await delay(1200);
+        let recruitReloadBooted = false;
+        for (let i = 0; i < 60; i++) {
+            const r = await cdp.evaluate("!!document.getElementById('btn-title-recruit')");
+            if (r.value) { recruitReloadBooted = true; break; }
+            await delay(250);
+        }
+        if (!recruitReloadBooted) throw new Error('새로고침 후 타이틀로 복귀하지 못했다');
         await cdp.evaluate("document.getElementById('btn-title-new').click()");
         const scenarioFlowOpen = await waitForDisplay('scenario-screen', 'flex');
         await cdp.evaluate("document.getElementById('btn-scenario-back').click()");
@@ -296,7 +342,7 @@ async function main() {
             await delay(500);
         }
         if (!scenario07Started) throw new Error('scenario 07 start failed');
-        const flowProbe = { scenarioFlowOpen, titleBackVisible: titleBackVisible.value, factionFlowOpen, scenarioBackAgain };
+        const flowProbe = { scenarioFlowOpen, titleBackVisible: titleBackVisible.value, factionFlowOpen, scenarioBackAgain, recruitProbe };
         await cdp.evaluate("document.getElementById('btn-next-month').click()");
         for (let i = 0; i < 75; i++) {
             const r = await cdp.evaluate("!document.getElementById('btn-next-month').disabled");
@@ -633,6 +679,13 @@ async function main() {
         const onlyFavicon404 = notFound.length === 0 || notFound.every((u) => u.includes('favicon') || u.endsWith('.ico'));
         const regressionChecks = {
             flow: flowProbe.scenarioFlowOpen && flowProbe.titleBackVisible && flowProbe.factionFlowOpen && flowProbe.scenarioBackAgain,
+            recruit: flowProbe.recruitProbe?.titleLabels?.length === 3
+                && flowProbe.recruitProbe.titleLabels[0] === '시작하기'
+                && flowProbe.recruitProbe.titleLabels[1] === '이어하기'
+                && flowProbe.recruitProbe.titleLabels[2] === '신규 장수 생성'
+                && flowProbe.recruitProbe.recruitOpen
+                && flowProbe.recruitProbe.emptyNameBlocked
+                && flowProbe.recruitProbe.recruitStarted,
             scenario: scenario07Probe.cityNames.includes('청두') && scenario07Probe.cityNames.length === 6 && scenario07Probe.qingdu === 70 && scenario07Probe.caoPi === 76 && scenario07Probe.relationships === 8 && scenario07Probe.eventProcessed && scenario07Probe.eventText.includes('강완의 안정'),
             captiveBattle: captiveBattleProbe.success === true && captiveBattleProbe.commandType === 'BATTLE' && captiveBattleProbe.captiveOutcomes.length > 0 && captiveBattleProbe.logMessages.some(message => message.includes('포획')) && captiveBattleProbe.chronicleText.some(text => text.includes('포로')),
             monthlyReport: monthlyReportProbe.visible === true && monthlyReportProbe.hasCaptive === true,

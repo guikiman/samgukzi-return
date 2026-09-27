@@ -472,6 +472,42 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 .flow-footer { margin-top: 18px; }
 
 .title-btn.small { display: inline-block; width: auto; padding: 10px 26px; font-size: 13px; }
+
+/* ============================================================
+   신규 장수 생성 화면 [신규 기능]
+   ============================================================ */
+#recruit-screen {
+    display: none; position: absolute; inset: 0; z-index: 40;
+    background: rgba(8, 10, 20, 0.97); overflow-y: auto; padding: 24px;
+}
+#recruit-screen.open { display: block; }
+.recruit-wrap { max-width: 760px; margin: 0 auto; }
+.recruit-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.recruit-head h2 { margin: 0; font-size: 22px; color: #d4af6a; letter-spacing: 0.05em; }
+.recruit-head .recruit-back { margin-left: auto; }
+.recruit-sub { color: #9aa4b8; font-size: 13px; margin: 0 0 18px; }
+.recruit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.recruit-field { display: flex; flex-direction: column; gap: 4px; }
+.recruit-field label { font-size: 12px; color: #8b95a8; }
+.recruit-field input, .recruit-field select {
+    background: #12151f; color: #e6e8ee; border: 1px solid #2a3040;
+    border-radius: 4px; padding: 7px 9px; font-size: 14px; font-family: inherit;
+}
+.recruit-field input:focus, .recruit-field select:focus { outline: 1px solid #d4af6a; }
+.recruit-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 18px 0; }
+.recruit-stat { display: flex; flex-direction: column; gap: 4px; }
+.recruit-stat-head { display: flex; justify-content: space-between; font-size: 12px; color: #9aa4b8; }
+.recruit-stat input[type=range] { width: 100%; accent-color: #d4af6a; }
+.recruit-actions { display: flex; gap: 10px; margin-top: 20px; }
+.recruit-preview {
+    margin-top: 18px; padding: 14px; border: 1px solid #2a3040; border-radius: 6px;
+    background: #0d1018; font-size: 13px; line-height: 1.7; color: #c3cad8;
+}
+.recruit-preview-title { color: #d4af6a; font-size: 15px; margin-bottom: 4px; }
+.recruit-warn { color: #e0a35a; font-size: 12px; margin: 6px 0 0; }
+@media (max-width: 640px) {
+    .recruit-stats { grid-template-columns: repeat(2, 1fr); }
+}
 .title-btn.small .btn-label { font-size: 13px; letter-spacing: 3px; text-indent: 3px; }
 
 .scenario-list, .faction-list {

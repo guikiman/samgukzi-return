@@ -61,23 +61,35 @@ git gc --prune=now --aggressive
 확인 방법: `git cat-file -e <blob-sha>` 가 0 을 반환하면 아직 있다.
 파일시스템 재스캔만으로는 판단할 수 없다.
 
-### 보존한 미커밋 작업
+### ~~### 보존한 미커밋 작업~~ — 이미 흡수 후 디렉터리 삭제 완료
 
-worktree 를 지우기 전에 실제 작업 8개 파일을 복사해 두었다
-(`D:\samkukzi-re_DATA\preserved-2026-09-27\`). `master` 에 없던 파일이다.
+worktree 를 지우기 전에 복사해 둔 6개 파일은 `master` 에 cherry-pick 되었고,
+보존 디렉터리 자체는 삭제되었다. 복원 절차가 필요한 경우는 없다.
 
-| 출처 | 파일 |
-|---|---|
-| auth-contract | `src/core/china_map_renderer.ts`, `tests/e2e/browser_smoke.mjs` |
-| auth-ui | `index.html`, `src/main.ts`, `style.css`, `scripts/measure_compendium_render.mjs`, `src/ui/officer_compendium.ts`, `tests/officer_compendium.test.ts` |
+### ~~### 남은 stash~~ — 정리 완료 (2026-09-27)
 
-`officer-dossier` 의 미커밋 1071개는 전부 `dist/` 산출물과 `sw-precache.json`
-이라 보존하지 않았다.
+사용자가 명시적으로 폐기했다. 아래 경고를 읽지 말고 넘어가도 된다.
 
-### 남은 stash
+- `stash@{0}` (200개 파일) 삭제 완료.
+- `refs/stash` **존재하지 않는다** (`git rev-parse refs/stash` → fatal: unknown revision).
+- stash 본체 SHA `89eee9ee…` 도 **Git 객체 저장소에서 제거되었다**
+  (`git cat-file -e` → exit 1).
+- `salvage-stash-2026-09-27` 태그 없음. 보존용 worktree 없음.
 
-`stash@{0}: On master: pre-hippocamp-merge master worktree changes` — 200개 파일.
-저작권 blob 은 들어 있지 않다. 필요 없으면 `git stash drop`.
+> ⚠️ 아래 "stash 복구 사고" 절은 **과거 기록**이다. 더 이상 유효하지 않으며,
+> `git stash drop 하지 말 것` 경고도 더 이상 적용되지 않는다.
+> 이미 GC 로 회수 불가능한 상태임을 위 명령으로 확인했다.
+
+### 보존 디렉터리
+
+`D:\samkukzi-re_DATA\preserved-2026-09-27\` 은 worktree 정리와 함께
+**함께 삭제되었다** (경로 존재 확인: False). 위 6개 파일은 이미 `master` 에
+cherry-pick 되어 있으므로 복원본이 필요 없다.
+
+### worktree / terminal
+
+- 남은 worktree: `D:/samkukzi-re` (master) **1개뿐**.
+- `hippocamp` 로컬·리모트 브랜치와 worktree 모두 삭제됨.
 
 ### 참조 문서
 
@@ -85,7 +97,14 @@ worktree 를 지우기 전에 실제 작업 8개 파일을 복사해 두었다
   다음에 병렬 작업을 시작하면 **반드시 먼저 읽을 것.**
   특히 규칙 1(계약을 worktree 생성 전에 커밋)을 지키지 않으면 워커가 멈춘다.
 
-### ⚠️ stash 복구 사고 (2026-09-27)
+### ⚠️ stash 복구 사고 (2026-09-27) — **해결됨 · 아래는 과거 기록**
+
+> 🚫 **이 절의 지시는 더 이상 실행하지 말 것.**
+> `git stash drop 하지 말 것` 경고는 이미 깨진 상태다. 사용자가 stash 를
+> 명시적으로 폐기했고 GC 까지 끝났다. 위 절에서 확인한 대로
+> `refs/stash` 와 본체 SHA 양쪽 다 존재하지 않는다.
+
+다음은 당시 상황의 기록이다 (무엇이 왜 막혔는지를 남기기 위함).
 
 git stash list 가 빈 목록을 반환하지만 **efs/stash 는 살아 있다**.
 git stash list 는 reflog 을 읽는데 그 reflog 파일이 0바이트다.

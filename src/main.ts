@@ -14,6 +14,7 @@ import { BattleFrontend, DeployableUnit, BattlePhase } from './core/battle_front
 import { TitleScreen } from './core/title_screen.js';
 import { loadScenarios, getCachedScenarios, buildWorld, getKnownOfficerName } from './core/scenario_system.js';
 import type { BuiltWorld, ScenarioData } from './core/scenario_system.js';
+import { buildCustomOfficerWorld, validateCustomOfficer, rollCustomStats, hashSeed } from './core/custom_officer_start.js';
 import { MonthlyReportSystem } from './core/monthly_report.js';
 import { assembleReinforcements } from './core/reinforcement_system.js';
 import { SaveSlotManager } from './core/save_slot_manager.js';
@@ -3984,6 +3985,7 @@ if (hasAnySave) {
 
 const titleScreen = new TitleScreen({
     onNewGame: () => { openScenarioScreen(); },
+    onRecruit: () => { openRecruitScreen(); },
     onContinue: () => {
         try {
             // 최근 저장 슬롯(auto 폴백 포함)을 찾아 복원
@@ -4008,6 +4010,171 @@ const titleScreen = new TitleScreen({
 });
 titleScreen.setHasSave(hasAnySave);
 titleScreen.show();
+
+// 시나리오를 미리 적재한다. '신규 장수 생성'은 시나리오 화면을 거치지 않고
+// 곧바로 월드를 만들므로, 타이틀에서 첫 클릭이 빈 배열을 받으면 죽는다.
+// 실패해도 타이틀은 살아 있어야 하므로 여기서는 조용히 넘어간다.
+void loadScenarios().catch(() => {
+    addLog('시나리오 데이터 미리 읽기 실패 — 시작하기 진입 시 다시 시도합니다.');
+});
+// ============================================================
+// 신규 장수 생성 — 타이틀 메뉴 3번째 항목 배선
+// ============================================================
+// 로직은 전부 src/core/custom_officer_start.ts 의 순수 함수에 있다.
+// 여기서는 DOM 읽기/쓰기와 화면 전환만 한다.
+const recruitScreen = document.getElementById('recruit-screen')!;
+const recruitName = document.getElementById('recruit-name') as HTMLInputElement;
+const recruitCourtesy = document.getElementById('recruit-courtesy') as HTMLInputElement;
+const recruitGender = document.getElementById('recruit-gender') as HTMLSelectElement;
+const recruitBirth = document.getElementById('recruit-birth') as HTMLInputElement;
+const recruitRank = document.getElementById('recruit-rank') as HTMLInputElement;
+const recruitSpecialty = document.getElementById('recruit-specialty') as HTMLInputElement;
+const recruitStatsBox = document.getElementById('recruit-stats')!;
+const recruitWarn = document.getElementById('recruit-warn')!;
+const recruitPreview = document.getElementById('recruit-preview')!;
+
+const RECRUIT_STATS = [
+    { key: 'leadership', label: '통솔' },
+    { key: 'might', label: '무력' },
+    { key: 'intelligence', label: '지력' },
+    { key: 'politics', label: '정치' },
+    { key: 'charisma', label: '매력' },
+] as const;
+
+/** 능력치 슬라이더 — DOM 은 한 번만 만든다. 이후엔 input.value 만 갱신한다. */
+const recruitStatInputs = {} as Record<string, HTMLInputElement>;
+for (const s of RECRUIT_STATS) {
+    const wrap = document.createElement('div');
+    wrap.className = 'recruit-stat';
+    const head = document.createElement('div');
+    head.className = 'recruit-stat-head';
+    const label = document.createElement('span');
+    label.textContent = s.label;
+    const value = document.createElement('span');
+    value.dataset.for = s.key;
+    value.textContent = '50';
+    head.append(label, value);
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = '1';
+    range.max = '100';
+    range.value = '50';
+    range.setAttribute('aria-label', `${s.label} 능력치`);
+    range.addEventListener('input', () => { value.textContent = range.value; });
+    wrap.append(head, range);
+    recruitStatsBox.append(wrap);
+    recruitStatInputs[s.key] = range;
+}
+
+/** 거울 무대 — 관도처럼 세력 수가 넉넉한 시나리오를 고른다. */
+function pickCustomStage(): ScenarioData | null {
+    const list = getCachedScenarios();
+    return list.find(s => s.id === '04') ?? list[2] ?? list[0] ?? null;
+}
+
+function renderRecruitPreview(): void {
+    const name = recruitName.value.trim();
+    const courtesy = recruitCourtesy.value.trim();
+    recruitPreview.style.display = 'block';
+    recruitPreview.innerHTML = '';
+    const title = document.createElement('div');
+    title.className = 'recruit-preview-title';
+    title.textContent = courtesy ? `${name} (字 ${courtesy})` : (name || '(이름 없음)');
+    const meta = document.createElement('div');
+    const spec = recruitSpecialty.value.trim();
+    meta.textContent = `${recruitGender.value === 'F' ? '녀' : '남'} · ${recruitBirth.value}년생 · ${recruitRank.value}품`
+        + (spec ? ` · 특기 ${spec}` : '');
+    const stats = document.createElement('div');
+    stats.textContent = RECRUIT_STATS.map(s => `${s.label} ${recruitStatInputs[s.key].value}`).join(' · ');
+    recruitPreview.append(title, meta, stats);
+}
+
+function openRecruitScreen(): void {
+    const stage = pickCustomStage();
+    if (!stage) {
+        addLog('신규 장수 생성 실패: 시나리오 데이터를 불러오지 못했습니다.');
+        return;
+    }
+    recruitWarn.style.display = 'none';
+    recruitScreen.classList.add('open');
+    recruitScreen.focus();
+    if (recruitName.value.trim() === '') {
+        // 처음 열 때만 무작위 초안을 채운다. 다시 열면 사용자가 고른 값을 보존한다.
+        const stats = rollCustomStats(hashSeed(`draft|${stage.id}`));
+        for (const s of RECRUIT_STATS) {
+            const input = recruitStatInputs[s.key];
+            input.value = String(stats[s.key]);
+            input.dispatchEvent(new Event('input'));
+        }
+    }
+    renderRecruitPreview();
+}
+
+function closeRecruitScreen(): void {
+    recruitScreen.classList.remove('open');
+    titleScreen.show();
+}
+
+/** 확정 — 검증 후 월드 빌더에 넘기고 게임을 시작한다. */
+function confirmRecruitAndStart(): void {
+    const stage = pickCustomStage();
+    if (!stage) {
+        recruitWarn.textContent = '시나리오 데이터를 불러오지 못했습니다.';
+        recruitWarn.style.display = 'block';
+        return;
+    }
+    const birthYear = Number.parseInt(recruitBirth.value, 10);
+    const startYear = Number.parseInt(stage.start_date.slice(0, 4), 10);
+    const err = validateCustomOfficer(recruitName.value, birthYear, startYear);
+    if (err !== '') {
+        recruitWarn.textContent = err;
+        recruitWarn.style.display = 'block';
+        recruitName.focus();
+        return;
+    }
+    recruitWarn.style.display = 'none';
+
+    const world = buildCustomOfficerWorld(stage, {
+        name: recruitName.value,
+        courtesyName: recruitCourtesy.value,
+        gender: recruitGender.value === 'F' ? 'F' : 'M',
+        birthYear,
+        rank: Number.parseInt(recruitRank.value, 10),
+        stats: {
+            leadership: Number.parseInt(recruitStatInputs.leadership.value, 10),
+            might: Number.parseInt(recruitStatInputs.might.value, 10),
+            intelligence: Number.parseInt(recruitStatInputs.intelligence.value, 10),
+            politics: Number.parseInt(recruitStatInputs.politics.value, 10),
+            charisma: Number.parseInt(recruitStatInputs.charisma.value, 10),
+        },
+        specialty: recruitSpecialty.value.trim() || null,
+    });
+
+    closeRecruitScreen();
+    addLog(`${recruitName.value.trim()} — ${stage.title_kr}의 무대에 서게 되었습니다.`);
+    statusText.textContent = `${recruitName.value.trim()}의 이력`;
+    void startGame(world);
+}
+
+document.getElementById('btn-recruit-back')!.addEventListener('click', closeRecruitScreen);
+document.getElementById('btn-recruit-confirm')!.addEventListener('click', confirmRecruitAndStart);
+document.getElementById('btn-recruit-random')!.addEventListener('click', () => {
+    // 성명+연도+성별로 시드를 만든다. 같은 입력이면 같은 결과가 나온다.
+    const stats = rollCustomStats(hashSeed(`${recruitName.value}|${recruitBirth.value}|${recruitGender.value}`));
+    for (const s of RECRUIT_STATS) {
+        const input = recruitStatInputs[s.key];
+        input.value = String(stats[s.key]);
+        input.dispatchEvent(new Event('input'));
+    }
+    renderRecruitPreview();
+});
+for (const el of [recruitName, recruitCourtesy, recruitGender, recruitBirth, recruitRank, recruitSpecialty]) {
+    el.addEventListener('input', renderRecruitPreview);
+}
+recruitScreen.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeRecruitScreen();
+});
+
 
 init();
 

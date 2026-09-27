@@ -104,6 +104,53 @@
     </section>
 </div>
 
+<!-- 신규 장수 생성 화면 [신규 기능] — 마크업만 있다. 상태와 렌더는 main.ts 가 담당한다. -->
+<div id="recruit-screen" role="dialog" aria-label="신규 장수 생성" tabindex="-1">
+    <div class="recruit-wrap">
+        <div class="recruit-head">
+            <h2>신규 장수 생성</h2>
+            <button id="btn-recruit-back" class="title-btn small recruit-back">← 타이틀로</button>
+        </div>
+        <p class="recruit-sub">직접 만든 무장으로 한 판국에서 출발합니다. 능력치는 전부 수동 입력입니다.</p>
+        <div class="recruit-grid">
+            <div class="recruit-field">
+                <label for="recruit-name">성명</label>
+                <input id="recruit-name" type="text" maxlength="8" placeholder="예: 한중윤" autocomplete="off">
+            </div>
+            <div class="recruit-field">
+                <label for="recruit-courtesy">자</label>
+                <input id="recruit-courtesy" type="text" maxlength="8" placeholder="예: 중윤" autocomplete="off">
+            </div>
+            <div class="recruit-field">
+                <label for="recruit-gender">성별</label>
+                <select id="recruit-gender">
+                    <option value="M">남</option>
+                    <option value="F">녀</option>
+                </select>
+            </div>
+            <div class="recruit-field">
+                <label for="recruit-birth"> 출생 연도</label>
+                <input id="recruit-birth" type="number" min="150" max="210" value="180" step="1">
+            </div>
+            <div class="recruit-field">
+                <label for="recruit-rank">품계 (0~9)</label>
+                <input id="recruit-rank" type="number" min="0" max="9" value="5" step="1">
+            </div>
+            <div class="recruit-field">
+                <label for="recruit-specialty">특기</label>
+                <input id="recruit-specialty" type="text" maxlength="16" placeholder="예: 火攻" autocomplete="off">
+            </div>
+        </div>
+        <div class="recruit-stats" id="recruit-stats"></div>
+        <p class="recruit-warn" id="recruit-warn" style="display:none;"></p>
+        <div class="recruit-actions">
+            <button id="btn-recruit-random" class="title-btn small">무작위 생성</button>
+            <button id="btn-recruit-confirm" class="title-btn small primary">이 장수로 시작</button>
+        </div>
+        <div class="recruit-preview" id="recruit-preview" style="display:none;"></div>
+    </div>
+</div>
+
 <!-- 타이틀 스크린 오버레이 -->
 <div id="title-screen">
     <canvas id="title-particles"></canvas>
@@ -113,12 +160,16 @@
         <div class="logo-sub">乱리에 선다 — 三國志리턴</div>
         <nav class="title-menu">
             <button id="btn-title-new" class="title-btn primary">
-                <span class="btn-label">새로운 시작</span>
+                <span class="btn-label">시작하기</span>
                 <span class="btn-desc">시나리오를 선택하여 새로운 역사를 시작</span>
             </button>
             <button id="btn-title-continue" class="title-btn" style="display:none;">
                 <span class="btn-label">이어하기</span>
                 <span class="btn-desc">저장된 세이브 불러오기</span>
+            </button>
+            <button id="btn-title-recruit" class="title-btn">
+                <span class="btn-label">신규 장수 생성</span>
+                <span class="btn-desc">직접 만든 무장으로 한ху에서 출발</span>
             </button>
         </nav>
         <div class="title-ornament bottom"><span class="orn-line"></span><span class="orn-gem">◆</span><span class="orn-line"></span></div>

@@ -142,25 +142,31 @@ export class TitleScreen {
     private particles: TitleParticleSystem;
     private btnNew: HTMLButtonElement;
     private btnContinue: HTMLButtonElement;
+    private btnRecruit: HTMLButtonElement | null;
     private onNewGame: () => void;
     private onContinue: () => void;
+    private onRecruit: () => void;
 
     constructor(opts: {
         onNewGame: () => void;
         onContinue: () => void;
+        onRecruit?: () => void;
         season?: string;
     }) {
         this.root = document.getElementById('title-screen')!;
         this.particleCanvas = document.getElementById('title-particles') as HTMLCanvasElement;
         this.btnNew = document.getElementById('btn-title-new') as HTMLButtonElement;
         this.btnContinue = document.getElementById('btn-title-continue') as HTMLButtonElement;
+        this.btnRecruit = document.getElementById('btn-title-recruit') as HTMLButtonElement | null;
         this.onNewGame = opts.onNewGame;
         this.onContinue = opts.onContinue;
+        this.onRecruit = opts.onRecruit ?? ((): void => {});
 
         this.particles = new TitleParticleSystem(this.particleCanvas, opts.season ?? 'spring');
 
         this.btnNew.addEventListener('click', () => this.leave('new'));
         this.btnContinue.addEventListener('click', () => this.leave('continue'));
+        this.btnRecruit?.addEventListener('click', () => this.leave('recruit'));
     }
 
     /** 세이브 존재 여부에 따라 '이어하기' 버튼 표시/숨김 */
@@ -180,11 +186,12 @@ export class TitleScreen {
         this.particles.start();
     }
 
-    private leave(mode: 'new' | 'continue'): void {
+    private leave(mode: 'new' | 'continue' | 'recruit'): void {
         this.root.classList.add('leaving');
         // 전환 애니메이션(.7s) 후 파티클 정지
         setTimeout(() => this.particles.stop(), 700);
         if (mode === 'new') this.onNewGame();
+        else if (mode === 'recruit') this.onRecruit();
         else this.onContinue();
     }
 }
