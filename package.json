@@ -11,7 +11,9 @@
     "tauri": "tauri",
     "tauri:doctor": "node scripts/tauri_doctor.mjs",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "dev:web": "tsc --watch --preserveWatchOutput & node scripts/dev_serve.mjs 8181",
+    "dev:serve": "node scripts/dev_serve.mjs 8181"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.5",

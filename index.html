@@ -663,7 +663,16 @@
         </div>
     </div>
 </div>
-<script type="module" src="dist/src/main.js"></script>
+<script>
+/* 개발 서버가 붙여 넣는 자동 새로고침 [dev only]
+   /__reload 채널로 파일 변경 신호를 받으면 곧바로 다시 읽는다. */
+(() => {
+    if (!location.port || location.port === '') return;   // 빌드물에서는 조용히 빠진다
+    let es;
+    try { es = new EventSource('/__reload'); } catch { return; }
+    es.onmessage = () => location.reload();
+})();
+</script><script type="module" src="dist/src/main.js"></script>
 <script type="module">
     import { createAuthFlow } from './dist/src/ui/auth/auth-flow.js';
 
