@@ -1,7 +1,7 @@
 /**
  * 장수 도장(officer dossier) 프로시저 생성기 — 삼국지14PK 정리표 기준.
  *
- * 1,200명 전원이 `bio: null` 이라 게임 안에 서술문이 하나도 없다. 이 모듈은
+ * 1,200명 중 대부분이 `bio: null` 이라 게임 안에 서술문이 거의 없다. 이 모듈은
  * 정적 프로필(officer_profile_schema.ts)의 실제 필드만으로 한국어 도장을 합성한다.
  * personality_text_generator.ts 의 8개 성격 버킷과는 무관하며, 무작위성也没有 없다.
  *

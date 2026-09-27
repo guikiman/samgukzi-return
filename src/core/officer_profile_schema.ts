@@ -75,6 +75,11 @@ export interface OfficerProfile {
     formations: Partial<Record<FormationKey, boolean>>;
     relations: OfficerRelations;
     bio: string | null;
+    /**
+     * `bio` 에 손으로 쓴 글이 있는지. `bio` 로부터 유도되는 값이라 손으로 맞출 필요가 없다 —
+     * `validateOfficerProfileDataset()` 이 둘이 어긋나면 오류로 막는다.
+     * 판정식: `typeof bio === 'string' && bio.trim() !== ''`.
+     */
     hasHandwrittenBio: boolean;
     portraitPrompt: string | null;
     provenance: string | null;
@@ -206,6 +211,11 @@ function isNullishString(v: unknown): v is string | null {
     return v === null || typeof v === 'string';
 }
 
+/** `hasHandwrittenBio` 의 유일한 진리 원천. bio 가 실제로 글자를 담고 있는가. */
+export function hasUsableBioText(bio: unknown): boolean {
+    return typeof bio === 'string' && bio.trim() !== '';
+}
+
 const VALID_TIERS: ReadonlySet<string> = new Set(['PK_BASE', 'PK_EXTRA']);
 const STAT_KEYS = ['leadership', 'might', 'intelligence', 'politics', 'charisma'] as const;
 const NULLABLE_NUM = [
@@ -238,6 +248,12 @@ function validateProfile(
     }
     if (typeof raw.hasHandwrittenBio !== 'boolean') {
         errors.push(`${key}: hasHandwrittenBio 가 boolean 아님`);
+    } else if (raw.hasHandwrittenBio !== hasUsableBioText(raw.bio)) {
+        // 파생 필드라 조용히 어긋날 수 있다. bio 를 고쳤는데 플래그를 안 고친 상태를 여기서 막는다.
+        errors.push(
+            `${key}: hasHandwrittenBio(${raw.hasHandwrittenBio}) 가 bio 와 불일치 ` +
+                `(bio 가 ${hasUsableBioText(raw.bio) ? '있으므로 true 여야 함' : '없으므로 false 여야 함'})`,
+        );
     }
     if (!isStringArray(raw.aliases)) errors.push(`${key}: aliases 가 문자열 배열이 아님`);
     if (!isStringArray(raw.traits)) errors.push(`${key}: traits 가 문자열 배열이 아님`);

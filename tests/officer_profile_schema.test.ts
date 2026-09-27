@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     OFFICER_PROFILES,
     OFFICER_RELATION_KINDS,
+    hasUsableBioText,
     validateOfficerProfileDataset,
     type OfficerProfileDataset,
 } from '../src/core/officer_profile_schema';
@@ -62,6 +63,30 @@ describe('장수 프로필 데이터셋 무결성 (삼국지14PK)', () => {
     it('PK 확장분 200명이 PK_BASE 와 구분된다', () => {
         const extra = OFFICER_PROFILES.all().filter(p => p.rosterTier === 'PK_EXTRA');
         expect(extra).toHaveLength(200);
+    });
+
+    it('hasHandwrittenBio 가 bio 유무와 1,200명 전부 일치한다', () => {
+        const mismatched = OFFICER_PROFILES.all()
+            .filter(p => p.hasHandwrittenBio !== hasUsableBioText(p.bio))
+            .map(p => p.id);
+        expect(mismatched).toEqual([]);
+    });
+
+    it('bio 가 있는 장수는 모두 플래그가 true 다', () => {
+        const withBio = OFFICER_PROFILES.all().filter(p => p.bio !== null && p.bio !== undefined);
+        expect(withBio.length).toBeGreaterThan(0);
+        for (const p of withBio) {
+            expect(p.hasHandwrittenBio).toBe(true);
+            expect(p.bio!.trim()).not.toBe('');
+        }
+    });
+
+    it('bio 가 빈칸/공백뿐인 장수는 플래그가 false 다', () => {
+        for (const p of OFFICER_PROFILES.all()) {
+            if (p.bio === null || p.bio.trim() === '') {
+                expect(p.hasHandwrittenBio).toBe(false);
+            }
+        }
     });
 });
 
@@ -188,5 +213,34 @@ describe('검증기 fail-safe 동작', () => {
         const d = cloneDataset();
         d.profiles.off_0001.traits = '남만' as never;
         expect(validateOfficerProfileDataset(d).errors.some(e => e.includes('traits'))).toBe(true);
+    });
+
+    it('bio 는 있는데 hasHandwrittenBio 가 false 면 감지한다', () => {
+        const d = cloneDataset();
+        const target = OFFICER_PROFILES.all().find(p => p.bio !== null)!;
+        d.profiles[target.id].hasHandwrittenBio = false;
+        const errors = validateOfficerProfileDataset(d).errors;
+        expect(errors.some(e => e.includes(target.id) && e.includes('hasHandwrittenBio'))).toBe(true);
+    });
+
+    it('bio 는 없는데 hasHandwrittenBio 가 true 면 감지한다', () => {
+        const d = cloneDataset();
+        const target = OFFICER_PROFILES.all().find(p => p.bio === null)!;
+        d.profiles[target.id].hasHandwrittenBio = true;
+        const errors = validateOfficerProfileDataset(d).errors;
+        expect(errors.some(e => e.includes(target.id) && e.includes('hasHandwrittenBio'))).toBe(true);
+    });
+
+    it('bio 를 공백 문자열로 낮추면 플래그 불일치로 감지한다', () => {
+        const d = cloneDataset();
+        const target = OFFICER_PROFILES.all().find(p => p.bio !== null)!;
+        d.profiles[target.id].bio = '   ';
+        const errors = validateOfficerProfileDataset(d).errors;
+        expect(errors.some(e => e.includes(target.id) && e.includes('hasHandwrittenBio'))).toBe(true);
+    });
+
+    it('검증기는 bio 와 플래그가 맞는 데이터셋을 통과시킨다', () => {
+        // 위 네 단언이 '항상 참' 이 아닌지 대조군이다.
+        expect(validateOfficerProfileDataset(cloneDataset()).errors).toEqual([]);
     });
 });

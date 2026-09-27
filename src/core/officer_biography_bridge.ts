@@ -52,8 +52,8 @@
  * `Math.random()` 을 쓰지 않는다. 순회는 `OFFICER_PROFILES.all()` 의 순서
  * (= 데이터셋 행 순서)를 그대로 따르고, 성향·전법 배열도 입력 순서를 보존한다.
  *
- * 손으로 쓴 bio 17개
- * -----------------
+ * 손으로 쓴 bio
+ * --------------
  * `dossier.isHandwritten` 면 `biography` 는 원문 bio 를 한 글자도 바꾸지 않고
  * 그대로 넣는다. 도장 생성기가 `summary` 에 이미 보장하는 것을 다시 정리하지 않는다.
  * 나머지 세 줄(trait/relation/career)은 `getBridgeDossierParagraphs()` 로 따로 열람한다.
@@ -103,7 +103,7 @@ export interface BridgeReport {
     /** 도장 문단이 하나라도 비어 건너뛴 인원. */
     readonly skipped: number;
     readonly skippedIds: readonly OfficerID[];
-    /** 원문 bio 를 그대로 실은 인원 (데이터셋 기준 17명). */
+    /** 원문 bio 를 그대로 실은 인원 (bio 가 있는 프로필 수와 같다). */
     readonly handwritten: number;
     /** 도장 생성기가 합성한 문단을 실은 인원. */
     readonly generated: number;
