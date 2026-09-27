@@ -43,6 +43,37 @@ SHA 만 바뀌고 실체는 같았다. 번들은 독립적인 가치가 없었�
 - [x] 히스토리 재작성 — `filter-repo` 로 136커밋에서 blob 제거, 리모트 반영 완료
 - [x] `backup-before-rewrite` 삭제 (2026-09-27) — 34커밋 전부 `master` 안에 있음을 확인 후 삭제
 - [x] `guikiman/*` 16개 + worktree 8개 정리 (2026-09-27) — 커밋 119개 그대로
+- [x] 2026-09-28 세션 종료 시점 재확인 — 아래 「2026-09-28 점검」 참조
+
+## 2026-09-28 점검 (새 세션 시작 시 읽을 것)
+
+이전 항목들이 아직 유효한지 실측으로 다시 확인했다. **새로 남은 정리 항목은 없다.**
+
+| 검사 | 결과 |
+|---|---|
+| `D:\samkukzi8-pre-rewrite.bundle` | 존재하지 않음 (Test-Path → False) ✅ |
+| `D:\samkukzi-re_DATA` 작업 디렉터리 | 76개 파일 그대로 — **지우면 안 된다** (xlsx·IP_POLICY 등) |
+| `git stash list` | 빈 목록 |
+| `refs/stash` | 존재하지 않음 (fatal: unknown revision) ✅ |
+| worktree | `D:/samkukzi-re` 1개뿐 ✅ |
+| 저작권 게이트 | push 시 143커밋 스캔 · 위반 0건 통과 |
+
+### 이번 세션에서 정리한 임시 파일
+
+| 경로 | 용도 | 처리 |
+|---|---|---|
+| `scripts/dev_serve.mjs` | 개발용 정적 서버 | ❌ 임시 아님 — `8690d62` 로 커밋, 정식 유지 |
+| `scripts/_repro_flow.mjs` | 결함 재현용 CDP 스크립트 | ✅ 삭제 (커밋하지 않음) |
+| `scripts/_verify.mjs` | 10항목 브라우저 검증 스크립트 | ✅ 삭제 (커밋하지 않음) |
+| `.git/COMMIT_EDITMSG_TMP.txt` · `.git/CM3.txt` | 커밋 메시지 임시 파일 | ✅ 삭제 |
+
+> 재현/검증 스크립트를 다시 만들 필요가 있으면 `tests/e2e/browser_smoke.mjs` 의
+> CDP 클라이언트 클래스를 그대로 재사용하면 된다. 커밋하지 말고 세션 안에서만 쓴다.
+
+### 작업 트리 상태
+
+`git status --porcelain` 결과가 비어 있어야 한다. 임시 파일이 남아 있으면
+worktree 정리 시 함께 사라지므로, 세션이 끝나기 전에 확인한다.
 
 ### ⚠️ `filter-repo` 후에도 blob 이 살아있던 이유 (중요)
 
