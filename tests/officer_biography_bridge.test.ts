@@ -39,7 +39,7 @@ import { OfficerBiographyStore } from '../src/core/officer_biography_store';
 const ALL: readonly OfficerProfile[] = OFFICER_PROFILES.all();
 const ALL_IDS: readonly string[] = ALL.map(p => p.id);
 const HANDWRITTEN: readonly OfficerProfile[] = ALL.filter(p => p.bio !== null && p.bio !== undefined);
-const HANDWRITTEN_EXPECTED = 48;
+const HANDWRITTEN_EXPECTED = 62;
 const { store: STORE, report: REPORT } = buildBridgedBiographyStore();
 
 
