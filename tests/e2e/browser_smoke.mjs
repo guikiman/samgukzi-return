@@ -288,6 +288,33 @@ async function main() {
         const editorOpen = await cdp.evaluate("document.getElementById('editor-screen').classList.contains('open')");
         if (!editorOpen.value) throw new Error('무장 편집 화면이 열리지 않는다');
 
+        // 1b) 실제무장편집: 카드 선택 -> 초상/레이더/연령/특성이 그려진다
+        const existingPainted = await cdp.evalJson(
+            "(function(){var c=document.querySelector('.roster-card');if(!c)return {noCard:true};c.click();" +
+            "return {portrait:!!document.querySelector('#ed-existing-portrait svg')," +
+            "radar:!!document.querySelector('#ed-existing-radar svg')," +
+            "traits:document.getElementById('ed-existing-traits').children.length," +
+            "age:document.getElementById('ed-existing-age-text').textContent};})()");
+        if (existingPainted.noCard) throw new Error('기존 무장 카드가 없다');
+        if (!existingPainted.portrait) throw new Error('실제무장편집 초상이 그려지지 않는다');
+        if (!existingPainted.radar) throw new Error('실제무장편집 레이더가 그려지지 않는다');
+        if (!existingPainted.traits || existingPainted.traits < 1) throw new Error('특성 태그가 없다');
+        if (!existingPainted.age) throw new Error('연령이 표시되지 않는다');
+
+        // 1c) 신규무장편집 탭으로 전환 -> 초상/레이더/배치가 그려진다
+        await cdp.evaluate("document.getElementById('tab-editor-new').click()");
+        const newPainted = await cdp.evalJson(
+            "(function(){return {portrait:!!document.querySelector('#ed-portrait svg')," +
+            "radar:!!document.querySelector('#ed-radar svg')," +
+            "age:document.getElementById('ed-age-text').textContent," +
+            "deploy:document.querySelectorAll('#ed-deploy .moe-deploy-btn').length};})()");
+        if (!newPainted.portrait) throw new Error('신규무장편집 초상이 그려지지 않는다');
+        if (!newPainted.radar) throw new Error('신규무장편집 레이더가 그려지지 않는다');
+        if (newPainted.deploy !== 4) throw new Error(`배치 버튼이 4개여야 한다: ${newPainted.deploy}`);
+        // 기본 생년이 장수로 성립하는 나이가 되어야 한다 (만 4세 같은 값은 결함)
+        const ageNum = Number((newPainted.age.match(/만\s*(-?\d+)/) ?? [])[1]);
+        if (!Number.isFinite(ageNum) || ageNum < 16) throw new Error(`기본 나이가 부자연스럽다: ${newPainted.age}`);
+
         // 2) 빈 성명은 경고로 막힌다
         await cdp.evaluate("document.getElementById('ed-name').value=''; document.getElementById('btn-ed-apply').click()");
         const emptyNameBlocked = await cdp.evaluate("document.querySelector('.editor-warn').style.display === 'block'");
@@ -333,7 +360,7 @@ async function main() {
         if (!recruitOfficerVisible || recruitOfficerVisible.faction !== 'fac_custom') {
             throw new Error('생성된 장수가 스토어에서 조회되지 않는다');
         }
-        const recruitProbe = { titleLabels, editorOpen: true, emptyNameBlocked: true, randomFilled, pickProbe, recruitStarted, officer: recruitOfficerVisible };
+        const recruitProbe = { titleLabels, editorOpen: true, existingPainted, newPainted, emptyNameBlocked: true, randomFilled, pickProbe, recruitStarted, officer: recruitOfficerVisible };
 
         // isRunning 가드를 풀기 위해 새로고침 — 아래 시나리오 경로를 위해 타이틀로 복귀
         await cdp.call('Page.reload');
@@ -710,6 +737,12 @@ async function main() {
                 && flowProbe.recruitProbe.titleLabels[1] === '이어하기'
                 && flowProbe.recruitProbe.titleLabels[2] === '무장 편집'
                 && flowProbe.recruitProbe.editorOpen
+                && flowProbe.recruitProbe.existingPainted.portrait
+                && flowProbe.recruitProbe.existingPainted.radar
+                && flowProbe.recruitProbe.existingPainted.traits >= 1
+                && flowProbe.recruitProbe.newPainted.portrait
+                && flowProbe.recruitProbe.newPainted.radar
+                && flowProbe.recruitProbe.newPainted.deploy === 4
                 && flowProbe.recruitProbe.emptyNameBlocked
                 && flowProbe.recruitProbe.randomFilled.birth !== ''
                 && flowProbe.recruitProbe.randomFilled.name !== ''

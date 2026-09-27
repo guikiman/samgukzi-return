@@ -21,6 +21,8 @@ import { searchRoster, countRoster, toEditable, randomProfile } from './core/off
 import { getOfficerProfile } from './core/officer_profile_schema.js';
 import { randomField, rollWholeOfficer } from './core/officer_editor_random.js';
 import type { EditorField } from './core/officer_editor_random.js';
+import { renderPortraitSvg } from './core/officer_portrait.js';
+import { renderRadarSvg } from './core/officer_radar.js';
 import { MonthlyReportSystem } from './core/monthly_report.js';
 import { assembleReinforcements } from './core/reinforcement_system.js';
 import { SaveSlotManager } from './core/save_slot_manager.js';
@@ -4055,7 +4057,8 @@ const pickSub = document.getElementById('pick-scenario-sub')!;
 let editorChoice: { kind: 'new'; name: string } | { kind: 'existing'; id: string } | null = null;
 /** 기존 무장 탭에서 현재 고른 프로필 */
 let editorSelectedProfile: EditableOfficer | null = null;
-let editorMode: 'new' | 'existing' = 'new';
+// 실제무장편집을 기본 탭으로 둔다 (요청한 San7 용어 순서).
+let editorMode: 'new' | 'existing' = 'existing';
 
 const EDITOR_STATS = [
     { key: 'leadership', label: '통솔' },
@@ -4093,6 +4096,155 @@ function setEditorWarn(message: string): void {
     edWarn.textContent = message;
     edWarn.style.display = message === '' ? 'none' : 'block';
 }
+
+// ============================================================
+// San7 스타일 편집 화면 렌더 [신규 기능]
+// ============================================================
+// 값이 바뀔 때만 다시 그린다. 슬라이더를 조작할 때마다 DOM 을 통째로
+// 바꾸면 노드가 새로 생겨 포커스가 튄다.
+const edPortrait = document.getElementById('ed-portrait')!;
+const edPortraitCaption = document.getElementById('ed-portrait-caption')!;
+const edRadarBox = document.getElementById('ed-radar')!;
+const edAgeFill = document.getElementById('ed-age-fill')!;
+const edAgeText = document.getElementById('ed-age-text')!;
+const edLevel = document.getElementById('ed-level')!;
+const edTraits = document.getElementById('ed-traits')!;
+const edExistingPortrait = document.getElementById('ed-existing-portrait')!;
+const edExistingCaption = document.getElementById('ed-existing-caption')!;
+const edExistingRadar = document.getElementById('ed-existing-radar')!;
+const edExistingAgeFill = document.getElementById('ed-existing-age-fill')!;
+const edExistingAgeText = document.getElementById('ed-existing-age-text')!;
+const edExistingLevel = document.getElementById('ed-existing-level')!;
+const edExistingTraits = document.getElementById('ed-existing-traits')!;
+const edExistingClassify = document.getElementById('ed-existing-classify')!;
+
+const EMPTY_STATS = { leadership: 0, might: 0, intelligence: 0, politics: 0, charisma: 0 };
+
+/** 기준 연도 — 연령 바 계산용. 시나리오가 없으면 200년으로 둔다. */
+function editorReferenceYear(): number {
+    const list = getCachedScenarios();
+    if (list.length > 0) return Number.parseInt(list[0].start_date.slice(0, 4), 10) || 200;
+    return 200;
+}
+
+/** 만 나이. 생년이 없으면 null — 가짜 나이를 만들지 않는다. */
+function ageOf(birthYear: number | null, referenceYear: number): number | null {
+    if (birthYear === null || !Number.isFinite(birthYear)) return null;
+    return referenceYear - birthYear;
+}
+
+/** 연령 바 — 0~100세를 0~100%로 매핑. 60세 이상은 색을 바꾼다. */
+function paintAge(fill: HTMLElement, text: HTMLElement, birthYear: number | null, refYear: number): void {
+    const age = ageOf(birthYear, refYear);
+    if (age === null) {
+        fill.style.width = '0%';
+        text.textContent = '미상';
+        return;
+    }
+    fill.style.width = `${Math.max(0, Math.min(100, age))}%`;
+    fill.style.background = age >= 60
+        ? 'linear-gradient(90deg, #8a5a4a, #c05a3a)'
+        : 'linear-gradient(90deg, #6a8fb5, #d4af6a)';
+    text.textContent = `만 ${age}세 · ${refYear - age}년생`;
+}
+
+function paintTraits(box: HTMLElement, traits: string[]): void {
+    box.innerHTML = '';
+    if (traits.length === 0) {
+        const none = document.createElement('span');
+        none.className = 'moe-trait none';
+        none.textContent = '없음';
+        box.append(none);
+        return;
+    }
+    for (const t of traits.slice(0, 12)) {
+        const chip = document.createElement('span');
+        chip.className = 'moe-trait';
+        chip.textContent = t;
+        box.append(chip);
+    }
+}
+
+/** 능력치 슬라이더 5개를 읽는다. */
+function readStatsFromSliders(): typeof EMPTY_STATS {
+    return {
+        leadership: Number.parseInt(editorStatInputs.leadership.value, 10) || 0,
+        might: Number.parseInt(editorStatInputs.might.value, 10) || 0,
+        intelligence: Number.parseInt(editorStatInputs.intelligence.value, 10) || 0,
+        politics: Number.parseInt(editorStatInputs.politics.value, 10) || 0,
+        charisma: Number.parseInt(editorStatInputs.charisma.value, 10) || 0,
+    };
+}
+
+/**
+ * 능력치에서 특성 라벨을 뽑는다.
+ * 실제 판정 규칙이 아니라 '편집 화면에 무엇을 보여줄지' 를 고르는 표시용 규칙.
+ */
+function deriveTraitsFromStats(stats: typeof EMPTY_STATS, grade: number): string[] {
+    const pairs: [string, number][] = [
+        ['단려', stats.leadership], ['강저', stats.might], ['지략', stats.intelligence],
+        ['교화', stats.politics], ['안목', stats.charisma],
+    ];
+    // 높은 능력치부터 태그로. 상위 3개까지만 (San7 도 3개 내외).
+    pairs.sort((a, b) => b[1] - a[1]);
+    const out: string[] = [];
+    for (const [label, value] of pairs) {
+        if (value >= 70) out.push(label);
+        if (out.length >= 3) break;
+    }
+    if (out.length < 3) out.push(grade >= 8 ? '명장' : grade >= 5 ? '장수' : '신규');
+    return out;
+}
+
+/** 신규무장편집 패널을 현재 폼 값으로 갱신한다. */
+function paintNewOfficerPanels(): void {
+    const birth = edBirth.value.trim() === '' ? null : Number.parseInt(edBirth.value, 10);
+    const grade = edGrade.value === '' ? 3 : Number.parseInt(edGrade.value, 10);
+    const refYear = editorReferenceYear();
+    const stats = readStatsFromSliders();
+    const name = edName.value.trim() || '미지명';
+    const courtesy = edCourtesy.value.trim();
+
+    edPortrait.innerHTML = renderPortraitSvg({
+        id: 'off_custom_player', name, gender: edGender.value === 'F' ? 'F' : 'M', grade,
+    });
+    edPortraitCaption.textContent = courtesy ? `${name} (字 ${courtesy})` : name;
+    edRadarBox.innerHTML = renderRadarSvg({ stats });
+    paintAge(edAgeFill, edAgeText, birth, refYear);
+    edLevel.textContent = String(Math.max(1, Math.min(10, grade)));
+    paintTraits(edTraits, deriveTraitsFromStats(stats, grade));
+}
+
+/** 실제무장편집 패널을 고른 프로필로 갱신한다. */
+function paintExistingPanels(): void {
+    const p = editorSelectedProfile;
+    if (!p) {
+        edExistingCaption.textContent = '무장을 선택하세요';
+        edExistingLevel.textContent = '1';
+        edExistingClassify.textContent = '—';
+        paintAge(edExistingAgeFill, edExistingAgeText, null, editorReferenceYear());
+        paintTraits(edExistingTraits, []);
+        edExistingRadar.innerHTML = renderRadarSvg({ stats: EMPTY_STATS });
+        return;
+    }
+    const profile = getOfficerProfile(p.id);
+    const stats = profile?.stats ?? EMPTY_STATS;
+    edExistingPortrait.innerHTML = renderPortraitSvg({
+        id: p.id, name: p.name, gender: p.gender, grade: p.grade ?? 3,
+    });
+    const bio = profile?.bio ? String(profile.bio).trim() : '';
+    edExistingCaption.textContent = bio ? `${p.name} — ${bio.slice(0, 40)}` : p.name;
+    edExistingRadar.innerHTML = renderRadarSvg({ stats });
+    paintAge(edExistingAgeFill, edExistingAgeText, p.birthYear, editorReferenceYear());
+    edExistingLevel.textContent = String(Math.max(1, Math.min(10, p.grade ?? 1)));
+    paintTraits(edExistingTraits, p.traits);
+    const parts = [p.gender === 'F' ? '녀' : '남'];
+    if (p.grade !== null) parts.push(`${p.grade}급`);
+    if (profile?.affiliationLabel) parts.push(profile.affiliationLabel);
+    edExistingClassify.textContent = parts.join(' · ');
+}
+
+
 
 /** 현재 폼 값을 EditableOfficer 로 읽는다. 신규 무장 경로 전용. */
 function readNewOfficer(): EditableOfficer {
@@ -4160,6 +4312,13 @@ function switchEditorMode(mode: 'new' | 'existing'): void {
     document.getElementById('editor-new-panel')!.style.display = mode === 'new' ? 'block' : 'none';
     document.getElementById('editor-existing-panel')!.style.display = mode === 'existing' ? 'block' : 'none';
     if (mode === 'existing') renderRoster();
+    paintEditorPanels();
+}
+
+/** 현재 탭에 맞는 패널만 갱신한다. */
+function paintEditorPanels(): void {
+    if (editorMode === 'new') paintNewOfficerPanels();
+    else paintExistingPanels();
 }
 
 function openEditorScreen(): void {
@@ -4175,7 +4334,9 @@ function openEditorScreen(): void {
             input.value = String(stats[s.key]);
             input.dispatchEvent(new Event('input'));
         }
-        if (edBirth.value.trim() === '') edBirth.value = '180';
+        // 기준 연도(184)에 장수로 성립하도록 기본 생년을 둔다.
+        // 180으로 두면 만 4세로 나와 부자연스럽다.
+        if (edBirth.value.trim() === '') edBirth.value = '160';
     }
     switchEditorMode(editorMode);
 }
@@ -4351,6 +4512,26 @@ document.getElementById('btn-ed-all-random')!.addEventListener('click', () => {
 edSearch.addEventListener('input', renderRoster);
 edFilterGender.addEventListener('change', renderRoster);
 edFilterBirth.addEventListener('change', renderRoster);
+
+// 값이 바뀌면 패널(초상/레이더/연령/특성)을 다시 그린다.
+for (const el of [edName, edCourtesy, edGender, edBirth, edGrade]) {
+    el.addEventListener('input', () => { if (editorMode === 'new') paintNewOfficerPanels(); });
+    el.addEventListener('change', () => { if (editorMode === 'new') paintNewOfficerPanels(); });
+}
+for (const key of Object.keys(editorStatInputs)) {
+    editorStatInputs[key].addEventListener('input', () => {
+        if (editorMode === 'new') paintNewOfficerPanels();
+    });
+}
+
+// 배치 버튼 — 선택은 시각적 상태만 바꾼다(아직 게임 규칙에는 반영하지 않는다).
+document.getElementById('ed-deploy')!.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('.moe-deploy-btn') as HTMLElement | null;
+    if (!btn) return;
+    for (const el of Array.from(document.querySelectorAll('.moe-deploy-btn'))) el.classList.remove('active');
+    btn.classList.add('active');
+});
+
 edRoster.addEventListener('click', (e) => {
     const card = (e.target as HTMLElement).closest('.roster-card') as HTMLElement | null;
     if (!card) return;
@@ -4361,6 +4542,8 @@ edRoster.addEventListener('click', (e) => {
     for (const el of Array.from(edRoster.querySelectorAll('.roster-card'))) el.classList.remove('selected');
     card.classList.add('selected');
     setEditorWarn('');
+    // 고른 무장의 초상/레이더/연령/특성을 즉시 갱신한다.
+    paintExistingPanels();
 });
 document.getElementById('btn-ed-search-random')!.addEventListener('click', () => {
     const genderFilter = edFilterGender.value;

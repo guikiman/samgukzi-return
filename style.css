@@ -546,6 +546,83 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 }
 .pick-summary .pick-name { color: #d4af6a; font-size: 16px; }
 .pick-summary .pick-bad { color: #e0a35a; }
+
+/* ============================================================
+   San7 스타일 무장 편집 레이아웃 [신규 기능]
+   좌(초상) / 중(성명·연령·레이더) / 우(분류·특성·배치) 3단 구성
+   ============================================================ */
+.moe-layout {
+    display: grid; grid-template-columns: 200px 1fr 240px;
+    gap: 18px; align-items: start;
+}
+.moe-left { display: flex; flex-direction: column; gap: 6px; }
+.moe-portrait {
+    width: 200px; height: 200px; border-radius: 4px; overflow: hidden;
+    border: 1px solid #3a2f22; background: #1a1410;
+    box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.6);
+}
+.moe-portrait svg { width: 100%; height: 100%; display: block; }
+.moe-portrait-caption { margin: 0; font-size: 11px; color: #8b95a8; text-align: center; }
+
+.moe-center { display: flex; flex-direction: column; gap: 10px; }
+.moe-names { display: flex; flex-direction: column; gap: 8px; }
+.moe-field { display: flex; flex-direction: column; gap: 3px; }
+.moe-label { font-size: 12px; color: #c9a15a; letter-spacing: 0.08em; }
+.moe-filter-row { display: flex; gap: 6px; }
+.moe-select {
+    flex: 1; background: #12151f; color: #e6e8ee; border: 1px solid #2a3040;
+    border-radius: 3px; padding: 5px 7px; font-size: 13px; font-family: inherit;
+}
+
+/* 연령 바 — San7 의 만 N세 게이지 */
+.moe-age { display: flex; align-items: center; gap: 8px; }
+.moe-age-bar {
+    flex: 1; height: 8px; background: #1a1f2b; border: 1px solid #2a3040;
+    border-radius: 2px; overflow: hidden;
+}
+.moe-age-fill {
+    height: 100%; width: 0; background: linear-gradient(90deg, #6a8fb5, #d4af6a);
+    transition: width 0.2s ease;
+}
+.moe-age-text { font-size: 12px; color: #c3cad8; min-width: 88px; text-align: right; }
+
+.moe-radar { display: flex; justify-content: center; }
+.moe-radar svg { width: 220px; height: 220px; }
+
+.moe-right { display: flex; flex-direction: column; gap: 12px; }
+.moe-block { display: flex; flex-direction: column; gap: 5px; }
+.moe-block-title {
+    font-size: 12px; color: #c9a15a; letter-spacing: 0.1em;
+    border-bottom: 1px solid #2a3040; padding-bottom: 3px;
+}
+.moe-classify { display: flex; flex-direction: column; gap: 5px; }
+.moe-lv { font-size: 12px; color: #9aa4b8; }
+.moe-lv strong { color: #d4af6a; font-size: 14px; }
+
+/* 특성 태그 */
+.moe-traits { display: flex; flex-wrap: wrap; gap: 4px; min-height: 24px; }
+.moe-trait {
+    font-size: 11px; padding: 2px 7px; border-radius: 2px;
+    background: #1d2230; border: 1px solid #333b4d; color: #b9c2d0;
+}
+.moe-trait.none { color: #6b7688; border-style: dashed; }
+
+/* 배치 버튼 */
+.moe-deploy { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.moe-deploy-btn {
+    font-size: 12px; padding: 6px 4px; cursor: pointer; font-family: inherit;
+    background: #161b26; color: #b9c2d0; border: 1px solid #2a3040; border-radius: 3px;
+}
+.moe-deploy-btn:hover { border-color: #3d4658; }
+.moe-deploy-btn.active { background: #2a2214; color: #d4af6a; border-color: #d4af6a; }
+
+.moe-extra { display: flex; flex-direction: column; gap: 8px; }
+
+@media (max-width: 900px) {
+    .moe-layout { grid-template-columns: 1fr; }
+    .moe-left { align-items: center; }
+    .moe-portrait { width: 160px; height: 160px; }
+}
 @media (max-width: 640px) {
     .editor-stats { grid-template-columns: repeat(2, 1fr); }
 }
