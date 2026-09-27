@@ -104,50 +104,146 @@
     </section>
 </div>
 
-<!-- 신규 장수 생성 화면 [신규 기능] — 마크업만 있다. 상태와 렌더는 main.ts 가 담당한다. -->
-<div id="recruit-screen" role="dialog" aria-label="신규 장수 생성" tabindex="-1">
-    <div class="recruit-wrap">
-        <div class="recruit-head">
-            <h2>신규 장수 생성</h2>
-            <button id="btn-recruit-back" class="title-btn small recruit-back">← 타이틀로</button>
+<!-- 무장편집 화면 [신규 기능] — 마크업만. 상태/렌더는 main.ts 가 담당한다. -->
+<div id="editor-screen" role="dialog" aria-label="무장 편집" tabindex="-1">
+    <div class="editor-wrap">
+        <div class="editor-head">
+            <h2>무장 편집</h2>
+            <button id="btn-editor-back" class="title-btn small editor-back">← 타이틀로</button>
         </div>
-        <p class="recruit-sub">직접 만든 무장으로 한 판국에서 출발합니다. 능력치는 전부 수동 입력입니다.</p>
-        <div class="recruit-grid">
-            <div class="recruit-field">
-                <label for="recruit-name">성명</label>
-                <input id="recruit-name" type="text" maxlength="8" placeholder="예: 한중윤" autocomplete="off">
-            </div>
-            <div class="recruit-field">
-                <label for="recruit-courtesy">자</label>
-                <input id="recruit-courtesy" type="text" maxlength="8" placeholder="예: 중윤" autocomplete="off">
-            </div>
-            <div class="recruit-field">
-                <label for="recruit-gender">성별</label>
-                <select id="recruit-gender">
-                    <option value="M">남</option>
-                    <option value="F">녀</option>
-                </select>
-            </div>
-            <div class="recruit-field">
-                <label for="recruit-birth"> 출생 연도</label>
-                <input id="recruit-birth" type="number" min="150" max="210" value="180" step="1">
-            </div>
-            <div class="recruit-field">
-                <label for="recruit-rank">품계 (0~9)</label>
-                <input id="recruit-rank" type="number" min="0" max="9" value="5" step="1">
-            </div>
-            <div class="recruit-field">
-                <label for="recruit-specialty">특기</label>
-                <input id="recruit-specialty" type="text" maxlength="16" placeholder="예: 火攻" autocomplete="off">
-            </div>
+
+        <!-- 모드 전환: 신규 / 기존 -->
+        <div class="editor-tabs" role="tablist">
+            <button id="tab-editor-new" class="editor-tab active" role="tab" aria-selected="true">신규 무장</button>
+            <button id="tab-editor-existing" class="editor-tab" role="tab" aria-selected="false">기존 무장</button>
         </div>
-        <div class="recruit-stats" id="recruit-stats"></div>
-        <p class="recruit-warn" id="recruit-warn" style="display:none;"></p>
-        <div class="recruit-actions">
-            <button id="btn-recruit-random" class="title-btn small">무작위 생성</button>
-            <button id="btn-recruit-confirm" class="title-btn small primary">이 장수로 시작</button>
+
+        <!-- 신규 무장: 직접 입력 -->
+        <section id="editor-new-panel" class="editor-panel">
+            <div class="editor-grid">
+                <div class="editor-field">
+                    <label for="ed-name">성명</label>
+                    <div class="editor-input-row">
+                        <input id="ed-name" type="text" maxlength="8" placeholder="예: 한중윤" autocomplete="off">
+                        <button class="title-btn tiny" data-rand="name" type="button">랜덤</button>
+                    </div>
+                </div>
+                <div class="editor-field">
+                    <label for="ed-courtesy">자</label>
+                    <div class="editor-input-row">
+                        <input id="ed-courtesy" type="text" maxlength="8" placeholder="예: 중윤" autocomplete="off">
+                        <button class="title-btn tiny" data-rand="courtesy" type="button">랜덤</button>
+                    </div>
+                </div>
+                <div class="editor-field">
+                    <label for="ed-gender">성별</label>
+                    <div class="editor-input-row">
+                        <select id="ed-gender">
+                            <option value="M">남</option>
+                            <option value="F">녀</option>
+                        </select>
+                        <button class="title-btn tiny" data-rand="gender" type="button">랜덤</button>
+                    </div>
+                </div>
+                <div class="editor-field">
+                    <label for="ed-birth">출생 연도</label>
+                    <div class="editor-input-row">
+                        <input id="ed-birth" type="number" min="110" max="230" placeholder="예: 180" step="1">
+                        <button class="title-btn tiny" data-rand="birth" type="button">랜덤</button>
+                    </div>
+                </div>
+                <div class="editor-field">
+                    <label for="ed-death">사망 연도 (빈 값 = 생존)</label>
+                    <div class="editor-input-row">
+                        <input id="ed-death" type="number" min="120" max="280" placeholder="빈 값" step="1">
+                        <button class="title-btn tiny" data-rand="death" type="button">랜덤</button>
+                    </div>
+                </div>
+                <div class="editor-field">
+                    <label for="ed-grade">성급 (0=최하 ~ 9=최상)</label>
+                    <div class="editor-input-row">
+                        <input id="ed-grade" type="number" min="0" max="9" step="1" placeholder="3">
+                        <button class="title-btn tiny" data-rand="grade" type="button">랜덤</button>
+                    </div>
+                </div>
+                <div class="editor-field">
+                    <label for="ed-rank">품계 (게임 내 계급)</label>
+                    <div class="editor-input-row">
+                        <input id="ed-rank" type="number" min="0" max="9" step="1" value="5">
+                        <button class="title-btn tiny" data-rand="rank" type="button">랜덤</button>
+                    </div>
+                </div>
+                <div class="editor-field">
+                    <label for="ed-specialty">특기</label>
+                    <div class="editor-input-row">
+                        <input id="ed-specialty" type="text" maxlength="16" placeholder="예: 火攻" autocomplete="off">
+                        <button class="title-btn tiny" data-rand="specialty" type="button">랜덤</button>
+                    </div>
+                </div>
+            </div>
+            <div class="editor-stats" id="ed-stats"></div>
+            <div class="editor-actions">
+                <button id="btn-ed-all-random" class="title-btn small">전체 랜덤</button>
+                <button id="btn-ed-apply" class="title-btn small primary">시나리오로 이동 →</button>
+            </div>
+        </section>
+
+        <!-- 기존 무장: 검색 -->
+        <section id="editor-existing-panel" class="editor-panel" style="display:none;">
+            <div class="editor-grid">
+                <div class="editor-field">
+                    <label for="ed-search">이름 검색</label>
+                    <div class="editor-input-row">
+                        <input id="ed-search" type="text" placeholder="예: 관우" autocomplete="off">
+                        <button id="btn-ed-search-random" class="title-btn tiny" type="button">랜덤</button>
+                    </div>
+                </div>
+                <div class="editor-field">
+                    <label for="ed-filter-gender">성별 필터</label>
+                    <select id="ed-filter-gender">
+                        <option value="">전체</option>
+                        <option value="M">남</option>
+                        <option value="F">녀</option>
+                    </select>
+                </div>
+                <div class="editor-field">
+                    <label for="ed-filter-birth">출생 연대 필터</label>
+                    <select id="ed-filter-birth">
+                        <option value="">전체</option>
+                        <option value="130">130년대</option>
+                        <option value="140">140년대</option>
+                        <option value="150">150년대</option>
+                        <option value="160">160년대</option>
+                        <option value="170">170년대</option>
+                        <option value="180">180년대</option>
+                        <option value="190">190년대</option>
+                        <option value="200">200년대</option>
+                        <option value="210">210년대</option>
+                        <option value="220">220년대</option>
+                    </select>
+                </div>
+            </div>
+            <p class="editor-count" id="ed-roster-count">—</p>
+            <div class="editor-roster" id="ed-roster"></div>
+            <div class="editor-actions">
+                <button id="btn-ed-apply-existing" class="title-btn small primary" disabled>선택한 무장으로 시작 →</button>
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- 무장 확정 후 시나리오 선택 화면 [신규 기능] -->
+<div id="pick-scenario-screen" class="flow-screen" style="display:none;">
+    <canvas id="pick-scenario-particles"></canvas>
+    <div class="flow-frame">
+        <div class="flow-header">
+            <h2 class="flow-title">시나리오 선택</h2>
+            <div class="flow-sub" id="pick-scenario-sub">—</div>
         </div>
-        <div class="recruit-preview" id="recruit-preview" style="display:none;"></div>
+        <div id="pick-scenario-list" class="scenario-list"></div>
+        <div class="flow-footer">
+            <button id="btn-pick-scenario-back" class="title-btn small">← 무장 편집</button>
+        </div>
     </div>
 </div>
 
@@ -168,8 +264,8 @@
                 <span class="btn-desc">저장된 세이브 불러오기</span>
             </button>
             <button id="btn-title-recruit" class="title-btn">
-                <span class="btn-label">신규 장수 생성</span>
-                <span class="btn-desc">직접 만든 무장으로 한ху에서 출발</span>
+                <span class="btn-label">무장 편집</span>
+                <span class="btn-desc">신규 또는 기존 무장을 고쳐 세워 봅니다</span>
             </button>
         </nav>
         <div class="title-ornament bottom"><span class="orn-line"></span><span class="orn-gem">◆</span><span class="orn-line"></span></div>

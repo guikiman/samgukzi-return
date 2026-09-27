@@ -473,40 +473,81 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 
 .title-btn.small { display: inline-block; width: auto; padding: 10px 26px; font-size: 13px; }
 
+
 /* ============================================================
-   신규 장수 생성 화면 [신규 기능]
+   무장 편집 / 시나리오 선택 [신규 기능]
    ============================================================ */
-#recruit-screen {
+#editor-screen {
     display: none; position: absolute; inset: 0; z-index: 40;
     background: rgba(8, 10, 20, 0.97); overflow-y: auto; padding: 24px;
 }
-#recruit-screen.open { display: block; }
-.recruit-wrap { max-width: 760px; margin: 0 auto; }
-.recruit-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-.recruit-head h2 { margin: 0; font-size: 22px; color: #d4af6a; letter-spacing: 0.05em; }
-.recruit-head .recruit-back { margin-left: auto; }
-.recruit-sub { color: #9aa4b8; font-size: 13px; margin: 0 0 18px; }
-.recruit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
-.recruit-field { display: flex; flex-direction: column; gap: 4px; }
-.recruit-field label { font-size: 12px; color: #8b95a8; }
-.recruit-field input, .recruit-field select {
-    background: #12151f; color: #e6e8ee; border: 1px solid #2a3040;
+#editor-screen.open { display: block; }
+.editor-wrap { max-width: 900px; margin: 0 auto; }
+.editor-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.editor-head h2 { margin: 0; font-size: 22px; color: #d4af6a; letter-spacing: 0.05em; }
+.editor-head .editor-back { margin-left: auto; }
+
+.editor-tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid #2a3040; }
+.editor-tab {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: #8b95a8; font-size: 14px; padding: 8px 14px; cursor: pointer; font-family: inherit;
+}
+.editor-tab.active { color: #d4af6a; border-bottom-color: #d4af6a; }
+.editor-tab:hover { color: #c3cad8; }
+
+.editor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.editor-field { display: flex; flex-direction: column; gap: 4px; }
+.editor-field label { font-size: 12px; color: #8b95a8; }
+.editor-input-row { display: flex; gap: 6px; align-items: stretch; }
+.editor-input-row input, .editor-input-row select {
+    flex: 1; min-width: 0; background: #12151f; color: #e6e8ee; border: 1px solid #2a3040;
     border-radius: 4px; padding: 7px 9px; font-size: 14px; font-family: inherit;
 }
-.recruit-field input:focus, .recruit-field select:focus { outline: 1px solid #d4af6a; }
-.recruit-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 18px 0; }
-.recruit-stat { display: flex; flex-direction: column; gap: 4px; }
-.recruit-stat-head { display: flex; justify-content: space-between; font-size: 12px; color: #9aa4b8; }
-.recruit-stat input[type=range] { width: 100%; accent-color: #d4af6a; }
-.recruit-actions { display: flex; gap: 10px; margin-top: 20px; }
-.recruit-preview {
-    margin-top: 18px; padding: 14px; border: 1px solid #2a3040; border-radius: 6px;
-    background: #0d1018; font-size: 13px; line-height: 1.7; color: #c3cad8;
+.editor-input-row input:focus, .editor-input-row select:focus { outline: 1px solid #d4af6a; }
+.title-btn.tiny {
+    display: inline-block; width: auto; padding: 6px 10px; font-size: 11px;
+    white-space: nowrap; flex: 0 0 auto;
 }
-.recruit-preview-title { color: #d4af6a; font-size: 15px; margin-bottom: 4px; }
-.recruit-warn { color: #e0a35a; font-size: 12px; margin: 6px 0 0; }
+
+.editor-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 16px 0; }
+.editor-stat { display: flex; flex-direction: column; gap: 4px; }
+.editor-stat-head { display: flex; justify-content: space-between; font-size: 12px; color: #9aa4b8; }
+.editor-stat input[type=range] { width: 100%; accent-color: #d4af6a; }
+.editor-actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
+.editor-count { color: #9aa4b8; font-size: 12px; margin: 14px 0 6px; }
+.editor-warn { color: #e0a35a; font-size: 12px; margin: 8px 0 0; }
+
+/* 기존 무장 목록 — 1200명 중 상위 N 건만 그린다 */
+.editor-roster {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 8px; max-height: 46vh; overflow-y: auto; padding: 4px;
+    border: 1px solid #2a3040; border-radius: 6px; background: #0d1018;
+}
+.roster-card {
+    display: flex; flex-direction: column; gap: 2px; text-align: left;
+    background: #12151f; border: 1px solid #232a38; border-radius: 4px;
+    padding: 8px 10px; cursor: pointer; color: #c3cad8; font-family: inherit;
+}
+.roster-card:hover { border-color: #3d4658; background: #161a26; }
+.roster-card.selected { border-color: #d4af6a; background: #1a1d28; }
+.roster-name { font-size: 14px; color: #e6e8ee; }
+.roster-meta { font-size: 11px; color: #8b95a8; }
+.roster-empty { grid-column: 1 / -1; padding: 20px; text-align: center; color: #8b95a8; font-size: 13px; }
+
+/* 시나리오 선택 — 탈락 항목은 눌리지 않는다 */
+.pick-card { display: block; width: 100%; text-align: left; }
+.pick-card.blocked { opacity: 0.45; cursor: not-allowed; }
+.pick-card .pick-reason { color: #e0a35a; font-size: 12px; margin-top: 4px; }
+.pick-card .pick-note { color: #7f8aa0; font-size: 12px; margin-top: 4px; }
+.pick-summary {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-bottom: 14px; padding: 12px 14px; border: 1px solid #2a3040;
+    border-radius: 6px; background: #0d1018; font-size: 13px; color: #c3cad8;
+}
+.pick-summary .pick-name { color: #d4af6a; font-size: 16px; }
+.pick-summary .pick-bad { color: #e0a35a; }
 @media (max-width: 640px) {
-    .recruit-stats { grid-template-columns: repeat(2, 1fr); }
+    .editor-stats { grid-template-columns: repeat(2, 1fr); }
 }
 .title-btn.small .btn-label { font-size: 13px; letter-spacing: 3px; text-indent: 3px; }
 

@@ -15,6 +15,12 @@ import { TitleScreen } from './core/title_screen.js';
 import { loadScenarios, getCachedScenarios, buildWorld, getKnownOfficerName } from './core/scenario_system.js';
 import type { BuiltWorld, ScenarioData } from './core/scenario_system.js';
 import { buildCustomOfficerWorld, validateCustomOfficer, rollCustomStats, hashSeed } from './core/custom_officer_start.js';
+import { evaluateScenarios, playableScenarios } from './core/officer_editor_scenarios.js';
+import type { EditableOfficer } from './core/officer_editor_scenarios.js';
+import { searchRoster, countRoster, toEditable, randomProfile } from './core/officer_roster_picker.js';
+import { getOfficerProfile } from './core/officer_profile_schema.js';
+import { randomField, rollWholeOfficer } from './core/officer_editor_random.js';
+import type { EditorField } from './core/officer_editor_random.js';
 import { MonthlyReportSystem } from './core/monthly_report.js';
 import { assembleReinforcements } from './core/reinforcement_system.js';
 import { SaveSlotManager } from './core/save_slot_manager.js';
@@ -3985,7 +3991,7 @@ if (hasAnySave) {
 
 const titleScreen = new TitleScreen({
     onNewGame: () => { openScenarioScreen(); },
-    onRecruit: () => { openRecruitScreen(); },
+    onRecruit: () => { openEditorScreen(); },
     onContinue: () => {
         try {
             // 최근 저장 슬롯(auto 폴백 포함)을 찾아 복원
@@ -4018,22 +4024,40 @@ void loadScenarios().catch(() => {
     addLog('시나리오 데이터 미리 읽기 실패 — 시작하기 진입 시 다시 시도합니다.');
 });
 // ============================================================
-// 신규 장수 생성 — 타이틀 메뉴 3번째 항목 배선
+// 무장 편집 + 시나리오 선택 [신규 기능]
 // ============================================================
-// 로직은 전부 src/core/custom_officer_start.ts 의 순수 함수에 있다.
-// 여기서는 DOM 읽기/쓰기와 화면 전환만 한다.
-const recruitScreen = document.getElementById('recruit-screen')!;
-const recruitName = document.getElementById('recruit-name') as HTMLInputElement;
-const recruitCourtesy = document.getElementById('recruit-courtesy') as HTMLInputElement;
-const recruitGender = document.getElementById('recruit-gender') as HTMLSelectElement;
-const recruitBirth = document.getElementById('recruit-birth') as HTMLInputElement;
-const recruitRank = document.getElementById('recruit-rank') as HTMLInputElement;
-const recruitSpecialty = document.getElementById('recruit-specialty') as HTMLInputElement;
-const recruitStatsBox = document.getElementById('recruit-stats')!;
-const recruitWarn = document.getElementById('recruit-warn')!;
-const recruitPreview = document.getElementById('recruit-preview')!;
+// 흐름: 타이틀 → 무장편집(신규/기존) → 시나리오 선택 → 세력 선택 → 시작
+// 판정/검색/랜덤은 전부 src/core 의 순수 모듈에 있다. 여기서는 DOM 만 다룬다.
+const editorScreen = document.getElementById('editor-screen')!;
+const edName = document.getElementById('ed-name') as HTMLInputElement;
+const edCourtesy = document.getElementById('ed-courtesy') as HTMLInputElement;
+const edGender = document.getElementById('ed-gender') as HTMLSelectElement;
+const edBirth = document.getElementById('ed-birth') as HTMLInputElement;
+const edDeath = document.getElementById('ed-death') as HTMLInputElement;
+const edGrade = document.getElementById('ed-grade') as HTMLInputElement;
+const edRank = document.getElementById('ed-rank') as HTMLInputElement;
+const edSpecialty = document.getElementById('ed-specialty') as HTMLInputElement;
+const edStatsBox = document.getElementById('ed-stats')!;
+const edSearch = document.getElementById('ed-search') as HTMLInputElement;
+const edFilterGender = document.getElementById('ed-filter-gender') as HTMLSelectElement;
+const edFilterBirth = document.getElementById('ed-filter-birth') as HTMLSelectElement;
+const edRoster = document.getElementById('ed-roster')!;
+const edRosterCount = document.getElementById('ed-roster-count')!;
+const edWarn = document.createElement('p');
+edWarn.className = 'editor-warn';
+edWarn.style.display = 'none';
+edStatsBox.parentElement?.insertBefore(edWarn, edStatsBox.nextSibling);
+const pickScreen = document.getElementById('pick-scenario-screen')!;
+const pickList = document.getElementById('pick-scenario-list')!;
+const pickSub = document.getElementById('pick-scenario-sub')!;
 
-const RECRUIT_STATS = [
+/** 무장편집에서 고른 무장. 확정되면 이 값이 시나리오 화면까지 살아 있다. */
+let editorChoice: { kind: 'new'; name: string } | { kind: 'existing'; id: string } | null = null;
+/** 기존 무장 탭에서 현재 고른 프로필 */
+let editorSelectedProfile: EditableOfficer | null = null;
+let editorMode: 'new' | 'existing' = 'new';
+
+const EDITOR_STATS = [
     { key: 'leadership', label: '통솔' },
     { key: 'might', label: '무력' },
     { key: 'intelligence', label: '지력' },
@@ -4041,17 +4065,16 @@ const RECRUIT_STATS = [
     { key: 'charisma', label: '매력' },
 ] as const;
 
-/** 능력치 슬라이더 — DOM 은 한 번만 만든다. 이후엔 input.value 만 갱신한다. */
-const recruitStatInputs = {} as Record<string, HTMLInputElement>;
-for (const s of RECRUIT_STATS) {
+/** 능력치 슬라이더 — DOM 은 한 번만 만든다. */
+const editorStatInputs = {} as Record<string, HTMLInputElement>;
+for (const s of EDITOR_STATS) {
     const wrap = document.createElement('div');
-    wrap.className = 'recruit-stat';
+    wrap.className = 'editor-stat';
     const head = document.createElement('div');
-    head.className = 'recruit-stat-head';
+    head.className = 'editor-stat-head';
     const label = document.createElement('span');
     label.textContent = s.label;
     const value = document.createElement('span');
-    value.dataset.for = s.key;
     value.textContent = '50';
     head.append(label, value);
     const range = document.createElement('input');
@@ -4062,119 +4085,303 @@ for (const s of RECRUIT_STATS) {
     range.setAttribute('aria-label', `${s.label} 능력치`);
     range.addEventListener('input', () => { value.textContent = range.value; });
     wrap.append(head, range);
-    recruitStatsBox.append(wrap);
-    recruitStatInputs[s.key] = range;
+    edStatsBox.append(wrap);
+    editorStatInputs[s.key] = range;
 }
 
-/** 거울 무대 — 관도처럼 세력 수가 넉넉한 시나리오를 고른다. */
-function pickCustomStage(): ScenarioData | null {
-    const list = getCachedScenarios();
-    return list.find(s => s.id === '04') ?? list[2] ?? list[0] ?? null;
+function setEditorWarn(message: string): void {
+    edWarn.textContent = message;
+    edWarn.style.display = message === '' ? 'none' : 'block';
 }
 
-function renderRecruitPreview(): void {
-    const name = recruitName.value.trim();
-    const courtesy = recruitCourtesy.value.trim();
-    recruitPreview.style.display = 'block';
-    recruitPreview.innerHTML = '';
-    const title = document.createElement('div');
-    title.className = 'recruit-preview-title';
-    title.textContent = courtesy ? `${name} (字 ${courtesy})` : (name || '(이름 없음)');
-    const meta = document.createElement('div');
-    const spec = recruitSpecialty.value.trim();
-    meta.textContent = `${recruitGender.value === 'F' ? '녀' : '남'} · ${recruitBirth.value}년생 · ${recruitRank.value}품`
-        + (spec ? ` · 특기 ${spec}` : '');
-    const stats = document.createElement('div');
-    stats.textContent = RECRUIT_STATS.map(s => `${s.label} ${recruitStatInputs[s.key].value}`).join(' · ');
-    recruitPreview.append(title, meta, stats);
+/** 현재 폼 값을 EditableOfficer 로 읽는다. 신규 무장 경로 전용. */
+function readNewOfficer(): EditableOfficer {
+    const birthRaw = edBirth.value.trim();
+    const deathRaw = edDeath.value.trim();
+    return {
+        id: 'off_custom_player',
+        name: edName.value,
+        gender: edGender.value === 'F' ? 'F' : 'M',
+        birthYear: birthRaw === '' ? null : Number.parseInt(birthRaw, 10),
+        deathYear: deathRaw === '' ? null : Number.parseInt(deathRaw, 10),
+        grade: edGrade.value.trim() === '' ? null : Number.parseInt(edGrade.value, 10),
+        traits: [],
+    };
 }
 
-function openRecruitScreen(): void {
-    const stage = pickCustomStage();
-    if (!stage) {
-        addLog('신규 장수 생성 실패: 시나리오 데이터를 불러오지 못했습니다.');
+/** 검색 결과 렌더. 상위 N 건만 그린다. */
+function renderRoster(): void {
+    const decade = edFilterBirth.value === '' ? null : Number.parseInt(edFilterBirth.value, 10);
+    const query = {
+        text: edSearch.value,
+        gender: edFilterGender.value === '' ? null : (edFilterGender.value as 'M' | 'F'),
+        birthMin: decade, birthMax: decade === null ? null : decade + 9,
+    };
+    const results = searchRoster(query);
+    const total = countRoster(query);
+    edRosterCount.textContent = total === 0
+        ? '조건에 맞는 무장이 없습니다.'
+        : `${total}명 중 ${results.length}명 표시`;
+
+    edRoster.innerHTML = '';
+    if (results.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'roster-empty';
+        empty.textContent = '검색 결과가 없습니다. 이름을 지우거나 필터를 완화해 보세요.';
+        edRoster.append(empty);
         return;
     }
-    recruitWarn.style.display = 'none';
-    recruitScreen.classList.add('open');
-    recruitScreen.focus();
-    if (recruitName.value.trim() === '') {
-        // 처음 열 때만 무작위 초안을 채운다. 다시 열면 사용자가 고른 값을 보존한다.
-        const stats = rollCustomStats(hashSeed(`draft|${stage.id}`));
-        for (const s of RECRUIT_STATS) {
-            const input = recruitStatInputs[s.key];
+    for (const p of results) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'roster-card';
+        card.dataset.id = p.id;
+        if (editorSelectedProfile?.id === p.id) card.classList.add('selected');
+        const name = document.createElement('span');
+        name.className = 'roster-name';
+        name.textContent = p.name;
+        const meta = document.createElement('span');
+        meta.className = 'roster-meta';
+        // 미상은 '미상' 으로 적는다. 숫자로 지어내지 않는다.
+        const by = p.birthYear === null ? '미상' : `${p.birthYear}년생`;
+        const dy = p.deathYear === null ? '' : ` · ${p.deathYear}년 사망`;
+        meta.textContent = `${by} · ${p.gender === 'F' ? '녀' : '남'}${dy}`;
+        card.append(name, meta);
+        edRoster.append(card);
+    }
+}
+
+function switchEditorMode(mode: 'new' | 'existing'): void {
+    editorMode = mode;
+    document.getElementById('tab-editor-new')!.classList.toggle('active', mode === 'new');
+    document.getElementById('tab-editor-existing')!.classList.toggle('active', mode === 'existing');
+    document.getElementById('tab-editor-new')!.setAttribute('aria-selected', String(mode === 'new'));
+    document.getElementById('tab-editor-existing')!.setAttribute('aria-selected', String(mode === 'existing'));
+    document.getElementById('editor-new-panel')!.style.display = mode === 'new' ? 'block' : 'none';
+    document.getElementById('editor-existing-panel')!.style.display = mode === 'existing' ? 'block' : 'none';
+    if (mode === 'existing') renderRoster();
+}
+
+function openEditorScreen(): void {
+    setEditorWarn('');
+    editorScreen.classList.add('open');
+    editorScreen.focus();
+    if (edName.value.trim() === '') {
+        // 첫 진입 초안 — 이름은 비워 두고 능력치만 채운다.
+        // 곧장 '시나리오로 이동' 을 눌러도 성명 경고로 막히게 된다.
+        const stats = rollCustomStats(hashSeed('editor-draft'));
+        for (const s of EDITOR_STATS) {
+            const input = editorStatInputs[s.key];
             input.value = String(stats[s.key]);
             input.dispatchEvent(new Event('input'));
         }
+        if (edBirth.value.trim() === '') edBirth.value = '180';
     }
-    renderRecruitPreview();
+    switchEditorMode(editorMode);
 }
 
-function closeRecruitScreen(): void {
-    recruitScreen.classList.remove('open');
+function closeEditorScreen(): void {
+    editorScreen.classList.remove('open');
+    pickScreen.style.display = 'none';
     titleScreen.show();
 }
 
-/** 확정 — 검증 후 월드 빌더에 넘기고 게임을 시작한다. */
-function confirmRecruitAndStart(): void {
-    const stage = pickCustomStage();
-    if (!stage) {
-        recruitWarn.textContent = '시나리오 데이터를 불러오지 못했습니다.';
-        recruitWarn.style.display = 'block';
+/** 확정한 무장으로 플레이 가능한 시나리오를 그린다. */
+function renderPickScenarios(): void {
+    const officer = editorChoice?.kind === 'existing'
+        ? editorSelectedProfile
+        : readNewOfficer();
+    if (!officer) return;
+
+    const scenarios = getCachedScenarios();
+    const all = evaluateScenarios(scenarios, officer);
+    const ok = playableScenarios(all);
+    const blocked = all.length - ok.length;
+
+    pickSub.textContent = `${officer.name} · ${officer.birthYear === null ? '출생 연도 미상' : `${officer.birthYear}년생`} — 플레이 가능한 시나리오 ${ok.length}건${blocked > 0 ? ` (제외 ${blocked}건)` : ''}`;
+
+    pickList.innerHTML = '';
+    if (all.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'roster-empty';
+        empty.textContent = '시나리오 데이터를 불러오지 못했습니다.';
+        pickList.append(empty);
         return;
     }
-    const birthYear = Number.parseInt(recruitBirth.value, 10);
-    const startYear = Number.parseInt(stage.start_date.slice(0, 4), 10);
-    const err = validateCustomOfficer(recruitName.value, birthYear, startYear);
-    if (err !== '') {
-        recruitWarn.textContent = err;
-        recruitWarn.style.display = 'block';
-        recruitName.focus();
-        return;
+
+    // 탈락 항목도 '왜 안 되는지' 보이게 아래에 붙인다. 숨기면 이유를 알 수 없다.
+    for (const item of all) {
+        const card = document.createElement('button');
+        const playable = item.playability.ok;
+        card.type = 'button';
+        card.className = playable ? 'scenario-card pick-card' : 'scenario-card pick-card blocked';
+        card.dataset.id = item.scenario.id;
+        if (!playable) card.disabled = true;
+
+        const stars = '★'.repeat(item.scenario.difficulty)
+            + `<span class="off">${'★'.repeat(Math.max(0, 5 - item.scenario.difficulty))}</span>`;
+        card.innerHTML = `
+            <span class="scenario-num">${item.scenario.id}</span>
+            <span class="scenario-body">
+                <span class="scenario-name">${item.scenario.title_kr}</span>
+                <span class="scenario-date">${item.startYear}년 ${item.startMonth}월 — ${item.scenario.title_en}</span>
+                <span class="scenario-desc">${item.scenario.description}</span>
+            </span>
+            <span class="scenario-side">
+                <span class="difficulty">${stars}</span>
+                <span class="faction-count">세력 ${item.factionCount}</span>
+            </span>`;
+
+        const note = document.createElement('span');
+        if (playable) {
+            note.className = 'pick-note';
+            note.textContent = item.playability.note;
+        } else {
+            note.className = 'pick-reason';
+            note.textContent = `플레이 불가 — ${item.playability.reason}`;
+        }
+        card.append(note);
+        pickList.append(card);
     }
-    recruitWarn.style.display = 'none';
-
-    const world = buildCustomOfficerWorld(stage, {
-        name: recruitName.value,
-        courtesyName: recruitCourtesy.value,
-        gender: recruitGender.value === 'F' ? 'F' : 'M',
-        birthYear,
-        rank: Number.parseInt(recruitRank.value, 10),
-        stats: {
-            leadership: Number.parseInt(recruitStatInputs.leadership.value, 10),
-            might: Number.parseInt(recruitStatInputs.might.value, 10),
-            intelligence: Number.parseInt(recruitStatInputs.intelligence.value, 10),
-            politics: Number.parseInt(recruitStatInputs.politics.value, 10),
-            charisma: Number.parseInt(recruitStatInputs.charisma.value, 10),
-        },
-        specialty: recruitSpecialty.value.trim() || null,
-    });
-
-    closeRecruitScreen();
-    addLog(`${recruitName.value.trim()} — ${stage.title_kr}의 무대에 서게 되었습니다.`);
-    statusText.textContent = `${recruitName.value.trim()}의 이력`;
-    void startGame(world);
 }
 
-document.getElementById('btn-recruit-back')!.addEventListener('click', closeRecruitScreen);
-document.getElementById('btn-recruit-confirm')!.addEventListener('click', confirmRecruitAndStart);
-document.getElementById('btn-recruit-random')!.addEventListener('click', () => {
-    // 성명+연도+성별로 시드를 만든다. 같은 입력이면 같은 결과가 나온다.
-    const stats = rollCustomStats(hashSeed(`${recruitName.value}|${recruitBirth.value}|${recruitGender.value}`));
-    for (const s of RECRUIT_STATS) {
-        const input = recruitStatInputs[s.key];
-        input.value = String(stats[s.key]);
+function openPickScenarioScreen(): void {
+    editorScreen.classList.remove('open');
+    renderPickScenarios();
+    pickScreen.style.display = 'flex';
+}
+
+/** 신규 무장 확정 — 유효성만 확인하고 시나리오 화면으로 넘긴다. */
+function applyNewOfficer(): void {
+    const name = edName.value;
+    if (name.trim() === '') {
+        setEditorWarn('성명을 입력하거나 [랜덤] 을 눌러 주세요.');
+        edName.focus();
+        return;
+    }
+    if (name.length > 8) {
+        setEditorWarn('성명은 8자 이내여야 합니다.');
+        edName.focus();
+        return;
+    }
+    const birth = edBirth.value.trim();
+    if (birth !== '' && !Number.isFinite(Number.parseInt(birth, 10))) {
+        setEditorWarn('출생 연도를 숫자로 입력해 주세요.');
+        edBirth.focus();
+        return;
+    }
+    setEditorWarn('');
+    editorChoice = { kind: 'new', name: name.trim() };
+    openPickScenarioScreen();
+}
+
+/** 기존 무장 확정 — 고른 프로필이 있어야 한다. */
+function applyExistingOfficer(): void {
+    if (!editorSelectedProfile) {
+        setEditorWarn('목록에서 무장을 먼저 선택해 주세요.');
+        switchEditorMode('existing');
+        return;
+    }
+    setEditorWarn('');
+    editorChoice = { kind: 'existing', id: editorSelectedProfile.id };
+    openPickScenarioScreen();
+}
+
+// ---------------------------------------------------------- 무장편집 이벤트
+document.getElementById('btn-editor-back')!.addEventListener('click', closeEditorScreen);
+document.getElementById('tab-editor-new')!.addEventListener('click', () => switchEditorMode('new'));
+document.getElementById('tab-editor-existing')!.addEventListener('click', () => switchEditorMode('existing'));
+document.getElementById('btn-ed-apply')!.addEventListener('click', applyNewOfficer);
+document.getElementById('btn-ed-apply-existing')!.addEventListener('click', applyExistingOfficer);
+document.getElementById('btn-pick-scenario-back')!.addEventListener('click', () => {
+    pickScreen.style.display = 'none';
+    editorScreen.classList.add('open');
+    switchEditorMode(editorMode);
+});
+
+// 필드별 랜덤 — data-rand 로 대상 필드를 구분한다.
+// 이 프로젝트는 tsconfig 에 DOM.Iterable 이 없어 NodeList 를 직접 순회할 수 없다.
+for (const btn of Array.from(document.querySelectorAll<HTMLButtonElement>('#editor-new-panel [data-rand]'))) {
+    btn.addEventListener('click', () => {
+        const field = btn.dataset.rand as EditorField;
+        const seedText = `${edName.value}|${edBirth.value}|${field}`;
+        const birth = Number.parseInt(edBirth.value, 10);
+        const value = randomField(field, seedText, Number.isFinite(birth) ? birth : 180);
+        // 출생 연도는 랜덤이 먼저다 — 뒤 필드가 여기 의존한다.
+        if (field === 'birth') {
+            edBirth.value = value;
+            edBirth.dispatchEvent(new Event('input'));
+            return;
+        }
+        switch (field) {
+            case 'name': edName.value = value; break;
+            case 'courtesy': edCourtesy.value = value; break;
+            case 'gender': edGender.value = value; break;
+            case 'death': edDeath.value = value; break;
+            case 'grade': edGrade.value = value; break;
+            case 'rank': edRank.value = value; break;
+            case 'specialty': edSpecialty.value = value; break;
+        }
+        setEditorWarn('');
+    });
+}
+
+document.getElementById('btn-ed-all-random')!.addEventListener('click', () => {
+    // 이름이 이미 있으면 그 이름을 유지한다 (값을 잃지 않기 위해).
+    const keepName = edName.value.trim();
+    const rolled = rollWholeOfficer(keepName === '' ? 'blank' : keepName);
+    edName.value = keepName === '' ? rolled.name : keepName;
+    edCourtesy.value = rolled.courtesy;
+    edGender.value = rolled.gender;
+    edBirth.value = String(rolled.birthYear);
+    edDeath.value = rolled.deathYear === null ? '' : String(rolled.deathYear);
+    edGrade.value = String(rolled.grade);
+    edRank.value = String(rolled.rank);
+    edSpecialty.value = rolled.specialty;
+    for (const s of EDITOR_STATS) {
+
+        const input = editorStatInputs[s.key];
+        input.value = String(rolled.stats[s.key]);
         input.dispatchEvent(new Event('input'));
     }
-    renderRecruitPreview();
-});
-for (const el of [recruitName, recruitCourtesy, recruitGender, recruitBirth, recruitRank, recruitSpecialty]) {
-    el.addEventListener('input', renderRecruitPreview);
-}
-recruitScreen.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeRecruitScreen();
+    setEditorWarn('');
 });
 
+// ---------------------------------------------------------- 기존 무장 검색
+edSearch.addEventListener('input', renderRoster);
+edFilterGender.addEventListener('change', renderRoster);
+edFilterBirth.addEventListener('change', renderRoster);
+edRoster.addEventListener('click', (e) => {
+    const card = (e.target as HTMLElement).closest('.roster-card') as HTMLElement | null;
+    if (!card) return;
+    const profile = getOfficerProfile(card.dataset.id!);
+    if (!profile) return;
+    editorSelectedProfile = toEditable(profile);
+    document.getElementById('btn-ed-apply-existing')!.removeAttribute('disabled');
+    for (const el of Array.from(edRoster.querySelectorAll('.roster-card'))) el.classList.remove('selected');
+    card.classList.add('selected');
+    setEditorWarn('');
+});
+document.getElementById('btn-ed-search-random')!.addEventListener('click', () => {
+    const genderFilter = edFilterGender.value;
+    const p = randomProfile(hashSeed(`pick|${edSearch.value}|${Date.now()}`), (cand) =>
+        genderFilter === '' || cand.gender === genderFilter);
+    if (!p) return;
+    edSearch.value = p.name;
+    renderRoster();
+});
+
+// ---------------------------------------------------------- 시나리오 선택
+pickList.addEventListener('click', (e) => {
+    const card = (e.target as HTMLElement).closest('.pick-card') as HTMLElement | null;
+    if (!card || card.classList.contains('blocked') || (card as HTMLButtonElement).disabled) return;
+    const s = getCachedScenarios().find(x => x.id === card.dataset.id);
+    if (!s) return;
+    pickScreen.style.display = 'none';
+    selectedScenario = s;
+    renderFactionList(s);
+    factionScreen.style.display = 'flex';
+});
 
 init();
 
@@ -4249,11 +4456,40 @@ function renderFactionList(s: ScenarioData): void {
         </button>`).join('');
 }
 
+// 세력 클릭 — 무장편집을 거친 경로면 그 무장으로, 아니면 기존 시나리오 경로를 쓴다.
+// 두 핸들러를 따로 두면 같은 클릭이 두 번 처리되므로 여기 하나로 합쳤다.
 factionList.addEventListener('click', (e) => {
     const card = (e.target as HTMLElement).closest('.faction-card') as HTMLElement | null;
     if (!card || !selectedScenario) return;
     const idx = Number(card.dataset.idx);
     factionScreen.style.display = 'none';
+
+    if (editorChoice?.kind === 'new') {
+        const stage = selectedScenario;
+        const birthRaw = Number.parseInt(edBirth.value, 10);
+        const startYear = Number.parseInt(stage.start_date.slice(0, 4), 10);
+        // 생년을 안 썼으면 시작 시 장수로 환산한다 (가짜 값이 아니라 기본값).
+        const birthYear = Number.isFinite(birthRaw) ? birthRaw : startYear - 30;
+        const world = buildCustomOfficerWorld(stage, {
+            name: editorChoice.name,
+            courtesyName: edCourtesy.value,
+            gender: edGender.value === 'F' ? 'F' : 'M',
+            birthYear,
+            rank: Number.parseInt(edRank.value, 10) || 5,
+            stats: {
+                leadership: Number.parseInt(editorStatInputs.leadership.value, 10),
+                might: Number.parseInt(editorStatInputs.might.value, 10),
+                intelligence: Number.parseInt(editorStatInputs.intelligence.value, 10),
+                politics: Number.parseInt(editorStatInputs.politics.value, 10),
+                charisma: Number.parseInt(editorStatInputs.charisma.value, 10),
+            },
+            specialty: edSpecialty.value.trim() || null,
+        });
+        addLog(`${editorChoice.name} — ${stage.title_kr}의 ${stage.factions[idx].name}에서 출발합니다.`);
+        void startGame(world);
+        return;
+    }
+
     const world = buildWorld(selectedScenario, idx);
     void startGame(world);
 });

@@ -273,26 +273,52 @@ async function main() {
             }
             return false;
         };
-        // 타이틀 메뉴 3항목: 시작하기 / 이어하기 / 신규 장수 생성 [신규 기능]
-        // 신규 장수 생성은 시나리오 화면을 거치지 않으므로 별도 경로로 확인한다.
-        // startGame 은 isRunning 가드 때문에 한 번만 성공하므로, 여기서 먼저 구동한 뒤
+        // 타이틀 메뉴 3항목: 시작하기 / 이어하기 / 무장 편집 [신규 기능]
+        // 무장편집은 시나리오 화면을 거치지 않고 곧바로 월드를 만들므로 별도로 확인한다.
+        // startGame 은 isRunning 가드 때문에 한 번만 통과하므로, 여기서 먼저 구동한 뒤
         // 페이지를 새로고침해서 아래 시나리오 07 경로를 깨끗하게 다시 시작한다.
         const titleLabels = await cdp.evalJson(
             "(function(){return Array.from(document.querySelectorAll('.title-menu .btn-label')).map(e=>e.textContent.trim());})()");
         if (titleLabels.length !== 3) throw new Error(`title menu expected 3 items, got ${titleLabels.length}`);
-        const recruitBtnVisible = await cdp.evaluate("!!document.getElementById('btn-title-recruit') && document.getElementById('btn-title-recruit').offsetParent !== null");
-        if (!recruitBtnVisible.value) throw new Error('신규 장수 생성 버튼이 보이지 않는다');
+        const editorBtnVisible = await cdp.evaluate("!!document.getElementById('btn-title-recruit') && document.getElementById('btn-title-recruit').offsetParent !== null");
+        if (!editorBtnVisible.value) throw new Error('무장 편집 버튼이 보이지 않는다');
 
-        // 빈 성명으로 확정하면 시작되지 않고 경고가 떠야 한다 (검증 배선 확인)
+        // 1) 무장편집 화면이 열리는가
         await cdp.evaluate("document.getElementById('btn-title-recruit').click()");
-        const recruitOpen = await cdp.evaluate("document.getElementById('recruit-screen').classList.contains('open')");
-        if (!recruitOpen.value) throw new Error('신규 장수 생성 화면이 열리지 않는다');
-        await cdp.evaluate("document.getElementById('recruit-name').value=''; document.getElementById('btn-recruit-confirm').click()");
-        const emptyNameBlocked = await cdp.evaluate("document.getElementById('recruit-warn').style.display === 'block' && document.getElementById('recruit-screen').classList.contains('open')");
+        const editorOpen = await cdp.evaluate("document.getElementById('editor-screen').classList.contains('open')");
+        if (!editorOpen.value) throw new Error('무장 편집 화면이 열리지 않는다');
+
+        // 2) 빈 성명은 경고로 막힌다
+        await cdp.evaluate("document.getElementById('ed-name').value=''; document.getElementById('btn-ed-apply').click()");
+        const emptyNameBlocked = await cdp.evaluate("document.querySelector('.editor-warn').style.display === 'block'");
         if (!emptyNameBlocked.value) throw new Error('빈 성명으로 방어되지 않았다');
 
-        // 정상 입력 후 확정 -> 플레이어 세력이 custom 으로 시작
-        await cdp.evaluate("(function(){var n=document.getElementById('recruit-name');n.value='한중윤';n.dispatchEvent(new Event('input'));var c=document.getElementById('recruit-courtesy');c.value='중윤';c.dispatchEvent(new Event('input'));document.getElementById('btn-recruit-confirm').click();})()");
+        // 3) 필드별 랜덤이 값을 채운다 (직접 입력과 병존하는지)
+        const randomFilled = await cdp.evalJson(
+            "(function(){var b=document.querySelector('#editor-new-panel [data-rand=birth]');b.click();" +
+            "var n=document.querySelector('#editor-new-panel [data-rand=name]');n.click();" +
+            "return {birth:document.getElementById('ed-birth').value,name:document.getElementById('ed-name').value};})()");
+        if (randomFilled.birth === '' || randomFilled.name === '') throw new Error('필드 랜덤이 값을 채우지 않았다');
+
+        // 4) 생년을 정하면 플레이 가능한 시나리오 목록이 나온다
+        await cdp.evaluate("(function(){var n=document.getElementById('ed-name');n.value='한중윤';n.dispatchEvent(new Event('input'));var b=document.getElementById('ed-birth');b.value='165';b.dispatchEvent(new Event('input'));document.getElementById('btn-ed-apply').click();})()");
+        const pickVisible = await cdp.evaluate("document.getElementById('pick-scenario-screen').style.display === 'flex'");
+        if (!pickVisible.value) throw new Error('시나리오 선택 화면이 열리지 않는다');
+        const pickProbe = await cdp.evalJson(
+            "(function(){var cards=Array.from(document.querySelectorAll('#pick-scenario-list .pick-card'));" +
+            "return {total:cards.length,playable:cards.filter(c=>!c.classList.contains('blocked')).length," +
+            "blocked:cards.filter(c=>c.classList.contains('blocked')).length," +
+            "hasReason:cards.some(c=>c.querySelector('.pick-reason')!==null),sub:document.getElementById('pick-scenario-sub').textContent};})()");
+        if (pickProbe.total === 0) throw new Error('시나리오 카드가 하나도 없다');
+        if (pickProbe.playable === 0) throw new Error('165년생에게 가능한 시나리오가 없다');
+        // 탈락 항목은 사유를 보여줘야 한다 (숨기면 왜 안 되는지 알 수 없다)
+        if (pickProbe.blocked > 0 && !pickProbe.hasReason) throw new Error('탈락 시나리오에 사유가 없다');
+
+        // 5) 시나리오 → 세력 → 시작 (custom 세력으로 실제로 뜨는지)
+        await cdp.evaluate("(function(){var c=document.querySelector('#pick-scenario-list .pick-card:not(.blocked)');c.click();})()");
+        const factionVisible = await cdp.evaluate("document.getElementById('faction-screen').style.display === 'flex'");
+        if (!factionVisible.value) throw new Error('세력 선택 화면이 열리지 않는다');
+        await cdp.evaluate("document.querySelector('.faction-card').click()");
         let recruitStarted = false;
         for (let i = 0; i < 60; i++) {
             const rs = await cdp.evalJson(
@@ -307,7 +333,7 @@ async function main() {
         if (!recruitOfficerVisible || recruitOfficerVisible.faction !== 'fac_custom') {
             throw new Error('생성된 장수가 스토어에서 조회되지 않는다');
         }
-        const recruitProbe = { titleLabels, recruitOpen: true, emptyNameBlocked: true, recruitStarted, officer: recruitOfficerVisible };
+        const recruitProbe = { titleLabels, editorOpen: true, emptyNameBlocked: true, randomFilled, pickProbe, recruitStarted, officer: recruitOfficerVisible };
 
         // isRunning 가드를 풀기 위해 새로고침 — 아래 시나리오 경로를 위해 타이틀로 복귀
         await cdp.call('Page.reload');
@@ -682,9 +708,14 @@ async function main() {
             recruit: flowProbe.recruitProbe?.titleLabels?.length === 3
                 && flowProbe.recruitProbe.titleLabels[0] === '시작하기'
                 && flowProbe.recruitProbe.titleLabels[1] === '이어하기'
-                && flowProbe.recruitProbe.titleLabels[2] === '신규 장수 생성'
-                && flowProbe.recruitProbe.recruitOpen
+                && flowProbe.recruitProbe.titleLabels[2] === '무장 편집'
+                && flowProbe.recruitProbe.editorOpen
                 && flowProbe.recruitProbe.emptyNameBlocked
+                && flowProbe.recruitProbe.randomFilled.birth !== ''
+                && flowProbe.recruitProbe.randomFilled.name !== ''
+                && flowProbe.recruitProbe.pickProbe.total > 0
+                && flowProbe.recruitProbe.pickProbe.playable > 0
+                && (flowProbe.recruitProbe.pickProbe.blocked === 0 || flowProbe.recruitProbe.pickProbe.hasReason)
                 && flowProbe.recruitProbe.recruitStarted,
             scenario: scenario07Probe.cityNames.includes('청두') && scenario07Probe.cityNames.length === 6 && scenario07Probe.qingdu === 70 && scenario07Probe.caoPi === 76 && scenario07Probe.relationships === 8 && scenario07Probe.eventProcessed && scenario07Probe.eventText.includes('강완의 안정'),
             captiveBattle: captiveBattleProbe.success === true && captiveBattleProbe.commandType === 'BATTLE' && captiveBattleProbe.captiveOutcomes.length > 0 && captiveBattleProbe.logMessages.some(message => message.includes('포획')) && captiveBattleProbe.chronicleText.some(text => text.includes('포로')),
