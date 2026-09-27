@@ -78,3 +78,9 @@ worktree 를 지우기 전에 실제 작업 8개 파일을 복사해 두었다
 
 `stash@{0}: On master: pre-hippocamp-merge master worktree changes` — 200개 파일.
 저작권 blob 은 들어 있지 않다. 필요 없으면 `git stash drop`.
+
+### 참조 문서
+
+- ONBOARDING-4PR-POSTMORTEM.md — 병렬 작업 4건의 통합 기록과 규칙.
+  다음에 병렬 작업을 시작하면 **반드시 먼저 읽을 것.**
+  특히 규칙 1(계약을 worktree 생성 전에 커밋)을 지키지 않으면 워커가 멈춘다.
