@@ -42,20 +42,39 @@ SHA 만 바뀌고 실체는 같았다. 번들은 독립적인 가치가 없었�
 - [x] 저작권 게이트 `scripts/check_ip_assets.mjs` 가 커밋·push 를 막는지 확인 완료
 - [x] 히스토리 재작성 — `filter-repo` 로 136커밋에서 blob 제거, 리모트 반영 완료
 - [x] `backup-before-rewrite` 삭제 (2026-09-27) — 34커밋 전부 `master` 안에 있음을 확인 후 삭제
-- [ ] `guikiman/*` 브랜치 16개 — 전부 `master` 에 병합 완료. 정리 여부는 미결
+- [x] `guikiman/*` 16개 + worktree 8개 정리 (2026-09-27) — 커밋 119개 그대로
 
-### `guikiman/*` 를 지울 때 (아직 안 함)
+### ⚠️ `filter-repo` 후에도 blob 이 살아있던 이유 (중요)
 
-16개 모두 `master` 에 완전히 병합되어 있어 지워도 커밋 손실이 없다.
-worktree 에 붙어 있는 것(`auth-backend`, `fix-boot` 2개)이 있어 순서가 필요하다.
+worktree **인덱스**가 blob 을 참조하고 있어서 `git gc --prune=now` 후에도
+객체가 패킹된 채 남았다. 파일시스템 스캔으로는 보이지 않는다 —
+`.git/objects/pack/*.pack` 안쪽에 있기 때문이다.
 
+```powershell
+# 인덱스에서 제거
+git -C <worktree> rm --cached -- assets/china-national-map.png
+# 객체까지 실제로 없애려면 (reflog 도 만료시켜야 한다)
+git reflog expire --expire=now --all
+git gc --prune=now --aggressive
 ```
-git worktree remove <경로>        # 붙어 있는 것부터
-git branch -D <브랜치>            # 그 다음 브랜치
-git worktree prune
-```
+
+확인 방법: `git cat-file -e <blob-sha>` 가 0 을 반환하면 아직 있다.
+파일시스템 재스캔만으로는 판단할 수 없다.
+
+### 보존한 미커밋 작업
+
+worktree 를 지우기 전에 실제 작업 8개 파일을 복사해 두었다
+(`D:\samkukzi-re_DATA\preserved-2026-09-27\`). `master` 에 없던 파일이다.
+
+| 출처 | 파일 |
+|---|---|
+| auth-contract | `src/core/china_map_renderer.ts`, `tests/e2e/browser_smoke.mjs` |
+| auth-ui | `index.html`, `src/main.ts`, `style.css`, `scripts/measure_compendium_render.mjs`, `src/ui/officer_compendium.ts`, `tests/officer_compendium.test.ts` |
+
+`officer-dossier` 의 미커밋 1071개는 전부 `dist/` 산출물과 `sw-precache.json`
+이라 보존하지 않았다.
 
 ### 남은 stash
 
 `stash@{0}: On master: pre-hippocamp-merge master worktree changes` — 200개 파일.
-저작권 blob 은 들어 있지 않다. 필요 없으면 `git stash drop` 으로 지울 수 있다.
+저작권 blob 은 들어 있지 않다. 필요 없으면 `git stash drop`.
