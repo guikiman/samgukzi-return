@@ -104,4 +104,27 @@ describe('세력 AI 월간 자율 행동 [201]', () => {
         }
         expect(conquers, '24개월간 점령 0건 — AI 공격 파이프라인이 죽었다').toBeGreaterThan(0);
     });
+
+    it('4세력 시나리오(02 반동탁 연합)에서도 점령이 발생한다', () => {
+        // [결함 수정] 02 는 4세력이 각각 2도시씩 떨어져 있고 병력 격차가
+        // 커서 열세 조건이 한 번도 안 맞아 점령 0 이었다. 도시를 11개로
+        // 보강해 접경 15쌍을 확보했다. 세력 4개인 유일한 시나리오라
+        // 별도로 확인한다(4세력이 모두 2도시인 구조는 점령이 일어나도
+        // 상대 세력이 즉시 소멸한다).
+        const scenario = (scenarioIndex as Array<{ id: string }>).find(s => s.id === '02')!;
+        const world = buildWorld(scenario as never, 2);
+        const store = new GameStore();
+        const engine = new GameEngine(store);
+        engine.initWorld(world.officers, world.factions, world.cities, []);
+        store.setGlobalState({ playerFactionId: world.playerFactionId, time: { year: 190, month: 1 }, difficulty: 3 } as never);
+
+        const ai = new FactionAI(store);
+        let conquers = 0;
+        for (let m = 0; m < 24; m++) {
+            for (const r of ai.runMonthly()) {
+                for (const a of r.actions) if (a.includes('점령')) conquers++;
+            }
+        }
+        expect(conquers, '02 시나리오 24개월간 점령 0건').toBeGreaterThan(0);
+    });
 });

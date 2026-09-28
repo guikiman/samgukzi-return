@@ -35,8 +35,11 @@
     ],
     "cities": [
       { "name": "남양", "faction_index": 0, "profile": { "population": 52000, "defense": 50, "gold_income": 108, "food_income": 292, "funds": 760, "development": 3120, "commerce": 45, "farming": 44, "technology": 40, "public_order": 46, "loyalty": 61, "danger": 32 } },
+      { "name": "진주", "faction_index": 0, "profile": { "population": 44000, "defense": 46, "gold_income": 95, "food_income": 246, "funds": 600, "development": 2608, "commerce": 40, "farming": 42, "technology": 36, "public_order": 52, "loyalty": 74, "danger": 28 } },
       { "name": "하비", "faction_index": 1, "profile": { "population": 58000, "defense": 55, "gold_income": 117, "food_income": 310, "funds": 880, "development": 3532, "commerce": 48, "farming": 52, "technology": 42, "public_order": 62, "loyalty": 76, "danger": 18 } },
+      { "name": "서주", "faction_index": 1, "profile": { "population": 50000, "defense": 51, "gold_income": 102, "food_income": 268, "funds": 680, "development": 3016, "commerce": 44, "farming": 43, "technology": 38, "public_order": 58, "loyalty": 73, "danger": 24 } },
       { "name": "연주", "faction_index": 2, "profile": { "population": 61000, "defense": 57, "gold_income": 121, "food_income": 320, "funds": 860, "development": 3737, "commerce": 50, "farming": 54, "technology": 44, "public_order": 64, "loyalty": 74, "danger": 20 } },
+      { "name": "여남", "faction_index": 2, "profile": { "population": 49000, "defense": 48, "gold_income": 99, "food_income": 260, "funds": 620, "development": 2954, "commerce": 42, "farming": 43, "technology": 36, "public_order": 54, "loyalty": 77, "danger": 32 } },
       { "name": "여강", "faction_index": 3, "profile": { "population": 44000, "defense": 46, "gold_income": 95, "food_income": 246, "funds": 600, "development": 2608, "commerce": 39, "farming": 43, "technology": 35, "public_order": 57, "loyalty": 71, "danger": 28 } }
     ],
     "special_conditions": {
