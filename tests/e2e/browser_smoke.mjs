@@ -1,30 +1,4 @@
-/**
-main();
-            // 시장 클릭 -> 불량배 연쇄 대화 / 교역소 구매 [신규 기능]
-            "document.getElementById('dialogue-close').click();" +
-            "var city2=s.getAllCities().find(function(c){return c.ownerId===s.getGlobalState().playerFactionId;})||s.getAllCities()[0];" +
-            "city2.developmentStats.publicOrder=8;city2.developmentStats.commerce=12;g.openCity(city2.id);" +
-            "var mk=document.querySelector('[data-facility=MARKET]');if(mk)mk.click();" +
-            "var mktOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
-            "var mktVisit1=document.getElementById('dialogue-page').textContent;" +
-            "var mktCh1=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
-            "var mktFirst=(document.querySelectorAll('#dialogue-choices .dlg-choice')[0]||{disabled:true});" +
-            "if(!mktFirst.disabled)mktFirst.click();" +
-            "var mktVisit2=document.getElementById('dialogue-page').textContent;" +
-            "var mktText2=document.getElementById('dialogue-text').textContent;" +
-            "var mktCh2=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
-            "document.getElementById('dialogue-close').click();" +
-            "g.openTradeDialogue(city2.id);" +
-            "var trOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
-            "var trRows=document.querySelectorAll('#dialogue-trade .dlg-trade-row').length;" +
-            "var trGold0=s.getFaction(s.getGlobalState().playerFactionId).gold;" +
-            "var trDeal=document.querySelectorAll('#dialogue-choices .dlg-choice')[0];if(trDeal)trDeal.click();" +
-                        "var trPrice=parseInt(document.querySelectorAll('#dialogue-trade .dlg-trade-row')[0].querySelectorAll('.dlg-trade-price')[1].textContent,10);" +
-"var trBuy=document.querySelector('[data-trade-buy=grain]');if(trBuy&amp;&amp;!trBuy.disabled)trBuy.click();" +
-            "var trGold1=s.getFaction(s.getGlobalState().playerFactionId).gold;" +
-            "var trNote=document.getElementById('dialogue-result').textContent;" +
-            "document.getElementById('dialogue-close').click();" +
-/**
+﻿/**
  * 브라우저 E2E 스모크 테스트 (headless Chrome + CDP)
  * 파일: tests/e2e/browser_smoke.mjs
  *
@@ -900,12 +874,16 @@ async function main() {
                 && flowProbe.recruitProbe.pickProbe.playable > 0
                 && (flowProbe.recruitProbe.pickProbe.blocked === 0 || flowProbe.recruitProbe.pickProbe.hasReason)
                 && flowProbe.recruitProbe.recruitStarted,
-            scenario: scenario07Probe.cityNames.includes('청두') && scenario07Probe.cityNames.length === 6 && scenario07Probe.qingdu === 70 && scenario07Probe.caoPi === 76 && scenario07Probe.relationships === 8 && scenario07Probe.eventProcessed && scenario07Probe.eventText.includes('강완의 안정'),
+            // [결함 수정] length === 6 은 2차도시가 3개뿐이던 옛 스텁 데이터 기준이다.
+            // 07 시나리오를 위 4·촉 3·오 3 = 9도시로 보강하면서 깨졌다.
+            scenario: scenario07Probe.cityNames.includes('청두') && scenario07Probe.cityNames.length === 9 && scenario07Probe.qingdu === 70 && scenario07Probe.caoPi === 76 && scenario07Probe.relationships === 8 && scenario07Probe.eventProcessed && scenario07Probe.eventText.includes('강완의 안정'),
             captiveBattle: captiveBattleProbe.success === true && captiveBattleProbe.commandType === 'BATTLE' && captiveBattleProbe.captiveOutcomes.length > 0 && captiveBattleProbe.logMessages.some(message => message.includes('포획')) && captiveBattleProbe.chronicleText.some(text => text.includes('포로')),
             monthlyReport: monthlyReportProbe.visible === true && monthlyReportProbe.hasCaptive === true,
             cityChronicle: cityChronicleProbe.hasHistory === true,
             chronicleFilter: chronicleFilterProbe.factionFilters > 0 && chronicleFilterProbe.hasCapture === true,
-            map: mapClickProbe.points === 6 && mapVisibilityProbe.initial.mode === 'all' && mapVisibilityProbe.initial.visible === mapVisibilityProbe.initial.all && mapVisibilityProbe.discovered.mode === 'discovered' && mapVisibilityProbe.discovered.visible > 0 && mapVisibilityProbe.discovered.visible < mapVisibilityProbe.discovered.all && mapVisibilityProbe.discovered.factions.length >= 3 && mapVisibilityProbe.restored === 'all',
+            // [결함 수정] points === 6 은 2차도시가 3개뿐이던 옛 스텁 데이터 기준.
+            // 클릭 대상 도시 수를 전역 도시 수에 맞춰 검증한다.
+            map: mapClickProbe.points === mapVisibilityProbe.initial.all && mapVisibilityProbe.initial.mode === 'all' && mapVisibilityProbe.initial.visible === mapVisibilityProbe.initial.all && mapVisibilityProbe.discovered.mode === 'discovered' && mapVisibilityProbe.discovered.visible > 0 && mapVisibilityProbe.discovered.visible < mapVisibilityProbe.discovered.all && mapVisibilityProbe.discovered.factions.length >= 3 && mapVisibilityProbe.restored === 'all',
             screenshot: mapScreenshotProbe.width > 0 && mapScreenshotProbe.height > 0 && mapScreenshotProbe.pngLength > 1000 && mapScreenshotProbe.hashStable && mapScreenshotProbe.corner.length === 4 && mapScreenshotProbe.hasBitmapApi === false && !mapScreenshotProbe.imageRequests.some(url => url.includes('china-national-map')),
             mapClicks: mapClickProbe.results.every(item => item.actual === item.expected),
             dialogue: dialogueProbe.facilityOpen && dialogueProbe.facilityCount === 8 && dialogueProbe.facilityNames.some(name => name.includes('훈련장')) && dialogueProbe.officerOpen && dialogueProbe.choices >= 2 && dialogueProbe.giftPreview.includes('옥비') && dialogueProbe.giftPreview.includes('희귀') && dialogueProbe.giftPreview.includes('+14') && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500 && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity && dialogueProbe.page === '1 / 3' && dialogueProbe.nextPage === '2 / 3' && dialogueProbe.prevPage === '1 / 3',
@@ -972,7 +950,8 @@ async function main() {
             && flowProbe.factionFlowOpen === true
             && flowProbe.scenarioBackAgain === true
             && scenario07Probe.cityNames.includes('청두')
-            && scenario07Probe.cityNames.length === 6
+            // [결함 수정] 2차도시 보강으로 6 → 9 (위 4 + 촉 3 + 오 3)
+            && scenario07Probe.cityNames.length === 9
             && scenario07Probe.qingdu === 70
             && scenario07Probe.caoPi === 76
             && scenario07Probe.relationships === 8
@@ -988,7 +967,7 @@ async function main() {
             && cityChronicleProbe.hasHistory === true
             && chronicleFilterProbe.factionFilters > 0
             && chronicleFilterProbe.hasCapture === true
-            && mapClickProbe.points === 6
+            && mapClickProbe.points === mapVisibilityProbe.initial.all
             && mapVisibilityProbe.initial.mode === 'all'
             && mapVisibilityProbe.initial.visible === mapVisibilityProbe.initial.all
             && mapVisibilityProbe.discovered.mode === 'discovered'
