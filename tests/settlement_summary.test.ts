@@ -21,10 +21,10 @@ describe('월말 정산 요약 [E1-361][461-480]', () => {
             expect(f.officerCount).toBeGreaterThan(0);
             expect(f.avgMorale).toBeGreaterThanOrEqual(0);
         }
-        // 조조(fac_0) — 허창 단일 도시, 군주 포함
+        // 조조(fac_0) — 허창 + 陳留 + 兗州 + 河內 = 4도시, 군주 포함
         const caocao = report.factions.find(f => f.factionId === 'fac_0');
         expect(caocao?.factionName).toBe('조조');
-        expect(caocao?.cityCount).toBe(1);
+        expect(caocao?.cityCount).toBe(4);
     });
 
     it('국고·병량이 스냅샷에 정확히 반영된다', () => {

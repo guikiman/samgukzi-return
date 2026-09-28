@@ -90,8 +90,13 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
     it('07 삼국鼎峙 시나리오는 새 도시·무장·초기 인맥을 제공한다', () => {
         const scenario = (scenarioIndex as ScenarioData[]).find(s => s.id === '07')!;
         const world = buildWorld(scenario, 1);
-        expect(world.cities.map(c => c.name)).toEqual(['낙양', '청두', '부경', '항양', '강릉', '동정']);
-        expect(world.factions.map(f => f.cities.length)).toEqual([2, 2, 2]);
+        // 수도 3개(洛陽/成都/建業) + 2차도시 6개
+        // [결함 수정] 이전엔 세력당 2도시였고 세력 간 접경이 0쌍이라
+        // AI가 24개월 내내 공격하지 못했다. 이제 위(4) 촉(3) 오(3) 다 2도시 이상.
+        expect(world.cities.map(c => c.name)).toEqual([
+            '낙양', '청두', '부경', '서주', '진류', '강릉', '성도', '동정', '진주',
+        ]);
+        expect(world.factions.map(f => f.cities.length)).toEqual([3, 3, 3]);
         expect(CITY_MAP_COORDS['청두']).toEqual({ x: 0.30, y: 0.57 });
         expect(CITY_MAP_COORDS['부경']).toEqual({ x: 0.77, y: 0.62 });
         expect(world.officers.map(o => o.name)).toEqual(expect.arrayContaining(['사오필', '유찬', '손호', '제갈격']));
@@ -100,6 +105,8 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
         expect(caoPi.personality).toBe('CALM');
         const chengdu = world.cities.find(c => c.name === '청두')!;
         expect(chengdu.population).toBe(96000);
+        // 수도 프로필은 2차도시와 달리 development 만 병력 규모로 바뀌고
+        // 개발 지표(farming 등)는 원래 값 68 을 유지한다.
         expect(chengdu.developmentStats.farming).toBe(68);
         expect(world.relationships).toHaveLength(8);
         expect(world.relationships.some(r => r.source === 'cao_pi' && r.target === 'liu_shan' && r.type === 'RIVAL')).toBe(true);

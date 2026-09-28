@@ -60,4 +60,48 @@ describe('세력 AI 월간 자율 행동 [201]', () => {
         expect(report.every(r => r.factionId !== gs.playerFactionId)).toBe(true);
         expect(store.getCity(playerCity.id)?.ownerId).toBe(gs.playerFactionId);
     });
+
+    // ── [결함 수정] 병력 증가와 실제 점령 계약 ──
+    // 원래 징병은 `병력 200 미만이면 +600` 인 일회성 판정이었다.
+    // development 이 0~100 개발도일 때는 그럴듯했지만, 이 값이 병력
+    // (수천~수만)인 걸 확인한 뒤로는 조건이 영원히 거짓이 되어
+    // 병력이 1명도 늘지 않았고, 그 결과 AI가 24개월 내내 공격 0회였다.
+    it('매달 병력이 증가한다 (징병이 죽지 않았다)', () => {
+        const { store } = setupWorld();
+        const before = new Map(store.getAllCities().map(c => [c.id, c.development]));
+        new FactionAI(store).runMonthly();
+        const grew = store.getAllCities()
+            .filter(c => c.development > (before.get(c.id) ?? 0));
+        expect(grew.length, '한 달 동안 병력이 증가한 도시가 0개').toBeGreaterThan(0);
+    });
+
+    it('병력은 인구 비례 상한을 넘지 않는다', () => {
+        const { store } = setupWorld();
+        const ai = new FactionAI(store);
+        for (let m = 0; m < 24; m++) ai.runMonthly();
+        for (const c of store.getAllCities()) {
+            const cap = Math.max(400, Math.round(c.population * (c.isCapital ? 0.15 : 0.12)));
+            expect(c.development, `${c.name} 병력 ${c.development} > 상한 ${cap}`).toBeLessThanOrEqual(cap + 1);
+        }
+    });
+
+    it('장기 시뮬레이션에서 AI가 실제로 도시를 점령한다', () => {
+        // 24개월간 점령이 0 이면 위 파이프라인 중 하나가 또 죽은 것이다.
+        // 확률 게이트가 있으므로 1회 이상이면 충분하다.
+        const scenario = (scenarioIndex as Array<{ id: string }>).find(s => s.id === '03')!;
+        const world = buildWorld(scenario as never, 2);
+        const store = new GameStore();
+        const engine = new GameEngine(store);
+        engine.initWorld(world.officers, world.factions, world.cities, []);
+        store.setGlobalState({ playerFactionId: world.playerFactionId, time: { year: 194, month: 1 }, difficulty: 3 } as never);
+
+        const ai = new FactionAI(store);
+        let conquers = 0;
+        for (let m = 0; m < 24; m++) {
+            for (const r of ai.runMonthly()) {
+                for (const a of r.actions) if (a.includes('점령')) conquers++;
+            }
+        }
+        expect(conquers, '24개월간 점령 0건 — AI 공격 파이프라인이 죽었다').toBeGreaterThan(0);
+    });
 });

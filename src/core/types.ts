@@ -248,6 +248,18 @@ export interface City {
     officerIds: OfficerID[];
     ownerId: FactionID | null;
     isCapital: boolean;
+    /**
+     * 도시 병력 수 (명). [결함 수정] 예전엔 "개발도 0~100" 으로 문서화돼
+     * 있었지만, 실제 소비자가 10곳 넘고 병력을 뜻한다:
+     *   - command_system 징병: 200 미만이면 +600
+     *   - battle_spoils_system 약탈: 25% 를 빼앗아 공격측으로
+     *   - faction_diplomacy_ai 전력: development + defense × 0.5 합산
+     *   - faction_ai_monthly 출진: 300 이상이면 공격 후보
+     *   - main.ts 출진 UI: "병력 {development}으로 출진합니다"
+     * 값이 0~100 이면 전원이 "병력 700" 처럼 부풀어 올려
+     * 출진 열세 조건(공격 ≥ 방어 × 1.2)이 영영 성립하지 않았다.
+     * 개발도 지표는 developmentStats 를 쓴다.
+     */
     development: number;
     developmentStats: CityDevelopmentStats;
     loyalty: number;

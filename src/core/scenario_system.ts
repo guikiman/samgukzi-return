@@ -86,6 +86,29 @@ export function getCachedScenarios(): ScenarioData[] {
     return cachedScenarios ?? [];
 }
 
+/**
+ * [결함 수정] 도시 초기 병력 규모를 정한다.
+ *
+ * City.development 은 값이 병력 수(명)다 — 예전엔 "개발도 0~100" 으로
+ * 문서화돼 있었지만 실제 소비자가 전부 병력으로 쓰고 있었다:
+ *   징병 200 미만이면 +600 / 약탈 25% / 세력 전력 합산 / 출진 300 이상.
+ *
+ * 0~100 으로 시작하면 전원이 한 달 만에 "병력 600" 으로 평준화돼
+ * 출진 열세 조건(공격력 ≥ 방어력 × 1.2)이 영영 성립하지 않는다.
+ * 실제로 24개월 시뮬레이션에서 공격/방어력 비율이 1.01 에 머물렀다.
+ *
+ * 그래서 인구를 기준으로 3~12% 를 병력으로 둔다. 인구 8만이면 6,400명 —
+ * 실전 규모에 가깝고 도시마다 차이가 나므로 열세 판정이 의미를 갖는다.
+ * 서도는 1.15배, 2차도시는 방어력 보정 0.8 배를 곱한다.
+ */
+export function initialTroops(population: number, isCapital: boolean, defense: number): number {
+    const base = Math.max(400, Math.round(population * 0.075));
+    const capitalFactor = isCapital ? 1.15 : 0.8;
+    // 방어력이 높은 도시일수록 평시 주둔 병력이 많다 (defense 35~86 → 0.85~1.15)
+    const defenseFactor = 0.85 + (Math.max(0, Math.min(100, defense)) / 100) * 0.3;
+    return Math.round(base * capitalFactor * defenseFactor);
+}
+
 /** 무장 아이디 → 한글 이름 (사전에 없으면 아이디 그대로) */
 export function getKnownOfficerName(id: string): string {
     return OFFICER_NAME_TABLE[id]?.name ?? ESCORT_NAME_FIXES[id] ?? id;
@@ -558,7 +581,10 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
         }
         const cityProfile = sf.city_profile ?? {};
         const population = cityProfile.population ?? 40000 + idx * 5000;
-        const development = cityProfile.development ?? 45 + (idx % 4) * 5;
+        // [결함 수정] profile.development 은 이제 "개발도 0~100" 이 아니라 병력 수다.
+        // 옛 값(30~100) 을 그대로 넣으면 전 도시가 "병력 700" 으로 평준화된다.
+        const defense = cityProfile.defense ?? 45 + (idx % 3) * 10;
+        const development = cityProfile.development ?? initialTroops(population, true, defense);
         const commerce = cityProfile.commerce ?? 40 + (idx % 3) * 8;
         const farming = cityProfile.farming ?? 42 + (idx % 4) * 6;
         const technology = cityProfile.technology ?? 28 + (idx % 3) * 7;
@@ -574,7 +600,7 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
             mapImageY: imageCoord.y,
             mapIconType: 'CAPITAL',
             population,
-            defense: cityProfile.defense ?? 45 + (idx % 3) * 10,
+            defense,
             maxDefense: 100,
             goldIncome: cityProfile.gold_income ?? 110 + idx * 10,
             foodIncome: cityProfile.food_income ?? 280 + idx * 15,
@@ -612,7 +638,10 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
             console.warn(`[scenario] 2차도시 '${cityData.name}' 에 이미지 앵커가 없다 — 전술 좌표로 그린다 (${mapCoord.x}, ${mapCoord.y})`);
         }
         const profile = cityData.profile ?? {};
-        const development = profile.development ?? 38 + cityIndex * 4;
+        // [결함 수정] 수도와 같은 이유로 0~100 개발도를 병력으로 쓰지 않는다.
+        const population = profile.population ?? 36000 + cityIndex * 4500;
+        const defense = profile.defense ?? 35 + cityIndex * 5;
+        const development = profile.development ?? initialTroops(population, false, defense);
         cities.push({
             id: cityId,
             name: cityData.name,
@@ -622,8 +651,8 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
             mapImageX: imageCoord.x,
             mapImageY: imageCoord.y,
             mapIconType: 'CITY',
-            population: profile.population ?? 36000 + cityIndex * 4500,
-            defense: profile.defense ?? 35 + cityIndex * 5,
+            population,
+            defense,
             maxDefense: 100,
             goldIncome: profile.gold_income ?? 85 + cityIndex * 8,
             foodIncome: profile.food_income ?? 220 + cityIndex * 15,

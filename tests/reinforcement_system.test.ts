@@ -284,4 +284,55 @@ describe('실제 시나리오와의 계약', () => {
         }
         expect(totalTroops).toBeGreaterThan(0);
     });
+
+    // ── [결함 수정] 아래 계약이 없으면 데이터 결함이 조용히 통과된다 ──
+    // 7개 시나리오 중 6개가 2차도시 0개(세력당 1도시)였고,
+    // 세력 간 접경이 0쌍이어서 AI가 24개월 내내 공격 0회였다.
+    // 병력(development)이 0~100 개발도로 시작해 1.2배 열세 조건이
+    // 구조적으로 불가능했고, 징병도 1명도 늘어나지 않았다.
+
+    const ADJACENT = 0.16;
+
+    it('모든 시나리오에서 세력당 도시가 2개 이상이다', () => {
+        // 세력당 1도시면 "점령"이 일어나도 상대 세력이 즉시 소멸한다.
+        for (const s of index) {
+            const world = buildWorld(s as never, 2);
+            const perFaction = new Map<string, number>();
+            for (const c of world.cities) {
+                perFaction.set(c.ownerId ?? '중립', (perFaction.get(c.ownerId ?? '중립') ?? 0) + 1);
+            }
+            for (const [fid, n] of perFaction) {
+                expect(n, `${s.id} ${s.title_kr} ${fid} 도시 ${n}개`).toBeGreaterThanOrEqual(2);
+            }
+        }
+    });
+
+    it('모든 시나리오에 세력 간 접경이 존재한다 (AI 공격 불가 방지)', () => {
+        for (const s of index) {
+            const world = buildWorld(s as never, 2);
+            let borders = 0;
+            for (let i = 0; i < world.cities.length; i++) {
+                for (let j = i + 1; j < world.cities.length; j++) {
+                    const a = world.cities[i], b = world.cities[j];
+                    if (!a.ownerId || !b.ownerId || a.ownerId === b.ownerId) continue;
+                    const d = Math.hypot((a.mapX ?? 0) - (b.mapX ?? 0), (a.mapY ?? 0) - (b.mapY ?? 0));
+                    if (d <= ADJACENT) borders++;
+                }
+            }
+            expect(borders, `${s.id} ${s.title_kr} 세력 간 접경 0쌍 — AI가 공격할 수 없음`).toBeGreaterThan(0);
+        }
+    });
+
+    it('도시 병력(development)이 병력 규모다 — 0~100 개발도가 아니다', () => {
+        // 0~100 으로 시작하면 징병 후 전원이 700 근처로 평준화돼
+        // 출진 열세(1.2배)가 영영 성립하지 않는다.
+        for (const s of index) {
+            const world = buildWorld(s as never, 2);
+            for (const c of world.cities) {
+                expect(c.development, `${s.id} ${c.name} 병력 ${c.development}`)
+                    .toBeGreaterThanOrEqual(400);
+            }
+        }
+    });
 });
+
