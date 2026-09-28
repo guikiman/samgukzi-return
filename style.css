@@ -637,6 +637,20 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 }
 .faction-list { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 
+/* [결함 수정] 시나리오 목록의 로딩/오류 상태.
+   openScenarioScreen 이 화면을 먼저 띄우고 데이터를 나중에 채우도록 바뀌어
+   로딩 중이 사용자에게 보인다. grid 컨테이너 안이라 카드가 아니라
+   상태 문구로 채운다. */
+.scenario-loading, .scenario-error {
+    grid-column: 1 / -1;
+    padding: 28px 12px;
+    text-align: center;
+    color: var(--text-muted, #9a9484);
+    font-size: 0.9rem;
+    letter-spacing: 1px;
+}
+.scenario-error { color: #e06a6a; }
+
 .scenario-card {
     display: flex;
     align-items: center;

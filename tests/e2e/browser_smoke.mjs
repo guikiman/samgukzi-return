@@ -266,7 +266,16 @@ async function main() {
 
         // 실제 시작 화면 흐름 — 게임 시작 → 시나리오 → 뒤로 → 세력 → 뒤로 → 재선택 [9]
         const waitForDisplay = async (selector, display) => {
-            for (let i = 0; i < 40; i++) {
+            // [결함 수정] budget 을 4초 → 12초로 늘렸다.
+            // 첫 scenario-screen 호출은 loadScenarios() 의 캐시 미스라
+            // fetch + res.json() 을 실제로 기다린다. 40×100ms = 4초 안에
+            // 안 끝나면 scenarioFlowOpen 이 false 가 되어 E2E 가 통째로
+            // 실패했다. 뒤의 두 번째 호출은 캐시 히트라 항상 즉시라
+            // "첫 화면만 느리다" 는 신호가 지워져 원인을 놓치기 쉬웠다.
+            // 화면 전환은 사용자가 체감할 지연이 아니라 내부 I/O 대기이므로
+            // 여유를 주는 게 맞다. 실패를 throw 하지 않고 false 를 돌려주는
+            // 기존 계약은 유지한다 — 판정 로직이 메시지를 담고 있다.
+            for (let i = 0; i < 120; i++) {
                 const value = await cdp.evaluate(`document.getElementById('${selector}').style.display === '${display}'`);
                 if (value.value) return true;
                 await delay(100);

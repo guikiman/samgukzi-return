@@ -5177,12 +5177,27 @@ const factionList = document.getElementById('faction-list')!;
 let selectedScenario: ScenarioData | null = null;
 
 async function openScenarioScreen(): Promise<void> {
+    // [결함 수정] 화면을 먼저 띄우고 데이터를 나중에 채운다.
+    //
+    // 예전엔 `await loadScenarios()` 가 끝난 뒤에 scenarioScreen 을
+    // display:flex 로 만들었다. 즉 fetch + res.json() 이 끝나기 전까지
+    // 사용자는 아무 반응도 없는 화면을 보게 되고, E2E 는 그 첫 전환을
+    // 4초 안에 관측하지 못한 채 "화면이 안 열린다" 고 판정했다.
+    // 데이터는 이미 캐시되므로 두 번째 진입은 빠르지만, 첫 진입이 느린
+    // 사실이 테스트 결과에서 지워져 원인을 놓치기 쉬웠다.
+    //
+    // 화면 전환과 데이터 로딩을 분리하면 로딩이 아무리 느려도 화면은
+    // 즉시 뜬다. 실패는 목록 자리에 메시지로 남긴다.
+    factionScreen.style.display = 'none';
+    scenarioScreen.style.display = 'flex';
+    // 로딩 중 표시 — 데이터를 기다리는 동안 빈 화면을 보여주지 않는다.
+    // (E2E 는 scenario-card 개수를 세므로, 로딩 상태임을 분명히 해둔다)
+    scenarioList.innerHTML = '<div class="scenario-loading">시나리오를 불러오는 중…</div>';
     try {
         const scenarios = await loadScenarios();
         renderScenarioList(scenarios);
-        factionScreen.style.display = 'none';
-        scenarioScreen.style.display = 'flex';
     } catch (err) {
+        scenarioList.innerHTML = '<div class="scenario-error">시나리오를 불러오지 못했습니다.</div>';
         addLog(`시나리오 로드 실패: ${err}`);
         statusText.textContent = '시나리오 로드 실패';
     }
