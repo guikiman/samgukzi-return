@@ -14,6 +14,8 @@
  *
  * 이 파일은 "값의 규모" 를 계약으로 고정한다.
  */
+import { readFileSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { formatGarrisonText } from '../src/core/china_map_renderer.js';
 import { GameStore } from '../src/core/game_store.js';
@@ -21,6 +23,7 @@ import { GameEngine } from '../src/core/game_engine.js';
 import { DomesticCommand, CityRecruitmentCommand } from '../src/core/command_system.js';
 import { buildWorld } from '../src/core/scenario_system.js';
 import { ModSchemaValidator } from '../src/core/mod_schema_validator.js';
+import { garrisonCap, computeRecruitGain } from '../src/core/faction_ai_monthly.js';
 import { AIStreamManager } from '../src/ai/ai_stream_manager.js';
 import scenarioIndex from '../src/data/scenarios/index.json';
 import type { CityID, OfficerID } from '../src/core/types.js';
@@ -167,6 +170,99 @@ describe('development 0~100 가정이 남아있는 소비처', () => {
             // 격차가 사라지고, 워커는 "전 도시가 약하다" 고 판단한다.
             expect(snap!.development).toBe(city.development);
             expect(snap!.development).toBeGreaterThan(100);
+        }
+    });
+});
+
+describe('병력 상한(garrisonCap) 규칙의 일관성', () => {
+    // 병력을 늘리는 경로가 여럿이다(AI 자동 징병, AI 명령, 플레이어 UI,
+    // BARRACKS 2곳). 상한을 제각각 두는 곳이 있으면 "도시마다 병력 규칙이
+    // 다르다" 는 결함이 된다 — BARRACKS 가 두 번 그렇게 죽었다.
+    // 여기서는 상한 규칙 자체를 계약으로 고정한다.
+
+    it('상한은 인구의 12%, 수도는 15% — 최소 400', () => {
+        expect(garrisonCap({ population: 50_000, isCapital: false })).toBe(6_000);
+        expect(garrisonCap({ population: 50_000, isCapital: true })).toBe(7_500);
+        // 하한: 아무리 작은 도시도 400명은 유지된다.
+        expect(garrisonCap({ population: 500, isCapital: false })).toBe(400);
+        expect(garrisonCap({ population: 0, isCapital: true })).toBe(400);
+    });
+
+    it('시나리오의 모든 도시 병력이 상한 이하로 시작한다', () => {
+        const { store } = setupWorld();
+        for (const c of store.getAllCities()) {
+            const cap = garrisonCap(c);
+            expect(c.development).toBeLessThanOrEqual(cap);
+        }
+    });
+
+    it('병력이 상한에 닿으면 증가량은 0 이다', () => {
+        // 상한이 없을 때 플레이어가 세력 AI 규칙을 우회해 병력을 무한정
+        // 늘릴 수 있었다. 상한은 규칙이지 권고가 아니다.
+        const r = computeRecruitGain(6_000, 50_000, false, 0.9);
+        expect(r.capped).toBe(true);
+        expect(r.gain).toBe(0);
+        expect(r.cap).toBe(6_000);
+    });
+
+    it('상한이 남았으면 증가량은 상한을 넘지 않도록 잘라낸다', () => {
+        // 병력 5,900 / 상한 6,000 → 빈자리 100명. 무작위 증가량(600~1000)을
+        // 그대로 넣으면 상한을 깨고, 잘라내지 않으면 규칙이 허문이다.
+        const r = computeRecruitGain(5_900, 50_000, false, 0.99);
+        expect(r.capped).toBe(false);
+        expect(r.gain).toBe(100);
+        expect(5_900 + r.gain).toBe(r.cap);
+    });
+
+    it('빈자리가 충분하면 무작위 증가량(600~1000)이 그대로 적용된다', () => {
+        // 증가량 규칙 자체는 밸런스 값이라 바꾸지 않는다 — 이 계약은
+        // "바꾸지 않겠다" 를 고정해 이후 커밋에서 실수로 변하지 않게 한다.
+        expect(computeRecruitGain(0, 1_000_000, true, 0).gain).toBe(600);
+        expect(computeRecruitGain(0, 1_000_000, true, 0.999).gain).toBe(999);
+    });
+
+    it('roll 을 주입하면 결과가 결정론적이다 — Math.random 에 기대지 않는다', () => {
+        // 무작위라서 실패하는 테스트를 만들지 않도록 roll 을 고정한다.
+        const a = computeRecruitGain(1_000, 50_000, false, 0.5);
+        const b = computeRecruitGain(1_000, 50_000, false, 0.5);
+        expect(a).toEqual(b);
+    });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// main.ts 는 브라우저 번들이므로 단위 테스트로 import 할 수 없다.
+// (officer_ui_wiring.test.ts 와 같은 방식으로 소스를 정적으로 읽어 검증한다)
+// 여기서 실제로 필요한 검사는 "증가량이 상한을 적용받아 계산되는가" 이다.
+// 순수 함수만 테스트하고 호출부는 검사하지 않으면, main.ts 를 되돌려도
+// 테스트가 통과한다 — 실제로 그렇게 확인했다. 이 블록이 그 빈틈을 막는다.
+// ────────────────────────────────────────────────────────────────────
+describe('main.ts 의 병력 증가 경로가 상한을 우회하지 않는다', () => {
+    const MAIN_TS = readFileSync(
+        resolvePath(__dirname, '..', 'src', 'main.ts'), 'utf8',
+    );
+    /** 주석 줄을 제거한 실제 코드만 검사한다 */
+    const code = MAIN_TS
+        .split('\n')
+        .filter(line => !/^\s*(\/\/|\*|\/\*)/.test(line))
+        .join('\n');
+
+    it('도시 UI 징병이 computeRecruitGain(상한 적용) 을 거친다', () => {
+        // 핵심: 증가량을 상한 적용 함수에서 얻어와야 한다.
+        // (적용 후 `development: city.development + gain` 으로 더하는 것 자체는
+        //  올바르다 — gain 안에 상한이 이미 반영돼 있으므로. 무작위 증가량을
+        //  직접 만드는 인라인 식이 남아 있는지만 보면 된다.)
+        expect(code).toContain('computeRecruitGain(');
+        // 무작위 증가량을 상한 없이 곧바로 만드는 인라인 식이 있으면 안 된다.
+        expect(code).not.toMatch(/600 \+ Math\.floor\(Math\.random/);
+    });
+
+    it('BARRACKS 두 경로가 모두 garrisonCap 으로 상한을 건다', () => {
+        // 예전엔 시설은 무제한, 건물은 1000 고정이었다. 두 곳 다 있어야 한다.
+        const barracks = [...code.matchAll(/case (?:FacilityType\.BARRACKS|'BARRACKS'):([^\n]*)/g)]
+            .map(m => m[1]);
+        expect(barracks.length).toBe(2);
+        for (const line of barracks) {
+            expect(line).toContain('garrisonCap(');
         }
     });
 });

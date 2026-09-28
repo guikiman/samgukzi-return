@@ -56,6 +56,38 @@ export function garrisonCap(city: { population: number; isCapital: boolean }): n
     return Math.max(400, Math.round(city.population * (city.isCapital ? 0.15 : 0.12)));
 }
 
+/**
+ * 도시 내정 명령의 병력 증가량 — 상한을 적용해 돌려준다.
+ *
+ * [결함 수정] 병력을 늘리는 경로가 여럿인데(main.ts BARRACKS 2곳,
+ * 도시 UI 징병, AI 징병, AI 명령 CityRecruitmentCommand) 상한을 제각각
+ * 두는 곳이 있었다. 플레이어 경로만 상한이 아예 없었고, BARRACKS 는
+ * "무제한" 과 "1000" 으로 갈렸다. 하나라도 빠지면 "도시마다 병력 규칙이
+ * 다르다" 는 결함이 되므로 계산 규칙을 한 곳에 모은다.
+ *
+ * 반환값:
+ *   - `capped`  → 이미 상한에 닿아 징병 불가. `gain` 은 0.
+ *   - `gain`    → 실제 증가량. 상한을 넘지 않도록 잘라낸 값.
+ *
+ * 증가량의 기본 규칙(무작위 600~1000)은 병력 증가 속도 = 밸런스 값이라
+ * 여기서는 바꾸지 않는다. 순수 함수로 분리해 둔 이유가 이것이다 —
+ * 나중에 통째로 교체할 수 있다. `roll` 을 주입하니 결정론적 테스트가
+ * 가능하다(Math.random 에 기대지 않는다).
+ */
+export function computeRecruitGain(
+    currentTroops: number,
+    population: number,
+    isCapital: boolean,
+    roll: number = Math.random(),
+): { gain: number; cap: number; capped: boolean } {
+    const cap = garrisonCap({ population, isCapital });
+    if (currentTroops >= cap) return { gain: 0, cap, capped: true };
+    const base = 600 + Math.floor(roll * 400);
+    // 상한은 규칙이지 권고가 아니다 — 넘지 않도록 잘라낸다.
+    const gain = Math.min(base, cap - currentTroops);
+    return { gain, cap, capped: false };
+}
+
 /** 군주 성향별 공격성 (출진 확률 가중) */
 const AGGRESSION: Record<string, number> = {
     AGGRESSIVE: 0.75,

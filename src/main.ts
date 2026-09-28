@@ -35,7 +35,7 @@ import {
 import type { DialogueEffect, ScriptNode, TradeOfferRow } from './core/dialogue_script.js';
 import { MonthlyReportSystem } from './core/monthly_report.js';
 import { assembleReinforcements } from './core/reinforcement_system.js';
-import { garrisonCap } from './core/faction_ai_monthly.js';
+import { garrisonCap, computeRecruitGain } from './core/faction_ai_monthly.js';
 import { SaveSlotManager } from './core/save_slot_manager.js';
 import type { SlotId } from './core/save_slot_manager.js';
 import { FactionRelation } from './core/diplomacy_engine.js';
@@ -2637,14 +2637,29 @@ function runCityAction(cityId: string, action: string): void {
         case 'recruit': {
             // 징병: 골드 200 소모 → 병력 증가, 충성 -3
             if (city.funds < 200) { resultMsg = '골드가 부족합니다 (200 필요)'; break; }
-            const gain = 600 + Math.floor(Math.random() * 400);
+            // [결함 수정] 증가량에 garrisonCap 상한을 건다.
+            // 예전엔 상한이 아예 없어 플레이어가 세력 AI 규칙을 그대로
+            // 우회할 수 있었다. AI(faction_ai_monthly)와 AI 명령
+            // (CityRecruitmentCommand)은 둘 다 garrisonCap 을 지키는데
+            // 플레이어 경로만 무제한이었다. BARRACKS 결함과 같은 구조다.
+            //
+            // 증가량 규칙(600~1000 무작위)은 이 커밋에서 바꾸지 않는다 —
+            // 병력 증가 속도는 밸런스 판단이 필요하고, 여기서는 상한
+            // 일관성만 확보한다. 계산은 computeRecruitGain(순수 함수)이 한다.
+            const { gain, cap, capped } = computeRecruitGain(
+                city.development, city.population, city.isCapital,
+            );
+            if (capped) {
+                resultMsg = `병력이 이미 상한(${cap.toLocaleString()}명)에 달했습니다`;
+                break;
+            }
             // [결함 수정] 병력을 모으는데 development 에 +1 만 했다.
             // 1) 계산한 gain 이 버려져 UI 는 "600~1000명 모집" 이라면서
             //    실제로는 1명만 늘어난다.
             // 2) 상한으로 city.maxDefense(방어도, 0~100)를 썼다.
             //    병력이 인구의 0.4 ~ 12% 규모인 지금 이건 사실상 무의미하다.
             store.updateCity(city.id, { funds: city.funds - 200, development: city.development + gain });
-            resultMsg = `병사 ${gain}명 모집 완료 (골드 -200)`;
+            resultMsg = `병사 ${gain.toLocaleString()}명 모집 완료 (골드 -200)`;
             break;
         }
         case 'train': {
