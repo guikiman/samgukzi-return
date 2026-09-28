@@ -49,6 +49,38 @@ SHA 만 바뀌고 실체는 같았다. 번들은 독립적인 가치가 없었�
 
 이전 항목들이 아직 유효한지 실측으로 다시 확인했다. **새로 남은 정리 항목은 없다.**
 
+## 2026-09-28 오후 — wip2 · wip3 stash 처리 (정리 완료)
+
+`development = 병력` 결함의 잔여분이 `wip2` / `wip3` stash 에 커밋되지 않은
+상태로 남아 있었는데, `767a19f` 에 흡수했다. stash 는 아직 목록에 남아
+있지만 **내용물은 전부 커밋에 반영**됐으므로 삭제해도 된다.
+
+| stash | 파일 | 상태 |
+|---|---|---|
+| `wip3` (`stash@{0}`) | `faction_ai_monthly.ts` `mod_schema_validator.ts` `main.ts` | → `767a19f` 에 반영 ✅ |
+| `wip2` (`stash@{1}`) | `ai_stream_manager.ts` `ai_worker_simulator.ts` | → `767a19f` 에 반영 ✅ |
+
+> 두 stash 모두 `44343f9` 를 기준으로 만들어졌고 `git stash apply` 로
+> 충돌 없이 적용됐다. **apply 후 `git stash drop` 은 하지 않았다** —
+> 두 stash 는 같은 세션에서 만든 것이라 `verify-red` 용 임시 stash 와
+> 번호가 뒤섞인다. 실수로 옛 것을 drop 하지 않았는지
+> `git stash list` 로 이름(wip2/wip3)을 확인한 뒤 지운다.
+
+### 남겨둔 참조 태그
+
+`wip-recover-20260928` → `44343f9`. absorb 전에 찍은 안전 지점.
+확인 후 `git tag -d wip-recover-20260928` 로 지워도 된다.
+
+### 이 세션에서 남긴 교훈 (다음 세션이 읽을 것)
+
+스텁 값은 규모 결함을 가린다. `development: 100` 같은 하드코딩은
+0~100 개발도 시절엔 정상이었지만, 병력(명) 스케일에서는 "이미 상한" 이라
+커맨드가 조용히 죽은 상태를 테스트가 통과로 가렸다. **값을 낮춰 잡으면
+"일어나는가" 만 검사되고 "말이 되는 규모인가" 는 검사되지 않는다.**
+
+그래서 `tests/troops_scale_contracts.test.ts` 를 만들어 값의 규모 자체를
+계약으로 고정했다. 앞으로 시뮬레이션 값을 다룰 때 참고할 것.
+
 | 검사 | 결과 |
 |---|---|
 | `D:\samkukzi8-pre-rewrite.bundle` | 존재하지 않음 (Test-Path → False) ✅ |
