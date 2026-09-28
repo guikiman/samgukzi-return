@@ -56,7 +56,11 @@ export interface CitySnapshot {
     funds: number;
     /** 병량 추정치 — 월 식량 수입 × 10 (City 도메인에 병량 필드가 없어 프록시 사용) */
     foodStores: number;
-    /** 개발도 0~100 */
+    /**
+     * 도시 병력 수 (명) — City.development 과 같은 값.
+     * [결함 수정] 예전엔 "개발도 0~100" 이라 주석과 스트리밍 전송 시
+     * 100 으로 잘려 병력이 사라졌다. AI 는 이 값을 병력(명)으로 본다.
+     */
     development: number;
     /** 징병 가능 최대 병력 — 인구/100 추정 */
     maxTroops: number;
@@ -219,9 +223,15 @@ function chooseDomesticAction(
     city: CitySnapshot,
     tw: { DOMESTIC: number },
 ): AIDecision | null {
+    // [결함 수정] 세 지표를 0~100 으로 정규화해 비교한다.
+    // 예전엔 병력(수천~수만)을 그대로 0~100 지표와 나란히 Math.min 으로
+    // 섞었다. 그 결과 weakest 는 언제나 "병력" 이 되어 funds/foodStores 와
+    // 무관하게 weakest >= 85 가 성립했고, 내정 행동이 사실상 선택되지 않았다.
+    // 최대 병력(maxTroops = 인구/100) 대비 비율로 바꾼다.
+    const troops = Math.min(100, (city.development / Math.max(1, city.maxTroops)) * 100);
     const weakest = Math.min(
-        city.development,                 // 개발도
-        Math.min(100, city.funds / 10),   // 상업 환산
+        troops,                            // 병력 (최대 병력 대비 비율)
+        Math.min(100, city.funds / 10),    // 상업 환산
         Math.min(100, city.foodStores / 10), // 농업 환산
     );
     if (weakest >= 85) return null; // 내정 여유 — 다른 행동 기회

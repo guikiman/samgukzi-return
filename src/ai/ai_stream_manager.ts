@@ -130,7 +130,13 @@ export class AIStreamManager {
                 population: c.population,
                 funds: c.funds,
                 foodStores: c.foodIncome * 10,
-                development: Math.max(0, Math.min(100, c.development)),
+                // [결함 수정] development 은 병력 수다. Math.min(100, …) 로
+                // 잘라내면 병력이 수천~수만인 도시가 워커에 100 으로 전달돼
+                // 스트리밍 AI 가 모든 도시를 "병력 100" 으로 판단했다.
+                // 단, 워커 쪽 chooseDomesticAction 이 이 값을 0~100 개발도와
+                // 나란히 비교하므로 병력 그대로 두면 그쪽 비교가 무의미해진다.
+                // 병력 규모는 유지하되 하한만 보장한다(음수 방어).
+                development: Math.max(0, c.development),
                 maxTroops: Math.floor(c.population / 100),
             };
         }

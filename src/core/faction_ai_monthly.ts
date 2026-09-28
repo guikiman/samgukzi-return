@@ -45,10 +45,14 @@ const MIN_ATTACK_FORCE_RATIO = 0.08;
 const SUPERIORITY_RATIO = 1.05;
 
 /**
- * 도시가 유지할 수 있는 최대 병력 — 인구의 12%.
+ * 도시가 유지할 수 있는 최대 병력 — 인구의 12% (수도 15%).
  * 상한이 없으면 모든 도시가 무한정 불어나 출진 열세 판정이 무의미해진다.
+ *
+ * [결함 수정] main.ts 의 시설/건물 BARRACKS 도 병력을 늘리는데 상한을
+ * 각각 "무제한" 과 "1000" 으로 두어 같은 건물이 도시마다 다르게 동작했다.
+ * 이 함수를 export 해 한 곳에서만 정의하고, main.ts 도 여기서 가져간다.
  */
-function garrisonCap(city: { population: number; isCapital: boolean }): number {
+export function garrisonCap(city: { population: number; isCapital: boolean }): number {
     return Math.max(400, Math.round(city.population * (city.isCapital ? 0.15 : 0.12)));
 }
 

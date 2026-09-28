@@ -25,7 +25,12 @@ describe('AI 스트리밍 결정 → CommandQueue [201]', () => {
         const { engine, store } = setup();
         const officer = store.getAllOfficers().find(o => o.factionId === 'fac_1' && o.cityId)!;
         const city = store.getCity(officer.cityId!)!;
-        const before = city.development;
+        // [결함 수정] 예전 계약은 "내정 → city.development 증가" 였다.
+        // 그런데 development 은 병력(명) 이라서, 이 계약이 남아 있다는 건
+        // 내정 행동력 10을 소모해 병력 몇 명만 늘리던 결함이 남아 있다는 뜻이었다.
+        // 이제 내정은 developmentStats(개발 지표)를 올리고 병력은 건드리지 않는다.
+        const beforeTroops = city.development;
+        const beforeStats = { ...city.developmentStats };
 
         convert(engine, {
             officerId: officer.id,
@@ -37,15 +42,28 @@ describe('AI 스트리밍 결정 → CommandQueue [201]', () => {
         expect(engine.getPendingCommandCount()).toBe(1);
         const result = engine.executeAllCommands();
         expect(result[0]?.success).toBe(true);
-        expect(store.getCity(city.id)!.development).toBeGreaterThan(before);
+
+        const after = store.getCity(city.id)!;
+        // 병력은 그대로 — 내정으로 병력이 늘면 안 된다.
+        expect(after.development).toBe(beforeTroops);
+        // facilityType 이 없으면 FARM 이므로 농업이 오른다.
+        expect(after.developmentStats.farming).toBeGreaterThan(beforeStats.farming);
+        expect(after.developmentStats.farming).toBeLessThanOrEqual(after.developmentStats.maxFarming);
+        // 다른 개발 지표는 건드리지 않는다.
+        expect(after.developmentStats.commerce).toBe(beforeStats.commerce);
+        expect(after.developmentStats.publicOrder).toBe(beforeStats.publicOrder);
     });
 
     it('도시 징병 결정을 큐에서 실행한다', () => {
         const { engine, store } = setup();
         const officer = store.getAllOfficers().find(o => o.factionId === 'fac_1' && o.cityId)!;
         const city = store.getCity(officer.cityId!)!;
-        store.updateCity(city.id, { development: 100, funds: 500 });
-        const before = { development: 100, funds: 500 };
+        // [결함 수정] 예전엔 `development: 100` 을 하드코딩했다. 0~100 개발도
+        // 시절의 스텁 값이라, 병력이 수천~수만인 지금 스케일에서는 garrison
+        // 상한(인구 12~15%)에 이미 걸린 상태였다. 그 탓에 커맨드의 상한 판정이
+        // 죽어 있는지 이 테스트가 가리고 있었다.
+        // 이제 실제 시나리오 값을 그대로 쓴다 — 스텁으로 낮추면 규모 결함이 안 보인다.
+        const before = { development: city.development, funds: city.funds };
 
         convert(engine, {
             officerId: officer.id,
@@ -56,8 +74,12 @@ describe('AI 스트리밍 결정 → CommandQueue [201]', () => {
         });
         expect(engine.getPendingCommandCount()).toBe(1);
         expect(engine.executeAllCommands()[0]?.success).toBe(true);
-        expect(store.getCity(city.id)).toMatchObject({ development: 700, funds: 300 });
-        expect(before.development).toBe(100);
+        // 병력은 +600, 자금은 -200 이고, 스텁 상수가 아니라 실제 값과 비교한다.
+        expect(store.getCity(city.id)).toMatchObject({
+            development: before.development + 600,
+            funds: before.funds - 200,
+        });
+        expect(before.development).toBeGreaterThan(200);
     });
 
     it('BATTLE 결정을 자동 전투로 실행하고 승리 시 도시를 점령한다', () => {

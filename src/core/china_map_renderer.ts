@@ -21,6 +21,13 @@ export interface MapCityView {
     /** 소속 세력 이름 (영토 라벨 표시용) */
     factionName?: string;
     isPlayer: boolean;
+    /**
+     * 도시 병력 수(명). [결함 수정] 예전엔 호출부(main.ts)가
+     * `development * 100` 을 곱해 넘겼고 배지 코드도 그 100배를 전제로
+     * `/100` 했다. 두 곳의 오프셋이 상쇄돼 테스트는 통과했지만 실제로는
+     * 병력이 100배 부풀어 "832.5만" 으로 표시됐다.
+     * 이제 병력 수(명) 그대로를 받는다 — 표시 변환은 formatGarrisonText.
+     */
     garrison: number;
     isSelected?: boolean;
     /** [49][461-480] 방문했거나 플레이어 세력이 소유한 도시인지 여부 */
@@ -61,6 +68,29 @@ export function pointInPolygon(px: number, py: number, polygon: Array<{ x: numbe
         if (intersects) inside = !inside;
     }
     return inside;
+}
+
+// ============================================================
+// 병력 표기 헬퍼
+// ============================================================
+
+/**
+ * 병력 수(명)를 지도 배지 문자열로 변환 — 8,325 → "8,325명", 83,000 → "8.3만".
+ *
+ * [결함 수정] 예전 배지 코드는 `Math.round(garrison / 100) / 10` 이었다.
+ * 이 식이 "만" 단위를 표시하려면 garrison 이 실제 병력의 100배여야 해서
+ * 호출부(main.ts)가 `development * 100` 을 곱해 넘겼다. 두 곳이 서로의
+ * 잘못을 가려줘서, 실제론 병력이 100배 부풀어 표기됐다
+ * (병력 8,325명 → "832.5만").
+ *
+ * 이제 garrison 은 병력 수(명) 그 자체로 정의한다(ChinaMapRenderer.garrison).
+ * 1만 미만은 "N명", 그 이상은 "N.X만" 으로 표기한다 — 도시 병력이
+ * 수천~수만 명이라 소수점 한 자리까지는 구분되어 어느 도시가 강한지 읽힌다.
+ */
+export function formatGarrisonText(garrison: number): string {
+    const safe = Math.max(0, Math.floor(garrison || 0));
+    if (safe < 10_000) return `${safe.toLocaleString('ko-KR')}명`;
+    return `${Math.round(safe / 1_000) / 10}만`;
 }
 
 // ============================================================
@@ -974,7 +1004,10 @@ export class ChinaMapRenderer {
         ctx.stroke();
 
         // 병력 배지 (성 아래)
-        const garrisonText = `${Math.round(city.garrison / 100) / 10}만`;
+        // [결함 수정] 예전엔 main.ts 가 `development * 100` 을 넘겨
+        // 병력 8,325명이 "832.5만" (=832만 5천명)으로 표시됐다.
+        // garrison 은 이제 병력 수(명) 그대로를 받으므로 만 단위로 환산한다.
+        const garrisonText = formatGarrisonText(city.garrison);
         ctx.font = `bold ${Math.max(8, 9 * s)}px "Malgun Gothic", sans-serif`;
         ctx.textAlign = 'center';
         const tw = ctx.measureText(garrisonText).width + 8 * s;

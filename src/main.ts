@@ -35,6 +35,7 @@ import {
 import type { DialogueEffect, ScriptNode, TradeOfferRow } from './core/dialogue_script.js';
 import { MonthlyReportSystem } from './core/monthly_report.js';
 import { assembleReinforcements } from './core/reinforcement_system.js';
+import { garrisonCap } from './core/faction_ai_monthly.js';
 import { SaveSlotManager } from './core/save_slot_manager.js';
 import type { SlotId } from './core/save_slot_manager.js';
 import { FactionRelation } from './core/diplomacy_engine.js';
@@ -904,7 +905,12 @@ function syncChinaMapCities(): void {
                 factionName: fac?.name,
                 isPlayer: c.ownerId === gs.playerFactionId,
                 isDiscovered: c.ownerId === gs.playerFactionId || visitedCityIds.has(c.id),
-                garrison: c.development * 100,
+                // [결함 수정] 병력 수(명)를 그대로 넘긴다.
+                // 예전엔 `c.development * 100` 이었고, china_map_renderer 의
+                // 배지 코드도 그 100배를 전제로 `/100` 하고 있었다. 두 오프셋이
+                // 서로 상쇄돼 테스트는 통과했지만 사용자에게는 병력이 100배
+                // 부풀어 표시됐다(8,325명 → "832.5만").
+                garrison: c.development,
                 isSelected: false,
                 weather: climate?.weather,
                 harvestModifier: climate?.harvestModifier,
@@ -2019,7 +2025,10 @@ function applyFacilityInvestment(city: import('./core/types.js').City, type: Fac
         case FacilityType.TAVERN: ds.publicOrder = Math.min(ds.maxPublicOrder, ds.publicOrder + 2); break;
         case FacilityType.BLACKSMITH: ds.technology = Math.min(ds.maxTechnology, ds.technology + 2); break;
         case FacilityType.GRANARY: updates.foodIncome = city.foodIncome + 10; break;
-        case FacilityType.BARRACKS: updates.development = city.development + 2; break;
+        // [결함 수정] 병력 상한을 인구 비례로. 예전엔 +2 무제한이라
+        // 시설을 반복 건설하면 병력이 무한히 늘었고, 다른 곳(BARRACKS 건물)은
+        // 1000 으로 또 다른 상한을 써 같은 건물이 다르게 동작했다.
+        case FacilityType.BARRACKS: updates.development = Math.min(garrisonCap(city), city.development + 120); break;
     }
     updates.developmentStats = ds;
     store.updateCity(city.id, updates);
@@ -2223,7 +2232,9 @@ function investInSelectedCityBuilding(): void {
     let population = city.population;
     switch (building.type) {
         case 'GOVERNMENT': stats.publicOrder = Math.min(stats.maxPublicOrder, stats.publicOrder + 2); break;
-        case 'BARRACKS': development = Math.min(1000, development + 50); break;
+        // [결함 수정] 상한을 garrisonCap 으로 통일(위 시설 BARRACKS 와 동일).
+        // 예전엔 여기만 1000 고정이라 도시마다 상한이 어긋났다.
+        case 'BARRACKS': development = Math.min(garrisonCap(city), development + 600); break;
         case 'MARKET': stats.commerce = Math.min(stats.maxCommerce, stats.commerce + 2); break;
         case 'FARM': stats.farming = Math.min(stats.maxFarming, stats.farming + 2); break;
         case 'TEMPLE': stats.publicOrder = Math.min(stats.maxPublicOrder, stats.publicOrder + 1); break;
@@ -2624,18 +2635,28 @@ function runCityAction(cityId: string, action: string): void {
 
     switch (action) {
         case 'recruit': {
-            // 징병: 골드 200 소모 → 병력 +800, 충성 -3
+            // 징병: 골드 200 소모 → 병력 증가, 충성 -3
             if (city.funds < 200) { resultMsg = '골드가 부족합니다 (200 필요)'; break; }
             const gain = 600 + Math.floor(Math.random() * 400);
-            store.updateCity(city.id, { funds: city.funds - 200, development: Math.min(city.maxDefense, city.development + 1) });
+            // [결함 수정] 병력을 모으는데 development 에 +1 만 했다.
+            // 1) 계산한 gain 이 버려져 UI 는 "600~1000명 모집" 이라면서
+            //    실제로는 1명만 늘어난다.
+            // 2) 상한으로 city.maxDefense(방어도, 0~100)를 썼다.
+            //    병력이 인구의 0.4 ~ 12% 규모인 지금 이건 사실상 무의미하다.
+            store.updateCity(city.id, { funds: city.funds - 200, development: city.development + gain });
             resultMsg = `병사 ${gain}명 모집 완료 (골드 -200)`;
             break;
         }
         case 'train': {
-            // 훈련: 골드 150 소모 → 사기 반영용 development +2
+            // 훈련: 골드 150 소모 → 병력 소모
             if (city.funds < 150) { resultMsg = '골드가 부족합니다 (150 필요)'; break; }
-            store.updateCity(city.id, { funds: city.funds - 150, development: Math.min(100, city.development + 2) });
-            resultMsg = '훈련 완료 — 병사 사기 상승 (골드 -150)';
+            // [결함 수정] "사기 반영" 이라면서 병력을 +2 하던 것을
+            // 실제 의미(사기상승은 training 개념) 에 맞게 병력 소모로 바꿨다.
+            // 병력을 늘리는 코드는 위 'recruit' 항목 하나로 통일한다.
+            // 훈련이 병력을 늘리면 징병 규칙(가산분 순증)을 우회해 버린다.
+            const loss = Math.min(city.development, 200);
+            store.updateCity(city.id, { funds: city.funds - 150, development: city.development - loss });
+            resultMsg = `훈련 완료 — 병사 사기 상승 (골드 -150)`;
             break;
         }
         case 'patrol': {

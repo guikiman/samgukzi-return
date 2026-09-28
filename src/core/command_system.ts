@@ -8,18 +8,52 @@
 
 import {
     ICommand, SerializedCommand, CommandContext, CommandResult, SideEffect,
-    CommandType, OfficerID, CityID, FactionID, ID, OfficerStatus, Faction,
+    CommandType, OfficerID, CityID, FactionID, ID, OfficerStatus, Faction, FacilityType,
 } from './types.js';
 import { simulateAutoBattle, type AutoBattleSides, type AutoBattleUnit } from './auto_battle_simulator.js';
 import { DiplomacyEngine, FactionRelation, type DiplomacyResult } from './diplomacy_engine.js';
 import { processBattleSpoils } from './battle_spoils_system.js';
 import { processCaptives } from './ai_captive_system.js';
+// 병력 상한(garrisonCap)을 한 곳에서 가져온다. CityRecruitmentCommand 와
+// faction_ai_monthly 가 서로 다른 상한을 쓰면 "도시마다 병력 규칙이 다르다" 는
+// 종류의 결함이 다시 생긴다(main.ts BARRACKS 가 그랬듯).
+// faction_ai_monthly 는 command_system 을 import 하지 않으므로 순환이 없다.
+import { garrisonCap } from './faction_ai_monthly.js';
 
 let cmdCounter = 0;
 
 function genCmdId(prefix: string): string {
     cmdCounter += 1;
     return `${prefix}_${Date.now().toString(36)}_${cmdCounter}`;
+}
+
+/**
+ * SideEffect 하나를 되돌린다 — 점(.) 으로 표기된 중첩 경로를 처리한다.
+ *
+ * [결함 수정] DomesticCommand 의 undo 는 `{ ...off, [se.field]: se.oldValue }`
+ * 형태였다. 이 커맨드가 "exp.politics" 같은 점 경로를 SideEffect 에 기록하면
+ * 위 식은 "exp.politics" 라 이름이 붙은 새 키를 만들어 버린다. 원래의
+ * exp.politics 값은 그대로 남으므로 undo 가 아무 일도 하지 않은 것처럼 보이고
+ * 쓰러진 속성만 늘어난다.
+ *
+ * (TrainingCommand 와 DiplomacyCommand 는 이미 exp. / diplomacy. 를 각각
+ * 손으로 분기 처리하고 있었다. 이 헬퍼는 그 분기를 한 곳으로 모으고,
+ * 점 경로를 쓰게 되는 커맨드가 늘어도 놓치지 않게 한다.)
+ *
+ * 경로에 점이 없으면 이전과 동일하게 최상위 필드를 복원한다.
+ */
+function restoreField<T extends object>(entity: T, field: string, oldValue: unknown): T {
+    if (!field.includes('.')) {
+        return { ...entity, [field]: oldValue } as T;
+    }
+    const [head, ...rest] = field.split('.');
+    const child = (entity as Record<string, unknown>)[head];
+    if (rest.length === 0) return { ...entity, [head]: oldValue } as T;
+    if (child === null || typeof child !== 'object') return entity;
+    return {
+        ...entity,
+        [head]: restoreField(child as Record<string, unknown>, rest.join('.'), oldValue),
+    } as T;
 }
 
 abstract class BaseCommand implements ICommand {
@@ -61,6 +95,36 @@ abstract class BaseCommand implements ICommand {
 // ============================================================
 // [DOMESTIC] 내정 커맨드
 // ============================================================
+
+/**
+ * 내정 커맨드가 올릴 개발 지표의 필드/최댓값 — 시설 종류로 결정.
+ *
+ * [결함 수정] 이 커맨드는 원래 "개발" 이라 해서 `city.development`
+ * (병력 수) 에 5~15 를 더했다. City.development 은 병력(명) 이므로
+ * 행동력 10 을 소모해 병력 10 명을 늘리는 셈이 되어 사실상 아무 효과도
+ * 없었다. 로그만 "개발 +10" 이라 해서 플레이어는 지표가 오른 것으로
+ * 오인했다.
+ *
+ * development 은 병력이라 개발 지표를 올릴 수 없다. 개발 지표는
+ * developmentStats 를 쓰기로 이미 정해져 있다(types.ts 참고).
+ * 따라서 시설에 대응하는 지표를 올리도록 바꾼다.
+ */
+function domesticStatTarget(
+    facilityType: string,
+): { field: 'commerce' | 'farming' | 'technology' | 'publicOrder'; maxField: 'maxCommerce' | 'maxFarming' | 'maxTechnology' | 'maxPublicOrder'; label: string } {
+    switch (facilityType) {
+        case FacilityType.MARKET:
+            return { field: 'commerce', maxField: 'maxCommerce', label: '상업' };
+        case FacilityType.FARM:
+            return { field: 'farming', maxField: 'maxFarming', label: '농업' };
+        case FacilityType.BLACKSMITH:
+            return { field: 'technology', maxField: 'maxTechnology', label: '기술' };
+        case FacilityType.TAVERN:
+        default:
+            return { field: 'publicOrder', maxField: 'maxPublicOrder', label: '치안' };
+    }
+}
+
 export class DomesticCommand extends BaseCommand {
     private cityId: CityID;
     private facilityType: string;
@@ -82,21 +146,38 @@ export class DomesticCommand extends BaseCommand {
         if (officer.actionPoints < 10) return this.buildResult(false, '행동력 부족');
 
         const oldAP = officer.actionPoints;
-        const oldDev = city.development;
+        const oldExp = officer.exp[this.statKey];
         const statValue = officer.stats[this.statKey];
         const gain = Math.floor(statValue * 0.1) + 5;
 
+        // [결함 수정] 병력(development)이 아니라 해당 시설의 개발 지표를 올린다.
+        const target = domesticStatTarget(this.facilityType);
+        const oldStats = city.developmentStats;
+        const newValue = Math.min(oldStats[target.maxField], oldStats[target.field] + gain);
+        const newStats = { ...oldStats, [target.field]: newValue };
+        const applied = newValue - oldStats[target.field];
+
         context.store.updateOfficer(this.officerId, {
             actionPoints: oldAP - 10,
-            exp: { ...officer.exp, [this.statKey]: officer.exp[this.statKey] + 5 },
+            exp: { ...officer.exp, [this.statKey]: oldExp + 5 },
         });
-        context.store.updateCity(this.cityId, { development: oldDev + gain });
+        context.store.updateCity(this.cityId, { developmentStats: newStats });
 
         this.recordSideEffect('officer', this.officerId, 'actionPoints', oldAP, oldAP - 10);
-        this.recordSideEffect('city', this.cityId, 'development', oldDev, oldDev + gain);
+        // [결함 수정] exp 를 SideEffect 에 기록한다. 예전엔 exp 를 +5 올려놓고
+        // 되돌리기 경로에 남기지 않아 undo 시 경험치가 되돌아오지 않았다.
+        this.recordSideEffect('officer', this.officerId, `exp.${this.statKey}`, oldExp, oldExp + 5);
+        // [결함 수정] 통째로 기록해야 undo 가 다른 필드까지 되돌린다.
+        this.recordSideEffect('city', this.cityId, 'developmentStats', oldStats, newStats);
 
-        context.logger(`[내정] ${officer.name} → ${city.name} 개발 +${gain}`);
-        return this.buildResult(true, `${city.name} 개발 +${gain}`);
+        // 상한에 걸려 아무것도 올리지 못했다면 성공은 하지만 메시지에 알린다.
+        if (applied <= 0) {
+            context.logger(`[내정] ${officer.name} → ${city.name} ${target.label} 상한 도달 — 변화 없음`);
+            return this.buildResult(true, `${city.name} ${target.label} 이미 상한입니다`);
+        }
+
+        context.logger(`[내정] ${officer.name} → ${city.name} ${target.label} +${applied}`);
+        return this.buildResult(true, `${city.name} ${target.label} +${applied}`);
     }
 
     undo(context: CommandContext): boolean {
@@ -104,11 +185,11 @@ export class DomesticCommand extends BaseCommand {
             if (se.target === 'officer') {
                 const off = context.store.getOfficer(se.targetId as OfficerID);
                 if (off) context.store.updateOfficer(se.targetId as OfficerID,
-                    { ...off, [se.field]: se.oldValue } as Partial<typeof off>);
+                    restoreField(off, se.field, se.oldValue) as Partial<typeof off>);
             } else if (se.target === 'city') {
                 const c = context.store.getCity(se.targetId as CityID);
                 if (c) context.store.updateCity(se.targetId as CityID,
-                    { ...c, [se.field]: se.oldValue } as Partial<typeof c>);
+                    restoreField(c, se.field, se.oldValue) as Partial<typeof c>);
             }
         }
         return true;
@@ -273,7 +354,12 @@ export class CityRecruitmentCommand extends BaseCommand {
         if (officer.actionPoints < 20) return this.buildResult(false, '행동력 부족');
         if (!officer.factionId || city.ownerId !== officer.factionId) return this.buildResult(false, '소속 도시가 아님');
         if (city.funds < 200) return this.buildResult(false, '도시 자금 부족');
-        if (city.development >= 200) return this.buildResult(false, '이미 징병 가능한 병력임');
+        // [결함 수정] 상한 판정을 garrisonCap(인구 12~15%) 으로 한다.
+        // 예전엔 `city.development >= 200` 이었다. development 이 병력(명) 인
+        // 지금 이 조건은 도시마다 영원히 참이 되어 이 커맨드가 아예 실행되지
+        // 않았다. 기존 테스트가 `development: 100` 을 하드코딩해서 이 사실을
+        // 가리고 있었다 — 값을 스텁으로 낮춰 두면 규모 결함은 영영 안 보인다.
+        if (city.development >= garrisonCap(city)) return this.buildResult(false, '병력이 이미 garrison 상한에 달함');
 
         const oldAP = officer.actionPoints;
         const oldFunds = city.funds;

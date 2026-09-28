@@ -90,8 +90,11 @@ export class ModSchemaValidator {
         if (!data.name || typeof data.name !== 'string') {
             errors.push({ path: 'name', field: 'name', message: '도시 이름은 문자열이어야 합니다' });
         }
-        if (data.development !== undefined && (typeof data.development !== 'number' || data.development < 0 || data.development > 100)) {
-            errors.push({ path: 'development', field: 'development', message: '개발도는 0~100 사이여야 합니다' });
+        // [결함 수정] development 은 병력 수다 (types.ts 참고). 예전엔
+        // "개발도 0~100" 이라 검증해 도시 병력이 수천~수만인 지금은
+        // 정당한 시나리오 데이터까지 위조로 판정했다. 상한을 병력 규모로 옮긴다.
+        if (data.development !== undefined && (typeof data.development !== 'number' || data.development < 0 || data.development > 200000)) {
+            errors.push({ path: 'development', field: 'development', message: '병력은 0~200,000 사이여야 합니다' });
         }
         if (data.commerce !== undefined && (typeof data.commerce !== 'number' || data.commerce < 0 || data.commerce > 100)) {
             errors.push({ path: 'commerce', field: 'commerce', message: '상업은 0~100 사이여야 합니다' });
