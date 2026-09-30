@@ -1,0 +1,97 @@
+{
+  "$comment": [
+    "바이너리 자산 출처 대장 — 저작권 문제를 실제로 한 치도 없애기 위한 근거 문서.",
+    "차단 목록(denylist)은 이미 들어온 것만 막으므로 새 자산이 조용히 추가되면 못 잡는다.",
+    "대장(allowlist) 방식은 규칙을 뒤집어 '등록되지 않은 자산 = 위반'으로 만든다.",
+    "그러면 출처 확인이 안 된 자산이 커밋되는 순간 CI 가 red 가 된다.",
+    "",
+    "규칙:",
+    "  - 아래 두 경로의 모든 바이너리 파일은 반드시 이 대장에 등록되어야 한다.",
+    "  - license 가 비어 있거나 UNVERIFIED 면 위반이다 — 근거 없는 자산은 배포되면 안 된다.",
+    "  - sha256 은 파일 내용의 해시다. 값이 다르면 파일이 바뀐 것이니 라이선스를 다시 확인한다."
+  ],
+  "version": 1,
+  "assets": [
+    {
+      "path": "assets/map-china-4096.webp",
+      "sha256": "ce0789e00bedee57a0411dc7145c9254016c04193d44c6c8e75394d134b675f0",
+      "bytes": 252444,
+      "source": "Natural Earth vector GeoJSON (public domain) — scripts/generate_map.py 로 렌더",
+      "license": "Public Domain (Natural Earth)",
+      "method": "generated",
+      "note": "Total War 파생 비트맵을 대체한 지도. 생성 스크립트가 커밋에 있어 재현 가능하다."
+    },
+    {
+      "path": "assets/map-china-guide-4096.png",
+      "sha256": "1c2412a10ecbcefff86f778cde2f224844c8639d81218900ae70fa11295e27b2",
+      "bytes": 290878,
+      "source": "scripts/generate_map.py 출력 (Natural Earth 기반)",
+      "license": "Public Domain (Natural Earth)",
+      "method": "generated",
+      "note": "안내용 지도. 실사용은 아니고 미리보기용."
+    },
+    {
+      "path": "assets/map-preview-1024.png",
+      "sha256": "bf0bbc8669dbd448cb27deb6ca8c83b05c1f9028c41c3a56303b7f5a470f118b",
+      "bytes": 182013,
+      "source": "scripts/generate_map.py 출력 (Natural Earth 기반)",
+      "license": "Public Domain (Natural Earth)",
+      "method": "generated",
+      "note": "미리보기용 축소본."
+    },
+    {
+      "path": "assets/map-parchment-1024.webp",
+      "sha256": "f788701120412f6c90034de8fe4c055705d3eb6badada4cbaad5c05b263f2e81",
+      "bytes": 88646,
+      "source": "로컬 ComfyUI + Krea2 Int4 turbo 모델로 생성한 양피지 텍스처 (커밋 f853d89 에 기재)",
+      "license": "AI 생성 — 원본 사진·아트워크 없음. 무표지 절차적 질감 텍스처.",
+      "method": "ai-generated",
+      "note": "렌더러에서 0.38 알파로 합성. 커밋 메시지에 생성 경위가 있다."
+    },
+    {
+      "path": "assets/map-china-ai-4096.webp",
+      "sha256": "e17932dd2a112db83870a88912a737abc27f1689faf7eaf45d7bf7af25e86f0e",
+      "bytes": 1994482,
+      "source": "UNVERIFIED",
+      "license": "UNVERIFIED",
+      "method": "UNVERIFIED",
+      "note": "커밋 73ff928 이 'AI 원화'로 추가했다. 생성 스크립트가 커밋에 없고 WebP 인코딩 시 메타데이터가 제거되어 파일만으로 출처를 확정할 수 없다. 작성자 확인이 필요하다 — img2img 입력으로 만들어졌다면 파생작이므로 게이트가 계속 막는다."
+    },
+    {
+      "path": "src-tauri/icons/32x32.png",
+      "sha256": "eead093cd01a11118bac6a05f89f324cc4ce1f1228729a62012a6e189308fcb7",
+      "bytes": 146,
+      "source": "scripts/make_icons.mjs — 코드에 정의한 9×9 픽셀 三 글자를 스케일링",
+      "license": "본 저장소 원작 (외부 자산 없음)",
+      "method": "generated",
+      "note": "절차 생성이라 저작권 대상이 아니다."
+    },
+    {
+      "path": "src-tauri/icons/128x128.png",
+      "sha256": "2b82a245e888288fb9914804debca83c4faae74f9d894c6d20161e0788ed79da",
+      "bytes": 444,
+      "source": "scripts/make_icons.mjs",
+      "license": "본 저장소 원작 (외부 자산 없음)",
+      "method": "generated",
+      "note": ""
+    },
+    {
+      "path": "src-tauri/icons/128x128@2x.png",
+      "sha256": "bed92533aba9b370a126abe1605c5093312de125edf48162734c18273d827f1b",
+      "bytes": 1101,
+      "source": "scripts/make_icons.mjs",
+      "license": "본 저장소 원작 (외부 자산 없음)",
+      "method": "generated",
+      "note": ""
+    },
+    {
+      "path": "src-tauri/icons/icon.png",
+      "sha256": "04012c625cbead2fe389a6ab93427e99a0e02f8d11979481ec16a608d9d41e66",
+      "bytes": 3615,
+      "source": "scripts/make_icons.mjs",
+      "license": "본 저장소 원작 (외부 자산 없음)",
+      "method": "generated",
+      "note": ""
+    }
+  ]
+}

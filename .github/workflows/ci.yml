@@ -25,7 +25,14 @@ jobs:
       - name: Block derived-work assets
         run: node scripts/check_ip_assets.mjs --all
 
+      - name: Verify every shipped asset has recorded provenance
+        # 대장(allowlist) 검사 — 출처가 없거나 미확인인 자산은 배포를 막는다.
+        # --all 은 과거 커밋에 실렸던 자산을 잡고, 이건 앞으로 추가되는 것을 막는다.
+        run: node scripts/check_ip_assets.mjs --provenance
+
   test:
+    # 저작권 게이트에 걸리면 테스트는 돌릴 필요가 없다 — 배포 전에 막는 게 목적이다.
+    needs: ip-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,9 +59,16 @@ jobs:
       - name: Browser E2E smoke
         run: node tests/e2e/browser_smoke.mjs
 
+      - name: Service worker offline
+        # npm run test:e2e 와 같은 구성. 브라우저 스모크만 돌리면 PWA 오프라인
+        # 파손이 CI 로 올라오지 않아서, 여기서도 반드시 돌린다.
+        run: node tests/e2e/sw_offline.mjs
+
   deploy:
     # 테스트 통과 시 기본 브랜치에 한해 GitHub Pages 배포
-    needs: test
+    # [결함 수정] 예전에는 test 만 기다렸다. ip-gate 가 실패해도 deploy 가 돌아가서
+    # 저작권 위반 자산이 그대로 공개 배포될 수 있었다. 게이트는 배포를 반드시 막아야 한다.
+    needs: [ip-gate, test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:

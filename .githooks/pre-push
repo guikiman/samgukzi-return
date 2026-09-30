@@ -1,5 +1,14 @@
 #!/bin/sh
 # 파생작 자산이 리모트로 나가지 못하게 한다.
 # 설치: core.hooksPath 설정 또는 .git/hooks/pre-push 로 복사.
-# assets/china-national-map.png (Total War 파생) 가 되살아나는 것을 경로와 해시로 막는다.
-exec node "$(git rev-parse --show-toplevel)/scripts/check_ip_assets.mjs"
+#
+# 두 층을 함께 돌린다.
+#   1) 히스토리 스캔 — china-national-map.png (Total War 파생) 가 되살아나는 것을
+#      경로와 blob id 양쪽으로 막는다.
+#   2) 자산 대장   — 지금 커밋되는 바이너리 자산이 출처 기록이 없거나 미확인이면 막는다.
+#      1층은 "이미 들어간 것"만 본다. 새 자산은 조용히 통과한다. 실제로 AI 원화 지도가
+#      그렇게 커밋되었고 아무도 알 수 없었다. 그래서 2층이 필요하다.
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+node "$ROOT/scripts/check_ip_assets.mjs"
+node "$ROOT/scripts/check_ip_assets.mjs" --provenance

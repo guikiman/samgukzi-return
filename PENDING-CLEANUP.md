@@ -44,6 +44,19 @@ SHA 만 바뀌고 실체는 같았다. 번들은 독립적인 가치가 없었�
 - [x] `backup-before-rewrite` 삭제 (2026-09-27) — 34커밋 전부 `master` 안에 있음을 확인 후 삭제
 - [x] `guikiman/*` 16개 + worktree 8개 정리 (2026-09-27) — 커밋 119개 그대로
 - [x] 2026-09-28 세션 종료 시점 재확인 — 아래 「2026-09-28 점검」 참조
+- [ ] **AI 원화 지도 출처 미확인 — `--provenance` 게이트가 CI 를 막고 있다 (2026-09-30)**
+      `assets/map-china-ai-4096.webp` (1,994,482 bytes, 커밋 `73ff928`).
+      생성 스크립트가 커밋에 없고 WebP 인코딩 시 메타데이터가 제거되어
+      **파일만으로는 출처를 확정할 수 없다.** 작성자 확인이 필요하다.
+      `img2img` 입력으로 만들어졌다면 Total War 파생 지도이므로 배포하면 안 되고,
+      `txt2img` 로 처음부터 생성했다면 AI 생성물로 근거를 적어 통과시킬 수 있다.
+      확인 전까지 `node scripts/check_ip_assets.mjs --provenance` 가 종료 코드 1 을
+      내므로 pre-push 도 CI 도 통과하지 않는다 — 의도된 동작이다.
+      확인되면 `assets/PROVENANCE.json` 의 license/source 를 채우고
+      `tests/ip_provenance.test.ts` 의 `KNOWN_UNRESOLVED` 에서 제거한다.
+
+- [x] src/data 가드 테스트의 커밋 타이밍 의존성 — `620e14e` 에서 globalSetup 방식으로 해결
+
 - [ ] **src/data 가드 테스트가 transient하게 red 가 된다 (2026-09-30 기록, 이번엔 미해결)**
       `tests/officer_ui_wiring.test.ts` 의
       `reports no modification to any file under src/data/` 는
