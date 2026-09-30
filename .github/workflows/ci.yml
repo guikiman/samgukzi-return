@@ -30,6 +30,11 @@ jobs:
         # --all 은 과거 커밋에 실렸던 자산을 잡고, 이건 앞으로 추가되는 것을 막는다.
         run: node scripts/check_ip_assets.mjs --provenance
 
+      - name: No residual image metadata
+        # EXIF/XMP/문자열 청크가 남으면 생성 도구명이나 원본 파일명이 그대로 드러난다.
+        # 파일 구조를 파싱하므로 눈에 보이지 않는 PNG zTXt/iTXt 도 잡는다.
+        run: node scripts/inspect_image_metadata.mjs --fail-on-meta
+
   test:
     # 저작권 게이트에 걸리면 테스트는 돌릴 필요가 없다 — 배포 전에 막는 게 목적이다.
     needs: ip-gate

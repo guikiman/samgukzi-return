@@ -131,4 +131,12 @@ describe('게이트 배선', () => {
         const ci = readFileSync(join(REPO_ROOT, '.github/workflows/ci.yml'), 'utf8');
         expect(ci).toContain('tests/e2e/sw_offline.mjs');
     });
+
+    it('pre-push 훅과 CI 가 메타데이터 검사까지 돌린다', () => {
+        const hook = readFileSync(join(REPO_ROOT, '.githooks/pre-push'), 'utf8');
+        expect(hook).toContain('inspect_image_metadata.mjs');
+        expect(hook).toContain('--fail-on-meta');
+        const ci = readFileSync(join(REPO_ROOT, '.github/workflows/ci.yml'), 'utf8');
+        expect(ci).toContain('inspect_image_metadata.mjs');
+    });
 });
