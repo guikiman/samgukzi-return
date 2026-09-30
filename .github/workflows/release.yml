@@ -60,7 +60,7 @@ jobs:
             echo "$LOG"
             echo
             echo '### 웹 버전'
-            echo 'https://guikiman.github.io/samgukzi8-re/ — PWA 오프라인 플레이 지원'
+            echo 'https://guikiman.github.io/samgukzi-return/ — PWA 오프라인 플레이 지원'
           } > release_notes.md
 
           # 멀티라인 output 처리 — EOF 구분자 사용
@@ -76,8 +76,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: rtk8-desktop-v__VERSION__
-          releaseName: 'RTK8 Remake Desktop v__VERSION__'
+          tagName: samgukzi-return-desktop-v__VERSION__
+          releaseName: '삼국지리턴 Desktop v__VERSION__'
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false

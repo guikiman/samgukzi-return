@@ -7,7 +7,7 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 /**
- * [36-50] 삼국지 8 리메이크 — 3D 헥사곤 맵 렌더러
+ * [36-50] 삼국지리턴 — 3D 헥사곤 맵 렌더러
  *
  * Three.js InstancedMesh 기반 대규모 헥사곤 타일 렌더링
  * LOD(Level of Detail), Raycaster Pick, OrbitControls 통합

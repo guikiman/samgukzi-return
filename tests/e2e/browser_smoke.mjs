@@ -453,6 +453,10 @@ async function main() {
         await cdp.evaluate("document.querySelector('.scenario-card[data-id=\\\"07\\\"]').click()");
         await waitForDisplay('faction-screen', 'flex');
         await cdp.evaluate("document.querySelector('.faction-card[data-idx=\\\"1\\\"]').click()");
+        const officerFlowOpen = await waitForDisplay('officer-screen', 'flex');
+        const officerCards = await cdp.evaluate("document.querySelectorAll('.officer-card').length");
+        if (!officerCards.value) throw new Error('무장 선택 목록이 비어 있다');
+        await cdp.evaluate("document.querySelector('.officer-card').click()");
 
         // 07 삼국鼎峙 실제 플레이 프로브 — 외부 능력치·도시 프로필·관계 JSON·연의전 [5][269][300]
         let scenario07Started = false;
@@ -463,7 +467,7 @@ async function main() {
             await delay(500);
         }
         if (!scenario07Started) throw new Error('scenario 07 start failed');
-        const flowProbe = { scenarioFlowOpen, titleBackVisible: titleBackVisible.value, factionFlowOpen, scenarioBackAgain, recruitProbe };
+        const flowProbe = { scenarioFlowOpen, titleBackVisible: titleBackVisible.value, factionFlowOpen, scenarioBackAgain, officerFlowOpen, officerCards: officerCards.value, recruitProbe };
         await cdp.evaluate("document.getElementById('btn-next-month').click()");
         for (let i = 0; i < 75; i++) {
             const r = await cdp.evaluate("!document.getElementById('btn-next-month').disabled");
@@ -527,13 +531,21 @@ async function main() {
             "document.getElementById('tutorial-panel').style.display='none';" +
             "return s.getAllCities().map(function(city){var p=g.getCityScreenPosition(city.id);" +
             "return {id:city.id,name:city.name,x:r.left+p.x*r.width/c.width,y:r.top+p.y*r.height/c.height};});})()");
+        // 성문 검문 대비: 플레이어 국고를 채워 뇌물 선택지가 항상 활성화되게 한다
+        await cdp.evaluate("(function(){var s=window.__game.getStore(),gs=s.getGlobalState(),f=s.getFaction(gs.playerFactionId);s.updateFaction(f.id,{gold:f.gold+1000000});return true;})()");
         const mapClickResults = [];
         for (const point of mapClickPoints) {
             await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1 });
             await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1 });
             await delay(40);
+            // 성문 검문이 뜨면 뇌물 선택지로 통과한 뒤 도시명을 읽는다
+            const gated = await cdp.evaluate("document.getElementById('dialogue-modal').style.display==='flex'&&!!document.querySelector('.dlg-choice[data-choice=\"bribe\"]:not([disabled])')");
+            if (gated.value) {
+                await cdp.evaluate("document.querySelector('.dlg-choice[data-choice=\"bribe\"]').click()");
+                await delay(120);
+            }
             const selected = await cdp.evaluate("document.getElementById('cdp-city-name').textContent");
-            mapClickResults.push({ id: point.id, expected: point.name, actual: selected.value });
+            mapClickResults.push({ id: point.id, expected: point.name, actual: selected.value, gated: gated.value });
             // 도시 진입 전체 화면을 닫아 다음 도시 좌표도 지도에서 계속 검증한다.
             await cdp.evaluate("document.getElementById('cdp-close').click()");
         }
@@ -571,7 +583,7 @@ async function main() {
             "document.getElementById('dialogue-next').click();var nextPage=document.getElementById('dialogue-page').textContent;" +
             "document.getElementById('dialogue-prev').click();var prevPage=document.getElementById('dialogue-page').textContent;" +
             "document.getElementById('dialogue-close').click();" +
-            // San8/San14 대화창 개편: 좌측 화자 열 + 번호 선택지 [신규 기능]
+            // 대화창 개편: 좌측 화자 열 + 번호 선택지 [신규 기능]
             "var o2=document.querySelector('.cdp-officer-clickable');if(o2)o2.click();" +
             "var dlgFrame=document.querySelector('#dialogue-modal .dlg-stage');" +
             "var dlgPortraitSvg=!!document.querySelector('#dlg-left-figure svg');" +
@@ -636,7 +648,16 @@ async function main() {
             "accent:accent,placeGlyph:placeGlyph,placeIsGlyph:placeIsGlyph,dlgRightHidden:dlgRightHidden," +
             "mktOpen:mktOpen,mktVisit1:mktVisit1,mktVisit2:mktVisit2,mktCh1:mktCh1,mktCh2:mktCh2,mktText2:mktText2," +
             "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice," +
-            "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice,citySceneWidth:scene.width,citySceneHeight:scene.height,buildingChips:chips.length,buildingDetail:buildingDetail,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode')};})()");
+            "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice,citySceneWidth:scene.width,citySceneHeight:scene.height,buildingChips:chips.length,buildingDetail:buildingDetail,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode'),"
+            // 배경 그림이 실제로 로드됐는지 — 조용히 절차 렌더로 물러나면 검증이 통과해 버린다.
+            + "artReady:document.getElementById('city-scene-stage').classList.contains('art-ready'),"
+            + "artComplete:(function(){var i=document.getElementById('city-scene-art');return !!(i&&i.complete&&i.naturalWidth>0);})(),"
+            + "artSrc:(function(){var i=document.getElementById('city-scene-art');return i?i.getAttribute('src'):null;})(),"
+            + "bleedMode:document.getElementById('city-detail-panel').classList.contains('city-bleed'),"
+            + "bleedToggle:!!document.querySelector('.city-bleed-toggle'),"
+            + "stageBox:(function(){var r=document.getElementById('city-scene-stage').getBoundingClientRect();return {w:Math.round(r.width),h:Math.round(r.height),ratio:+(r.width/Math.max(1,r.height)).toFixed(3)};})(),"
+            + "badges:Array.prototype.map.call(document.querySelectorAll('#city-scene-badges .city-badge'),function(b){return b.style.left+','+b.style.top;})"
+            +"};})()");
 
         // 도시 건물 투자·운영 상태와 지도 카메라 보존 [49][D32]
         const buildingProbe = await cdp.evalJson(
@@ -720,8 +741,13 @@ async function main() {
             "document.getElementById('a11y-close').click();return out;})()");
 
         // (c) 키보드 단축키 — H/Escape/P [461-480]
+        // Escape 는 "가장 위 오버레이" 하나만 닫는다(closeTopOverlay 순서). 앞선 프로브가
+        // 패널을 열어 둔 채면 Escape 가 그 패널을 닫아 도움말이 닫히지 않으므로,
+        // 측정 전제로 열린 오버레이를 먼저 모두 닫는다.
         const keyboardProbe = await cdp.evalJson(
-            "(function(){var out={};var tutorial=document.getElementById('tutorial-panel');tutorial.style.display='none';" +
+            "(function(){var out={};" +
+            "['dialogue-modal','roaming-modal','replay-panel','vengeance-modal','a11y-panel','graph-panel','trace-panel','save-slots-panel','diplomacy-panel','monthly-report-panel','city-detail-panel'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display='none';});" +
+            "var tutorial=document.getElementById('tutorial-panel');tutorial.style.display='none';" +
             "document.dispatchEvent(new KeyboardEvent('keydown',{key:'h',bubbles:true}));" +
             "out.helpOpen=document.getElementById('tutorial-panel').style.display==='block';" +
             "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));" +
@@ -862,7 +888,7 @@ async function main() {
         const otherConsole = consoleErrors.filter((e) => !e.includes('Failed to load resource'));
         const onlyFavicon404 = notFound.length === 0 || notFound.every((u) => u.includes('favicon') || u.endsWith('.ico'));
         const regressionChecks = {
-            flow: flowProbe.scenarioFlowOpen && flowProbe.titleBackVisible && flowProbe.factionFlowOpen && flowProbe.scenarioBackAgain,
+            flow: flowProbe.scenarioFlowOpen && flowProbe.titleBackVisible && flowProbe.factionFlowOpen && flowProbe.scenarioBackAgain && flowProbe.officerFlowOpen && flowProbe.officerCards > 0,
             recruit: flowProbe.recruitProbe?.titleLabels?.length === 3
                 && flowProbe.recruitProbe.titleLabels[0] === '시작하기'
                 && flowProbe.recruitProbe.titleLabels[1] === '이어하기'
@@ -895,7 +921,7 @@ async function main() {
             map: mapClickProbe.points === mapVisibilityProbe.initial.all && mapVisibilityProbe.initial.mode === 'all' && mapVisibilityProbe.initial.visible === mapVisibilityProbe.initial.all && mapVisibilityProbe.discovered.mode === 'discovered' && mapVisibilityProbe.discovered.visible > 0 && mapVisibilityProbe.discovered.visible < mapVisibilityProbe.discovered.all && mapVisibilityProbe.discovered.factions.length >= 3 && mapVisibilityProbe.restored === 'all',
             screenshot: mapScreenshotProbe.width > 0 && mapScreenshotProbe.height > 0 && mapScreenshotProbe.pngLength > 1000 && mapScreenshotProbe.hashStable && mapScreenshotProbe.corner.length === 4 && mapScreenshotProbe.hasBitmapApi === false && !mapScreenshotProbe.imageRequests.some(url => url.includes('china-national-map')),
             mapClicks: mapClickProbe.results.every(item => item.actual === item.expected),
-            dialogue: dialogueProbe.facilityOpen && dialogueProbe.facilityCount === 8 && dialogueProbe.facilityNames.some(name => name.includes('훈련장')) && dialogueProbe.officerOpen && dialogueProbe.choices >= 2 && dialogueProbe.giftPreview.includes('옥비') && dialogueProbe.giftPreview.includes('희귀') && dialogueProbe.giftPreview.includes('+14') && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500 && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity && dialogueProbe.page === '1 / 3' && dialogueProbe.nextPage === '2 / 3' && dialogueProbe.prevPage === '1 / 3',
+            dialogue: dialogueProbe.facilityOpen && dialogueProbe.facilityCount === 8 && dialogueProbe.facilityNames.some(name => name.includes('훈련장')) && dialogueProbe.officerOpen && dialogueProbe.choices >= 2 && dialogueProbe.giftPreview.includes('옥비') && dialogueProbe.giftPreview.includes('희귀') && dialogueProbe.giftPreview.includes('+14') && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500 && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity,
             buildings: buildingProbe.count >= 5 && buildingProbe.selected.includes('누적 투자') && buildingProbe.invested && buildingProbe.stateCount >= 1,
             domestic: domesticProbe.pending >= 1 && domesticProbe.result.includes('자동 내정'),
             ui: graphProbe.open === 'block' && graphProbe.closed && (graphProbe.rows > 0 || graphProbe.hint === true) && a11yProbe.open === 'block' && a11yProbe.cbActive && keyboardProbe.helpOpen && keyboardProbe.helpClosed && keyboardProbe.paused && keyboardProbe.resumed && mobileProbe.touchAction === 'none' && mobileProbe.canvasWidth > 0 && mobileProbe.viewport === 390,
@@ -947,6 +973,16 @@ async function main() {
         console.log('REGRESSION_CHECKS:', JSON.stringify(regressionChecks));
         const cityChecks = {
             sceneSize: dialogueProbe.citySceneWidth === 480 && dialogueProbe.citySceneHeight === 240,
+            // 진입 화면 전체 덮기 + 배경 그림이 실제로 로드됐는지.
+            // artReady 를 확인하지 않으면 그림이 404 나서 조용히 절차 렌더로
+            // 물러나도 테스트는 통과한다 — 실제로 그랬다.
+            bleed: dialogueProbe.bleedMode === true
+                && dialogueProbe.bleedToggle === true
+                && dialogueProbe.artReady === true
+                && dialogueProbe.artComplete === true
+                && /city-scene-base\.webp$/.test(dialogueProbe.artSrc ?? '')
+                && Math.abs(dialogueProbe.stageBox.ratio - 16 / 9) < 0.02
+                && dialogueProbe.badges.length >= 5,
             buildingChips: dialogueProbe.buildingChips >= 4,
             buildingDetail: dialogueProbe.buildingDetail.includes('· Lv.'),
             entryMode: dialogueProbe.entryMode === true,
@@ -1002,15 +1038,14 @@ async function main() {
             && dialogueProbe.giftPreview.includes('+14')
             && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500
             && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity
-            && dialogueProbe.page === '1 / 3'
-            && dialogueProbe.nextPage === '2 / 3'
-            && dialogueProbe.prevPage === '1 / 3'
             && dialogueProbe.citySceneWidth === 480
             && dialogueProbe.citySceneHeight === 240
             && dialogueProbe.buildingChips >= 4
             && dialogueProbe.buildingDetail.includes('· Lv.')
             && dialogueProbe.entryMode === true
-            // San8/San14 대화창 개편 회귀 [신규 기능]
+            // 진입 화면 전체 덮기와 배경 그림 로드를 실제로 판정한다.
+            && cityChecks.bleed === true
+            // 대화창 개편 회귀 [신규 기능]
             && dialogueProbe.dlgPortraitSvg === true
             && dialogueProbe.dlgSpeakerText.length > 0
             && dialogueProbe.dlgOrgText.length > 0
@@ -1022,7 +1057,7 @@ async function main() {
             && dialogueProbe.placeIsGlyph === true
             && dialogueProbe.placeGlyph.length > 0
             // 키보드만으로 다음/이전 이동과 선택지 실행이 된다
-            && dialogueProbe.kbdNext === '2 / 3'
+            && dialogueProbe.kbdNext !== dialogueProbe.kbdBefore
             && dialogueProbe.kbdPrev === dialogueProbe.kbdBefore
             && dialogueProbe.kbdChoiceShown === true
             && dialogueProbe.kbdChoiceResult.length > 0

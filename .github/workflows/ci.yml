@@ -5,6 +5,11 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # 배포는 수동으로만 한다.
+  # [중요] 예전엔 push to master 가 곧 배포였다. 테스트를 통과하면 아무도 묻지 않고
+  # GitHub Pages 에 올라갔다. 게임 완성도가 낮아서 개발 중 배포는 시간 낭비이고,
+  # 검증되지 않은 상태가 공개된다. 자동 배포 통로는 2026-09-30 에 제거했다.
+  workflow_dispatch:
 
 jobs:
   ip-gate:
@@ -25,7 +30,19 @@ jobs:
       - name: Block derived-work assets
         run: node scripts/check_ip_assets.mjs --all
 
+      - name: Verify every shipped asset has recorded provenance
+        # 대장(allowlist) 검사 — 출처가 없거나 미확인인 자산은 배포를 막는다.
+        # --all 은 과거 커밋에 실렸던 자산을 잡고, 이건 앞으로 추가되는 것을 막는다.
+        run: node scripts/check_ip_assets.mjs --provenance
+
+      - name: No residual image metadata
+        # EXIF/XMP/문자열 청크가 남으면 생성 도구명이나 원본 파일명이 그대로 드러난다.
+        # 파일 구조를 파싱하므로 눈에 보이지 않는 PNG zTXt/iTXt 도 잡는다.
+        run: node scripts/inspect_image_metadata.mjs --fail-on-meta
+
   test:
+    # 저작권 게이트에 걸리면 테스트는 돌릴 필요가 없다 — 배포 전에 막는 게 목적이다.
+    needs: ip-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,10 +69,18 @@ jobs:
       - name: Browser E2E smoke
         run: node tests/e2e/browser_smoke.mjs
 
+      - name: Service worker offline
+        # npm run test:e2e 와 같은 구성. 브라우저 스모크만 돌리면 PWA 오프라인
+        # 파손이 CI 로 올라오지 않아서, 여기서도 반드시 돌린다.
+        run: node tests/e2e/sw_offline.mjs
+
   deploy:
-    # 테스트 통과 시 기본 브랜치에 한해 GitHub Pages 배포
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # 수동 실행(workflow_dispatch)에서만 배포한다.
+    # [결함 수정] 예전에는 master 로 push 하면 자동으로 배포됐다.저작권 게이트를 통과한
+    # 미완성 빌드가 아무 허락 없이 공개되었고, 개발할 때마다 배포 시도가 반복됐다.
+    # [결함 수정] needs 가 test 만이라 ip-gate 가 실패해도 배포가 돌아갈 수 있었다.
+    needs: [ip-gate, test]
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       pages: write

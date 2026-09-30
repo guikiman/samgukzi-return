@@ -15,7 +15,7 @@ import {
     getPersonalityEffect,
     policiesByDepartment,
     personalityEffectsByTier,
-} from '../src/core/rtk14_reference_data';
+} from '../src/core/tactic_reference_data';
 import { OFFICER_PROFILES } from '../src/core/officer_profile_schema';
 
 describe('기준 데이터 규모 (삼국지14PK 13시트)', () => {

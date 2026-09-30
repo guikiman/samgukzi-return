@@ -4,7 +4,7 @@ export class IndexedDBAutoSave {
   private db: IDBDatabase | null = null;
   private autoSaveInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor(dbName = "RTK8_SaveData", storeName = "saves") {
+  constructor(dbName = "samgukzi_return_SaveData", storeName = "saves") {
     this.dbName = dbName;
     this.storeName = storeName;
   }

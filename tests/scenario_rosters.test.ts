@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildWorld, getKnownOfficerName, parseStartDate, CITY_MAP_COORDS, getScenarioRelationships } from '../src/core/scenario_system';
+import { buildWorld, getKnownOfficerName, parseStartDate, CITY_MAP_COORDS, getScenarioRelationships, resolveProtagonistId } from '../src/core/scenario_system';
 import scenarioIndex from '../src/data/scenarios/index.json';
 import type { ScenarioData } from '../src/core/scenario_system';
 
@@ -87,6 +87,82 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
         expect(getKnownOfficerName('guo_si_esc')).toBe('곽사');
     });
 
+    it('05 삼분천하는 확충된 명단(34명)·30도시·4세력과 초기 인맥 8건을 제공한다', () => {
+        const scenario = (scenarioIndex as ScenarioData[]).find(s => s.id === '05')!;
+        const world = buildWorld(scenario, 0);
+        // 로스터 27명(10+9+5+3) + 재야 7명, 수도 4 + 2차도시 26
+        expect(world.officers).toHaveLength(34);
+        expect(world.cities).toHaveLength(30);
+        expect(world.factions).toHaveLength(4);
+        const ids = world.officers.map(o => o.id);
+        expect(new Set(ids).size).toBe(ids.length);
+        for (const id of ['xun_yu', 'xiahou_yuan', 'zhang_he', 'gan_ning', 'pang_tong', 'ma_chao', 'liu_biao', 'liu_zhang', 'fa_zheng', 'zhang_song']) {
+            expect(ids).toContain(id);
+        }
+        const names = world.officers.map(o => o.name);
+        for (const o of world.officers) {
+            expect(/^[a-z_]+$/.test(o.name)).toBe(false);
+        }
+        expect(names).toContain('순욱');
+        expect(names).toContain('감녕');
+        expect(names).toContain('방통');
+        expect(names).toContain('유장');
+        expect(world.factions.map(f => f.name)).toEqual(['조조', '손권', '유비', '유장']);
+        const validIds = new Set(ids);
+        expect(getScenarioRelationships('05', validIds)).toHaveLength(8);
+    });
+
+    it('전 시나리오는 최대 도시 배치·고유 무장·한글 이름을 만족한다', () => {
+        const expected: Record<string, { cities: number; factions: number }> = {
+            '01': { cities: 31, factions: 2 },
+            '02': { cities: 32, factions: 4 },
+            '03': { cities: 31, factions: 5 },
+            '04': { cities: 30, factions: 4 },
+            '05': { cities: 30, factions: 4 },
+            '06': { cities: 31, factions: 3 },
+        };
+        for (const scenario of scenarioIndex as ScenarioData[]) {
+            if (scenario.id === '07') continue;
+            const world = buildWorld(scenario, 0);
+            const ids = world.officers.map(o => o.id);
+            expect(new Set(ids).size, `${scenario.id} 중복`).toBe(ids.length);
+            for (const o of world.officers) {
+                expect(/^[a-z_]+$/.test(o.name), `${scenario.id}:${o.id}`).toBe(false);
+            }
+            const exp = expected[scenario.id];
+            expect(world.cities.length, `${scenario.id} 도시`).toBe(exp.cities);
+            expect(world.factions.length, `${scenario.id} 세력`).toBe(exp.factions);
+            for (const f of world.factions) {
+                expect(f.cities.length, `${scenario.id}:${f.id} 도시`).toBeGreaterThan(0);
+                expect(f.officers.length, `${scenario.id}:${f.id} 무장`).toBeGreaterThan(0);
+            }
+        }
+    });
+
+    it('주인공 무장 확정은 세력 소속이면 그대로, 아니면 군주로 폴백한다', () => {
+        const scenario = (scenarioIndex as ScenarioData[]).find(s => s.id === '05')!;
+        const world = buildWorld(scenario, 2);
+        expect(resolveProtagonistId(world, 'guan_yu')).toBe('guan_yu');
+        expect(resolveProtagonistId(world, 'cao_cao')).toBe('liu_bei');
+        expect(resolveProtagonistId(world, null)).toBe('liu_bei');
+        expect(resolveProtagonistId(world, 'no_such_officer')).toBe('liu_bei');
+    });
+
+    it('전 시나리오의 도시는 서로 다른 위치에 놓인다 — 같은 자리에 겹치면 클릭이 뒤바뀐다', () => {
+        // [결함] 07 시나리오가 청두와 성도(=成都, 같은 도시)를 2차도시로 함께 두어
+        // 두 도시가 같은 앵커(0.4512, 0.5407 / 0.4512, 0.5411)에 그려졌다.
+        // 좌표가 0.6px 차이라 지도 클릭이 항상 배열 선두(청두)로 해석됐다.
+        for (const scenario of scenarioIndex as ScenarioData[]) {
+            const world = buildWorld(scenario, 0);
+            const keys = world.cities.map(c => `${(c.mapImageX ?? c.mapX).toFixed(3)},${(c.mapImageY ?? c.mapY).toFixed(3)}`);
+            const dupAnchor = keys.filter((key, i) => keys.indexOf(key) !== i);
+            expect(dupAnchor, `${scenario.id} 앵커 중복: ${dupAnchor.join(' / ')}`).toHaveLength(0);
+            const names = world.cities.map(c => c.name);
+            const dupName = names.filter((name, i) => names.indexOf(name) !== i);
+            expect(dupName, `${scenario.id} 도시 이름 중복: ${dupName.join(' / ')}`).toHaveLength(0);
+        }
+    });
+
     it('07 삼국鼎峙 시나리오는 새 도시·무장·초기 인맥을 제공한다', () => {
         const scenario = (scenarioIndex as ScenarioData[]).find(s => s.id === '07')!;
         const world = buildWorld(scenario, 1);
@@ -94,7 +170,7 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
         // [결함 수정] 이전엔 세력당 2도시였고 세력 간 접경이 0쌍이라
         // AI가 24개월 내내 공격하지 못했다. 이제 위(4) 촉(3) 오(3) 다 2도시 이상.
         expect(world.cities.map(c => c.name)).toEqual([
-            '낙양', '청두', '부경', '서주', '진류', '강릉', '성도', '동정', '진주',
+            '낙양', '청두', '부경', '서주', '진류', '강릉', '한중', '동정', '진주',
         ]);
         expect(world.factions.map(f => f.cities.length)).toEqual([3, 3, 3]);
         expect(CITY_MAP_COORDS['청두']).toEqual({ x: 0.30, y: 0.57 });

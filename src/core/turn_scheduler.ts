@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — 턴 스케줄러 (Time Slicing)
+ * 삼국지리턴 — 턴 스케줄러 (Time Slicing)
  * 파일: src/core/turn_scheduler.ts
  *
  * requestIdleCallback 기반 청크 단위 루프

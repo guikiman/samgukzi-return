@@ -24,7 +24,7 @@ class HexTile:
         self.elevation = elevation        # 고저차 (고원 판별용)
 
 class PathfindingEngine:
-    """삼국지 8 리메이크 핵심 헥사곤 A* 길찾기 및 전장 물리 엔진"""
+    """삼국지리턴 핵심 헥사곤 A* 길찾기 및 전장 물리 엔진"""
     
     def __init__(self):
         # 기획서 기준 병종별 이동 비용 배율 (Cost Multiplier)

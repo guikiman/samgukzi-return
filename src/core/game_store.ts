@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — 싱글톤 중앙 상태 저장소
+ * 삼국지리턴 — 싱글톤 중앙 상태 저장소
  * 파일: src/core/game_store.ts
  *
  * 정규화 상태 트리 (Normalized State Tree)

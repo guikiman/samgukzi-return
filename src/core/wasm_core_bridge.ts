@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — WebAssembly 고속 AI 이식 데이터 브리지
+ * 삼국지리턴 — WebAssembly 고속 AI 이식 데이터 브리지
  * 파일: src/core/wasm_core_bridge.ts
  *
  * [201] Wasm 가속 길찾기 및 대미지 바인딩 인터페이스

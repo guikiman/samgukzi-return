@@ -38,7 +38,7 @@ describe('[461-480] AccessibilitySystem', () => {
     });
 
     it('손상된 저장값은 안전하게 폴백한다', () => {
-        storage['rtk8_accessibility'] = '{"fontMode":"hack","textScale":7.5,"screenShake":"yes"}';
+        storage['samgukzi_return_accessibility'] = '{"fontMode":"hack","textScale":7.5,"screenShake":"yes"}';
         const s = loadAccessibilitySettings();
         expect(s.fontMode).toBe('serif');
         expect(s.textScale).toBe(1.0);

@@ -1,7 +1,7 @@
 /**
  * [B11] 일기토(Duel) 미니게임 엔진
  *
- * 삼국지 8 리메이크 스타일 5턴제 일기토
+ * 삼국지리턴 스타일 5턴제 일기토
  * 카드 대결: ATTACK > DEFENSE, DEFENSE > COUNTER, COUNTER > ATTACK
  * SPIRIT 시스템: 매 턴 +1 (최대 5), SPECIAL 카드 소모
  */
@@ -28,6 +28,8 @@ export interface DuelState {
     readonly turn: number;
     readonly playerId: OfficerID;
     readonly enemyId: OfficerID;
+    readonly playerName: string;
+    readonly enemyName: string;
     readonly playerHp: number;
     readonly enemyHp: number;
     readonly playerSpirit: number;
@@ -75,6 +77,8 @@ export class DuelMinigame {
             turn: 0,
             playerId,
             enemyId,
+            playerName: playerId,
+            enemyName: enemyId,
             playerHp: 100,
             enemyHp: 100,
             playerSpirit: 3,
@@ -88,18 +92,22 @@ export class DuelMinigame {
         };
     }
 
-    /** 일기토 시작 */
+    /** 일기토 시작 — 표기명은 로그 전용이며 승패 판정은 id로 한다. */
     startDuel(
         playerId: OfficerID,
         enemyId: OfficerID,
         playerStats: OfficerStats,
         enemyStats: OfficerStats,
+        playerName?: string,
+        enemyName?: string,
     ): DuelState {
         const initialHp = 50 + Math.floor((playerStats.might + enemyStats.might) / 2);
         this.state = {
             turn: 0,
             playerId,
             enemyId,
+            playerName: playerName ?? playerId,
+            enemyName: enemyName ?? enemyId,
             playerHp: initialHp,
             enemyHp: initialHp,
             playerSpirit: 3,
@@ -107,7 +115,7 @@ export class DuelMinigame {
             playerMaxHp: initialHp,
             enemyMaxHp: initialHp,
             phase: 'PLAYER_TURN',
-            log: [`⚔️ ${playerId} vs ${enemyId} 일기토 시작! (HP: ${initialHp})`],
+            log: [`⚔️ ${playerName ?? playerId} vs ${enemyName ?? enemyId} 일기토 시작! (HP: ${initialHp})`],
             winner: null,
             maxTurns: 5,
         };
@@ -152,20 +160,20 @@ export class DuelMinigame {
         if (playerCard === 'HEAL') {
             const heal = 15;
             this.state = { ...this.state, playerHp: Math.min(this.state.playerMaxHp, this.state.playerHp + heal) };
-            logMsg = `${this.state.playerId} 치유! HP +${heal}`;
+            logMsg = `${this.state.playerName} 치유! HP +${heal}`;
         }
         if (enemyCard === 'HEAL') {
             const heal = 15;
             this.state = { ...this.state, enemyHp: Math.min(this.state.enemyMaxHp, this.state.enemyHp + heal) };
-            logMsg += (logMsg ? ' / ' : '') + `${this.state.enemyId} 치유! HP +${heal}`;
+            logMsg += (logMsg ? ' / ' : '') + `${this.state.enemyName} 치유! HP +${heal}`;
         }
 
         if (pBeatsE && !eBeatsP) {
             enemyDmg = pCard.power;
-            logMsg += (logMsg ? ' / ' : '') + `${this.state.playerId}의 ${pCard.label} 성공! ${this.state.enemyId}에게 ${enemyDmg} 데미지!`;
+            logMsg += (logMsg ? ' / ' : '') + `${this.state.playerName}의 ${pCard.label} 성공! ${this.state.enemyName}에게 ${enemyDmg} 데미지!`;
         } else if (eBeatsP && !pBeatsE) {
             playerDmg = eCard.power;
-            logMsg += (logMsg ? ' / ' : '') + `${this.state.enemyId}의 ${eCard.label} 성공! ${this.state.playerId}에게 ${playerDmg} 데미지!`;
+            logMsg += (logMsg ? ' / ' : '') + `${this.state.enemyName}의 ${eCard.label} 성공! ${this.state.playerName}에게 ${playerDmg} 데미지!`;
         } else {
             // 무승부: 서로 데미지 (또는 방어/반격 상쇄)
             if (playerCard === 'SLASH' || enemyCard === 'SLASH') {
@@ -220,11 +228,11 @@ export class DuelMinigame {
         if (this.state.playerHp <= 0) {
             winner = this.state.enemyId;
             phase = 'DONE';
-            this.state = { ...this.state, log: [...this.state.log, `💀 ${this.state.playerId} 패배!`] };
+            this.state = { ...this.state, log: [...this.state.log, `💀 ${this.state.playerName} 패배!`] };
         } else if (this.state.enemyHp <= 0) {
             winner = this.state.playerId;
             phase = 'DONE';
-            this.state = { ...this.state, log: [...this.state.log, `🏆 ${this.state.playerId} 승리!`] };
+            this.state = { ...this.state, log: [...this.state.log, `🏆 ${this.state.playerName} 승리!`] };
         } else if (newTurn >= this.state.maxTurns) {
             // 5턴 종료: HP 많은 쪽 승리
             winner = this.state.playerHp > this.state.enemyHp ? this.state.playerId :

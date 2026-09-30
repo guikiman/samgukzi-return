@@ -143,7 +143,6 @@
     ],
     "cities": [
       { "name": "청두", "faction_index": 0, "profile": { "population": 96000, "defense": 80, "gold_income": 180, "food_income": 466, "funds": 1560, "development": 6278, "commerce": 66, "farming": 74, "technology": 63, "public_order": 77, "loyalty": 88, "danger": 13 } },
-      { "name": "성도", "faction_index": 0, "profile": { "population": 62000, "defense": 70, "gold_income": 134, "food_income": 352, "funds": 940, "development": 3943, "commerce": 55, "farming": 57, "technology": 52, "public_order": 68, "loyalty": 85, "danger": 19 } },
       { "name": "장안", "faction_index": 1, "profile": { "population": 88000, "defense": 78, "gold_income": 168, "food_income": 436, "funds": 1400, "development": 5724, "commerce": 64, "farming": 66, "technology": 60, "public_order": 72, "loyalty": 82, "danger": 17 } },
       { "name": "허창", "faction_index": 1, "profile": { "population": 94000, "defense": 82, "gold_income": 178, "food_income": 458, "funds": 1520, "development": 6181, "commerce": 66, "farming": 70, "technology": 62, "public_order": 75, "loyalty": 84, "danger": 15 } },
       { "name": "진류", "faction_index": 1, "profile": { "population": 81000, "defense": 74, "gold_income": 156, "food_income": 412, "funds": 1240, "development": 5210, "commerce": 61, "farming": 63, "technology": 56, "public_order": 70, "loyalty": 81, "danger": 19 } },
@@ -172,7 +171,7 @@
       { "name": "서주", "faction_index": 0, "profile": { "population": 82000, "defense": 72, "gold_income": 148, "food_income": 390, "funds": 1080, "development": 5245, "commerce": 58, "farming": 60, "technology": 50, "public_order": 68, "loyalty": 76, "danger": 21 } },
       { "name": "진류", "faction_index": 0, "profile": { "population": 79000, "defense": 70, "gold_income": 142, "food_income": 376, "funds": 1020, "development": 5024, "commerce": 56, "farming": 58, "technology": 48, "public_order": 66, "loyalty": 75, "danger": 23 } },
       { "name": "강릉", "faction_index": 1, "profile": { "population": 76000, "defense": 68, "gold_income": 138, "food_income": 364, "funds": 980, "development": 4806, "commerce": 55, "farming": 57, "technology": 47, "public_order": 70, "loyalty": 80, "danger": 19 } },
-      { "name": "성도", "faction_index": 1, "profile": { "population": 64000, "defense": 64, "gold_income": 124, "food_income": 330, "funds": 820, "development": 4001, "commerce": 50, "farming": 52, "technology": 44, "public_order": 64, "loyalty": 78, "danger": 24 } },
+      { "name": "한중", "faction_index": 1, "profile": { "population": 64000, "defense": 64, "gold_income": 124, "food_income": 330, "funds": 820, "development": 4001, "commerce": 50, "farming": 52, "technology": 44, "public_order": 64, "loyalty": 78, "danger": 24 } },
       { "name": "동정", "faction_index": 2, "profile": { "population": 84000, "defense": 74, "gold_income": 150, "food_income": 396, "funds": 1120, "development": 5403, "commerce": 59, "farming": 61, "technology": 51, "public_order": 69, "loyalty": 78, "danger": 20 } },
       { "name": "진주", "faction_index": 2, "profile": { "population": 71000, "defense": 67, "gold_income": 132, "food_income": 350, "funds": 920, "development": 4477, "commerce": 54, "farming": 56, "technology": 47, "public_order": 67, "loyalty": 76, "danger": 22 } }
     ],

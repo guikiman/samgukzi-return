@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — 런타임 JSON 모딩 로더
+ * 삼국지리턴 — 런타임 JSON 모딩 로더
  * 파일: src/core/runtime_mod_loader.ts
  *
  * [301] JSON Schema 스키마 유효성 검증 엔진

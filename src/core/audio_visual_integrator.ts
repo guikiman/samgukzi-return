@@ -1,5 +1,5 @@
 /**
- * [46-65] 삼국지 8 리메이크 — 오디오-비주얼 통합 오케스트레이터
+ * [46-65] 삼국지리턴 — 오디오-비주얼 통합 오케스트레이터
  * 파일: src/core/audio_visual_integrator.ts
  *
  * TacticalAudioEngine + VisualEffectRenderer + HexMap3DRenderer를
