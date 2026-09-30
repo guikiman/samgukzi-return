@@ -10,6 +10,7 @@ import { BootstrapContext, getBootstrap } from './core/bootstrap.js';
 import { HexMapCanvasRenderer, HexTile } from './core/hex_map_canvas_renderer.js';
 import { ChinaMapRenderer, MapCityView } from './core/china_map_renderer.js';
 import { City3DRenderer, type CityBuilding, dayNightPhase, generateDecorations } from './core/city_3d_renderer.js';
+import { createAmbientTicker, shouldRedrawAmbient, CITY_AMBIENT_INTERVAL_MS, type AmbientTicker } from './core/city_ambient_loop.js';
 import { BattleFrontend, DeployableUnit, BattlePhase } from './core/battle_frontend.js';
 import { TitleScreen } from './core/title_screen.js';
 import { loadScenarios, getCachedScenarios, buildWorld, getKnownOfficerName, resolveProtagonistId } from './core/scenario_system.js';
@@ -2592,23 +2593,27 @@ function drawCityCanvas(city: import('./core/types.js').City): void {
 }
 
 /** 도시 낮밤 자동 순환 타이머 — 패널이 열려 있을 때만 0.5초마다 다시 그린다. */
-let cityAmbientTimer: ReturnType<typeof setInterval> | null = null;
+let cityAmbient: AmbientTicker | null = null;
 
 function startCityAmbient(cityId: string): void {
     stopCityAmbient();
-    cityAmbientTimer = setInterval(() => {
-        if (!engine || !citySceneCanvas?.classList.contains('is-active')) return;
+    cityAmbient = createAmbientTicker(CITY_AMBIENT_INTERVAL_MS, () => {
+        if (!engine || !citySceneCanvas) return;
         const city = engine['store'].getCity(cityId);
-        if (!city || citySceneCityId !== cityId) return;
-        drawCityCanvas(city);
-    }, 500);
+        if (!shouldRedrawAmbient({
+            sceneActive: citySceneCanvas.classList.contains('is-active'),
+            cityExists: !!city,
+            drawnCityId: citySceneCityId,
+            targetCityId: cityId,
+        })) return;
+        drawCityCanvas(city!);
+    });
+    cityAmbient.start();
 }
 
 function stopCityAmbient(): void {
-    if (cityAmbientTimer !== null) {
-        clearInterval(cityAmbientTimer);
-        cityAmbientTimer = null;
-    }
+    cityAmbient?.stop();
+    cityAmbient = null;
 }
 
 function renderCityScene(city: import('./core/types.js').City): void {
@@ -3120,6 +3125,11 @@ document.getElementById('cdp-expedition-targets')!.addEventListener('click', (e)
     const store = engine['store'];
     const target = store.getCity(expeditionTarget!);
     addLog(`出征 ${target?.name}으로 출진을 개시합니다`);
+    // [결함 수정] 이 경로는 패널을 숨기면서 stopCityAmbient() 를 부르지 않았다.
+    // is-active 클래스가 남아 있어 0.5초 주기 repaint 가 세션 내내 계속 돌았다
+    // (숨겨진 캔버스를 매번 다시 그림). 다른 패널 은폐 경로와 반드시 나란히 쓴다.
+    stopCityAmbient();
+    citySceneCanvas?.classList.remove('is-active');
     cityDetailPanel.style.display = 'none';
     enterBattleMode();
 });
