@@ -55,7 +55,7 @@
       "source": "ChatGPT 이미지 생성(txt2img), 텍스트 프롬프트로부터 신규 생성 — 2026-09-30 작성자 진술",
       "license": "AI 생성물. txt2img 이므로 저작권된 원본 입력이 없다(작성자 진술). 사용 저장은 AI 생성 결과물 이용 약관에 따른다.",
       "method": "ai-generated",
-      "note": "커밋 73ff928 이 추가했다. 처음에는 출처 기록 없이 커밋되어 게이트를 통과했으나, allowlist 로 전환하면서 미확인으로 걸렸다. 2026-09-30 작성자가 txt2img 임을 확인했다. 주의: 이 source 는 작성자가 직접 진술한 것이며 스크립트가 독립 검증한 결과가 아니다. txt2img 은 텍스트 프롬프트만 받으므로 특정 게임의 지도 이미지를 입력으로 넣을 수 없고, 따라서 파생작 위험이 없다. 도시 위치·경계 데이터는 Natural Earth 공개도메인 좌표(map-coordinates-4096.json)에서 따로 얹는다."
+      "note": "커밋 73ff928 이 추가했다. 처음에는 출처 기록 없이 커밋되어 게이트를 통과했으나, allowlist 로 전환하면서 미확인으로 걸렸다. 2026-09-30 작성자가 txt2img 임을 확인했다. 주의: 이 source 는 작성자가 직접 진술한 것이며 스크립트가 독립 검증한 결과가 아니다. txt2img 은 텍스트 프롬프트만 받으므로 특정 게임의 지도 이미지를 입력으로 넣을 수 없고, 따라서 파생작 위험이 없다. 도시 위치·경계 데이터는 Natural Earth 공개도메인 좌표(map-coordinates-4096.json)에서 따로 얹는다. 근거 자료: docs/ip-evidence/map-china-ai-4096-provenance.png (ChatGPT 생성 대화 캡처, sha256 ab430f19f3976c6aef69c13089464458e72fa93b5c90298f55a7a305d70feac6). 비공개 원본은 D:\\samkukzi-re_DATA\\ip-evidence\\ 에 동일 해시로 보관한다."
     },
     {
       "path": "src-tauri/icons/32x32.png",

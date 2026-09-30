@@ -11,8 +11,7 @@
  * 같은 버그를 공유하면 안 되므로, 검증 로직을 여기서 따로 만든다.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
@@ -87,6 +86,26 @@ describe('자산 출처 대장', () => {
     it('대장에 없는 파일은 실제 디스크에도 없다 — 항목이 썩지 않게 한다', () => {
         const orphans = PROVENANCE.assets.filter(a => !existsSync(join(REPO_ROOT, a.path)));
         expect(orphans.map(a => a.path), '대장에만 있는 항목은 지워야 한다').toEqual([]);
+    });
+
+    it('근거 자료를 가리키는 경로가 실제로 존재한다', () => {
+        // note 안의 docs/ip-evidence/… 경로가 유효해야 진술의 근거가 남아 있는 것이다.
+        for (const asset of PROVENANCE.assets) {
+            const refs = [...(asset.note ?? '').matchAll(/docs\/ip-evidence\/[^\s(]+/g)].map(m => m[0]);
+            for (const ref of refs) {
+                expect(existsSync(join(REPO_ROOT, ref)), `${asset.path} 가 가리키는 근거 자료가 없다: ${ref}`).toBe(true);
+            }
+        }
+    });
+
+    it('근거 자료의 해시가 대장에 적힌 값과 일치한다', () => {
+        const evidence = join(REPO_ROOT, 'docs/ip-evidence/map-china-ai-4096-provenance.png');
+        expect(existsSync(evidence), '근거 자료 캡처가 없다').toBe(true);
+        const actual = createHash('sha256').update(readFileSync(evidence)).digest('hex');
+        // AI 지도 항목의 note 에 기록된 해시와 같아야 근거가 교체되지 않은 것이다.
+        const aiMap = PROVENANCE.assets.find(a => a.path === 'assets/map-china-ai-4096.webp');
+        expect(aiMap, 'AI 지도 항목이 대장에서 사라졌다').toBeDefined();
+        expect(aiMap!.note ?? '').toContain(actual);
     });
 });
 
