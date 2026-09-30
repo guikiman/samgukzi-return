@@ -154,79 +154,84 @@ export const CITY_MAP_COORDS: Record<string, { x: number; y: number }> = {
     '항양': { x: 0.62, y: 0.48 },
     '강릉': { x: 0.47, y: 0.55 },
     '동정': { x: 0.73, y: 0.60 },
+    // 05 삼분천하 확충 도시 (207년 배치 기준, 인접 도시와 0.16 임계 내외)
+    '진양': { x: 0.50, y: 0.22 },
+    '단양': { x: 0.73, y: 0.58 },
+    '무창': { x: 0.68, y: 0.57 },
+    '교지': { x: 0.50, y: 0.78 },
+    '양양': { x: 0.54, y: 0.52 },
+    '강하': { x: 0.61, y: 0.56 },
+    '계양': { x: 0.60, y: 0.76 },
+    '영릉': { x: 0.56, y: 0.72 },
+    '남중': { x: 0.28, y: 0.68 },
+    '광한': { x: 0.31, y: 0.51 },
+    '상용': { x: 0.44, y: 0.46 },
+    '파동': { x: 0.42, y: 0.53 },
 };
 
 /**
  * [지도][1:1] 비트맵 위 도시 아이콘 중심 좌표 (0~1 정규화).
  *
- * assets/map-china-4096.webp 의 실제 픽셀 좌표를 4096으로 나눈 값이다.
- * scripts/generate_map.py 가 같은 위도경도 표에서 이미지와 이 표를 함께 만든다.
+ * assets/map-china-ai-4096.webp 의 실제 픽셀 좌표를 4096으로 나눈 값이다.
+ * 위경도 정방향 아핀 피팅으로 계산한다 (x = 60.3619*lon - 4433.6, y 2차식).
  * 전술 좌표(mapX/mapY)와 섞지 않는다 — 전투 격자 좌표는 별도다.
  */
 export const CITY_IMAGE_ANCHORS: Record<string, { x: number; y: number }> = {
-    '장안': { x: 0.3044, y: 0.4072 },
-    '낙양': { x: 0.3904, y: 0.3992 },
-    '허창': { x: 0.4246, y: 0.4160 },
-    '업': { x: 0.4434, y: 0.2959 },
-    '진양': { x: 0.3928, y: 0.3064 },
-    '한중': { x: 0.2576, y: 0.4436 },
-    '성도': { x: 0.1853, y: 0.5125 },
-    '건업': { x: 0.5454, y: 0.4722 },
-    '강릉': { x: 0.3840, y: 0.5215 },
-    '남양': { x: 0.3923, y: 0.4453 },
-    '여남': { x: 0.4370, y: 0.4460 },
-    '서주': { x: 0.5085, y: 0.4111 },
-    '양양': { x: 0.3823, y: 0.4736 },
-    '신야': { x: 0.3879, y: 0.4590 },
-    '장사': { x: 0.4023, y: 0.5815 },
-    '계양': { x: 0.4861, y: 0.7151 },
-    '남중': { x: 0.1523, y: 0.6726 },
-    '광한': { x: 0.1907, y: 0.5027 },
-    '단양': { x: 0.5610, y: 0.4739 },
-    '오': { x: 0.5891, y: 0.4939 },
-    '상용': { x: 0.3477, y: 0.4883 },
-    '무창': { x: 0.4358, y: 0.5142 },
-    '강하': { x: 0.4331, y: 0.5210 },
-    '파동': { x: 0.3403, y: 0.5012 },
-    '영릉': { x: 0.3696, y: 0.6338 },
-    '교지': { x: 0.2290, y: 0.7871 },
-    '평양': { x: 0.7158, y: 0.2732 },
-    '선안': { x: 0.6531, y: 0.2129 },
-    '지안': { x: 0.7263, y: 0.2136 },
-    '낙랑': { x: 0.7141, y: 0.2886 },
-    '북평': { x: 0.4871, y: 0.2483 },
-    '사비': { x: 0.7554, y: 0.3499 },
-    '한산': { x: 0.7336, y: 0.3369 },
-    '웅진': { x: 0.7485, y: 0.3428 },
-    '경주': { x: 0.8003, y: 0.3640 },
-    '대야성': { x: 0.7141, y: 0.2998 },
-    '가락': { x: 0.7827, y: 0.3740 },
-    '안동': { x: 0.7883, y: 0.3435 },
-    '야마토': { x: 0.9546, y: 0.3975 },
-    '구주': { x: 0.8291, y: 0.4287 },
-    '오키나와': { x: 0.7627, y: 0.6392 },
-    '대만': { x: 0.6130, y: 0.6729 },
-
-    // ── 시나리오 수도 중 위 42개 표에 없던 도시 ──
-    // 앵커가 없으면 CITY_MAP_COORDS(전술 좌표, 다른 스케일)로 폴백해
-    // 도시가 지도 위 엉뚱한 자리에 그려졌다. 아래는 assets/map-coordinates-4096.json
-    // 의 42개 도시로 역산한 등각 투영 계수
-    //   x = 100.1256 * lon - 9660.4   (최대오차 0.5px)
-    //   y = -116.8896 * lat + 5681.9  (최대오차 0.6px)
-    // 에 각 도시의 실제 위경도를 넣어 계산했다.
-    '거록': { x: 0.4534, y: 0.3213 },
-    '연주': { x: 0.4918, y: 0.3712 },
-    '하비': { x: 0.5248, y: 0.4141 },
-    '여강': { x: 0.5451, y: 0.4726 },
-    '수춘': { x: 0.4962, y: 0.4574 },
-    '진류': { x: 0.4355, y: 0.3941 },
-    '청두': { x: 0.1855, y: 0.5119 },
-    '항양': { x: 0.3823, y: 0.4726 },
-    '부경': { x: 0.5773, y: 0.5239 },
-    '동정': { x: 0.5084, y: 0.4780 },
-    '진주': { x: 0.5062, y: 0.4095 },
-    '복양': { x: 0.4600, y: 0.3655 },
-    '평원': { x: 0.4527, y: 0.3884 },
+    '장안': { x: 0.5230, y: 0.4089 },
+    '낙양': { x: 0.5748, y: 0.3977 },
+    '허창': { x: 0.5954, y: 0.4211 },
+    '업': { x: 0.6067, y: 0.2358 },
+    '진양': { x: 0.5762, y: 0.2537 },
+    '한중': { x: 0.4948, y: 0.4581 },
+    '성도': { x: 0.4512, y: 0.5411 },
+    '건업': { x: 0.6683, y: 0.4944 },
+    '강릉': { x: 0.5710, y: 0.5513 },
+    '남양': { x: 0.5759, y: 0.4604 },
+    '여남': { x: 0.6029, y: 0.4613 },
+    '서주': { x: 0.6460, y: 0.4143 },
+    '양양': { x: 0.5699, y: 0.4961 },
+    '신야': { x: 0.5733, y: 0.4780 },
+    '장사': { x: 0.5819, y: 0.6116 },
+    '계양': { x: 0.6325, y: 0.7099 },
+    '남중': { x: 0.4313, y: 0.6840 },
+    '광한': { x: 0.4544, y: 0.5302 },
+    '단양': { x: 0.6776, y: 0.4965 },
+    '오': { x: 0.6946, y: 0.5203 },
+    '상용': { x: 0.5489, y: 0.5136 },
+    '무창': { x: 0.6021, y: 0.5431 },
+    '강하': { x: 0.6005, y: 0.5507 },
+    '파동': { x: 0.5445, y: 0.5285 },
+    '영릉': { x: 0.5622, y: 0.6559 },
+    '교지': { x: 0.4775, y: 0.7425 },
+    '평양': { x: 0.7709, y: 0.1961 },
+    '선안': { x: 0.7332, y: 0.0843 },
+    '지안': { x: 0.7773, y: 0.0858 },
+    '낙랑': { x: 0.7700, y: 0.2230 },
+    '북평': { x: 0.6330, y: 0.1515 },
+    '사비': { x: 0.7948, y: 0.3240 },
+    '한산': { x: 0.7818, y: 0.3037 },
+    '웅진': { x: 0.7906, y: 0.3128 },
+    '경주': { x: 0.8219, y: 0.3457 },
+    '대야성': { x: 0.7700, y: 0.2426 },
+    '가락': { x: 0.8113, y: 0.3610 },
+    '안동': { x: 0.8146, y: 0.3142 },
+    '야마토': { x: 0.9149, y: 0.3950 },
+    '구주': { x: 0.8393, y: 0.4383 },
+    '오키나와': { x: 0.7992, y: 0.6600 },
+    '대만': { x: 0.7091, y: 0.6841 },
+    '거록': { x: 0.6128, y: 0.2783 },
+    '연주': { x: 0.6359, y: 0.3568 },
+    '하비': { x: 0.6558, y: 0.4185 },
+    '여강': { x: 0.6680, y: 0.4947 },
+    '수춘': { x: 0.6385, y: 0.4759 },
+    '진류': { x: 0.6020, y: 0.3903 },
+    '청두': { x: 0.4512, y: 0.5407 },
+    '항양': { x: 0.5699, y: 0.4947 },
+    '부경': { x: 0.6875, y: 0.5538 },
+    '동정': { x: 0.6459, y: 0.5013 },
+    '진주': { x: 0.6446, y: 0.4122 },
+    '복양': { x: 0.6167, y: 0.3481 },
+    '평원': { x: 0.6123, y: 0.3821 },
 };
 
 
@@ -237,17 +242,17 @@ export const CITY_IMAGE_ANCHORS: Record<string, { x: number; y: number }> = {
  * scripts/generate_map.py 가 지형 이미지와 이 표를 함께 만든다.
  */
 export const MAP_FEATURE_ANCHORS: Record<string, { x: number; y: number; kind: 'PASS' | 'BATTLEFIELD' | 'PORT' }> = {
-    '호로관': { x: 0.3330, y: 0.3569, kind: 'PASS' },
-    '함곡관': { x: 0.3523, y: 0.4021, kind: 'PASS' },
-    '양관': { x: 0.0454, y: 0.2478, kind: 'PASS' },
-    '정관': { x: 0.4331, y: 0.2998, kind: 'PASS' },
-    '산관': { x: 0.2839, y: 0.4197, kind: 'PASS' },
-    '진관': { x: 0.2253, y: 0.4683, kind: 'PASS' },  // 데이터셋 표기 검문관
-    '대방곡': { x: 0.2546, y: 0.4084, kind: 'PASS' },
-    '적벽': { x: 0.4253, y: 0.5391, kind: 'BATTLEFIELD' },
-    '한강': { x: 0.4331, y: 0.5198, kind: 'PORT' },  // 데이터셋 표기 강하수운
-    '창오': { x: 0.3623, y: 0.7166, kind: 'PASS' },
-    '한중협곡': { x: 0.2546, y: 0.4426, kind: 'PASS' },  // 데이터셋 표기 한중협
+    '호로관': { x: 0.5401, y: 0.3351, kind: 'PASS' },
+    '함곡관': { x: 0.5518, y: 0.4016, kind: 'PASS' },
+    '양관': { x: 0.3668, y: 0.1503, kind: 'PASS' },
+    '정관': { x: 0.6005, y: 0.2426, kind: 'PASS' },
+    '산관': { x: 0.5106, y: 0.4264, kind: 'PASS' },
+    '진관': { x: 0.4753, y: 0.4895, kind: 'PASS' },
+    '대방곡': { x: 0.4929, y: 0.4106, kind: 'PASS' },
+    '적벽': { x: 0.5958, y: 0.5699, kind: 'BATTLEFIELD' },
+    '한강': { x: 0.6005, y: 0.5492, kind: 'PORT' },
+    '창오': { x: 0.5578, y: 0.7107, kind: 'PASS' },
+    '한중협곡': { x: 0.4929, y: 0.4569, kind: 'PASS' },
 };
 
 
@@ -272,11 +277,26 @@ const VALID_RELATIONSHIP_TYPES = new Set<RelationshipEdge['type']>([
     'FRIEND', 'RIVAL', 'SWORN_BROTHER', 'NEMESIS', 'FAMILY', 'SPOUSE', 'SUBORDINATE',
 ]);
 
+const SCENARIO_EXTRA_RELATIONSHIPS: Record<string, RelationshipEdge[]> = {
+    '05': [
+        { source: 'xun_yu', target: 'cao_cao', type: 'FRIEND', affinity: 60, history: [{ year: 207, month: 1, event: '허창 모신', delta: 60 }] },
+        { source: 'xiahou_yuan', target: 'xiahou_dun', type: 'FAMILY', affinity: 70, history: [{ year: 207, month: 1, event: '하후 일족', delta: 70 }] },
+        { source: 'zhang_he', target: 'zhang_liao', type: 'FRIEND', affinity: 30, history: [{ year: 207, month: 1, event: '위나라 동료', delta: 30 }] },
+        { source: 'pang_tong', target: 'zhuge_liang', type: 'FRIEND', affinity: 60, history: [{ year: 207, month: 1, event: '와룡봉추', delta: 60 }] },
+        { source: 'gan_ning', target: 'zhou_yu', type: 'FRIEND', affinity: 40, history: [{ year: 207, month: 1, event: '강동 투신', delta: 40 }] },
+        { source: 'cheng_pu_esc', target: 'huang_gai', type: 'FRIEND', affinity: 50, history: [{ year: 207, month: 1, event: '강동 원로', delta: 50 }] },
+        { source: 'liu_biao', target: 'huang_zu', type: 'SUBORDINATE', affinity: 40, history: [{ year: 207, month: 1, event: '형주 주종', delta: 40 }] },
+        { source: 'fa_zheng', target: 'liu_zhang', type: 'SUBORDINATE', affinity: 45, history: [{ year: 207, month: 1, event: '익주 모신', delta: 45 }] },
+    ],
+};
+
 /** 외부 관계 데이터의 잘못된 엣지를 걸러내는 fail-safe 검증기 [269][301] */
 export function getScenarioRelationships(scenarioId: string, validOfficerIds: ReadonlySet<string>): RelationshipEdge[] {
-    if (RELATIONSHIP_FILE.version !== 1 || !Array.isArray(RELATIONSHIP_FILE.scenarios?.[scenarioId])) return [];
+    const fileEdges = (RELATIONSHIP_FILE.version === 1 && Array.isArray(RELATIONSHIP_FILE.scenarios?.[scenarioId]))
+        ? RELATIONSHIP_FILE.scenarios[scenarioId]
+        : [];
     const seen = new Set<string>();
-    return RELATIONSHIP_FILE.scenarios[scenarioId].filter((edge): edge is RelationshipEdge => {
+    return [...fileEdges, ...(SCENARIO_EXTRA_RELATIONSHIPS[scenarioId] ?? [])].filter((edge): edge is RelationshipEdge => {
         const key = `${edge.source}:${edge.target}:${edge.type}`;
         const valid = edge.source !== edge.target
             && validOfficerIds.has(edge.source)
@@ -345,6 +365,7 @@ const OFFICER_NAME_TABLE: Record<string, { name: string; courtesy: string; stats
 
     // ── 오·손씨 진영 ──
     lu_meng:    { name: '여몽',   courtesy: '자명', stats: { leadership: 90, might: 84, intelligence: 86, politics: 72, charisma: 78 }, personality: 'LOYAL' },
+    lu_su:      { name: '노숙',   courtesy: '자경', stats: { leadership: 82, might: 60, intelligence: 92, politics: 88, charisma: 84 }, personality: 'CALM' },
     lu_xun:     { name: '육손',   courtesy: '백언', stats: { leadership: 92, might: 62, intelligence: 96, politics: 90, charisma: 84 }, personality: 'CAUTIOUS' },
     gan_ning:   { name: '감녕',   courtesy: '흥패', stats: { leadership: 84, might: 94, intelligence: 72, politics: 42, charisma: 68 }, personality: 'AGGRESSIVE' },
     taishi_ci:  { name: '태사자', courtesy: '자의', stats: { leadership: 86, might: 94, intelligence: 66, politics: 52, charisma: 74 }, personality: 'LOYAL' },
@@ -376,6 +397,7 @@ const OFFICER_NAME_TABLE: Record<string, { name: string; courtesy: string; stats
     kong_rong:  { name: '공융',   courtesy: '문거', stats: { leadership: 52, might: 28, intelligence: 78, politics: 84, charisma: 90 }, personality: 'RIGHTEOUS' },
     tao_qian:   { name: '도겸',   courtesy: '공조', stats: { leadership: 60, might: 44, intelligence: 62, politics: 76, charisma: 68 }, personality: 'CALM' },
     zhang_yang: { name: '장양',   courtesy: '치손', stats: { leadership: 70, might: 74, intelligence: 48, politics: 44, charisma: 50 }, personality: 'GREEDY' },
+    liu_zhang:  { name: '유장',   courtesy: '계옥', stats: { leadership: 55, might: 45, intelligence: 60, politics: 70, charisma: 65 }, personality: 'CALM' },
 };
 
 // 이름표에 없는 무장은 기본 스탯으로 생성
@@ -457,37 +479,40 @@ export interface BuiltWorld {
  */
 const SCENARIO_ROSTERS: Record<string, string[]> = {
     // 01 황건적의 난 (184년)
-    '01:0': ['he_jin', 'huang_fu_song', 'cao_cao', 'sun_jian', 'yuan_shu'],     // 하진 (황보숭·조조·손견·원술은 그 휘하)
-    '01:1': ['zhang_jiao', 'zhang_bao_esc', 'zhang_liang_esc'],                  // 장각 (3형제)
+    '01:0': ['he_jin', 'huang_fu_song', 'cao_cao', 'sun_jian', 'yuan_shu', 'liu_bei', 'gongsun_zan', 'tao_qian', 'kong_rong', 'ma_teng'], // 하진 (토벌 제장)
+    '01:1': ['zhang_jiao', 'zhang_bao_esc', 'zhang_liang_esc', 'zhang_yan', 'han_sui'], // 장각 (3형제 + 흑산적·서량 반란)
 
     // 02 반동탁 연합 (190년)
-    '02:0': ['dong_zhuo', 'lv_bu', 'hua_xiong', 'li_jue_esc', 'guo_si_esc'],    // 동탁
-    '02:1': ['yuan_shao', 'yan_liang', 'wen_chou', 'tian_feng', 'ju_shou', 'shen_pei'], // 원소 (연합 맹주)
+    '02:0': ['dong_zhuo', 'lv_bu', 'hua_xiong', 'li_jue_esc', 'guo_si_esc', 'zhang_liao'], // 동탁
+    '02:1': ['yuan_shao', 'yan_liang', 'wen_chou', 'tian_feng', 'ju_shou', 'shen_pei', 'yuan_tan'], // 원소 (연합 맹주)
     '02:2': ['cao_cao', 'xiahou_dun', 'xiahou_yuan', 'cao_ren', 'xun_yu'],     // 조조
     '02:3': ['sun_jian', 'huang_gai', 'cheng_pu_esc', 'han_dang_esc'],          // 손견
 
     // 03 군웅할거 (194년)
-    '03:0': ['cao_cao', 'xiahou_dun', 'xiahou_yuan', 'dian_wei', 'xun_yu', 'guo_jia'], // 조조
+    '03:0': ['cao_cao', 'xiahou_dun', 'xiahou_yuan', 'dian_wei', 'xun_yu', 'guo_jia', 'xun_you'], // 조조
     '03:1': ['liu_bei', 'guan_yu', 'zhang_fei', 'zhao_yun'],                    // 유비 (서주)
-    '03:2': ['lv_bu', 'chen_gong', 'gao_shun'],                                 // 여포 (하비)
+    '03:2': ['lv_bu', 'chen_gong', 'gao_shun', 'zhang_liao'],                     // 여포 (하비)
     '03:3': ['sun_ce', 'zhou_yu', 'taishi_ci', 'zhou_tai'],                     // 손책 (여강)
     '03:4': ['yuan_shu', 'ji_ling_esc'],                                        // 원술 (수춘)
 
     // 04 관도 대전 (200년)
-    '04:0': ['cao_cao', 'zhang_liao', 'xu_chu', 'xun_you', 'guo_jia', 'xu_huang', 'zhang_he'], // 조조 (허창)
+    '04:0': ['cao_cao', 'zhang_liao', 'xu_chu', 'xun_you', 'guo_jia', 'xu_huang', 'zhang_he', 'xun_yu'], // 조조 (허창)
     '04:1': ['yuan_shao', 'yan_liang', 'wen_chou', 'tian_feng', 'ju_shou', 'yuan_tan', 'yuan_shang'], // 원소 (업)
-    '04:2': ['sun_ce', 'zhou_yu', 'lu_su', 'gan_ning'],                         // 손씨 (오)
+    '04:2': ['sun_ce', 'zhou_yu', 'lu_su', 'gan_ning', 'taishi_ci'],             // 손씨 (오)
     '04:3': ['liu_bei', 'guan_yu', 'zhang_fei', 'zhao_yun'],                    // 유비 (여남)
 
     // 05 삼분천하 (207년)
-    '05:0': ['cao_cao', 'zhang_liao', 'xu_chu', 'xiahou_dun', 'sima_yi', 'xu_huang', 'cao_ren'], // 조조 (허창)
-    '05:1': ['sun_quan', 'zhou_yu', 'lu_su', 'lu_meng', 'huang_gai', 'taishi_ci'], // 손권 (건업)
+    '05:0': ['cao_cao', 'zhang_liao', 'xu_chu', 'xiahou_dun', 'sima_yi', 'xu_huang', 'cao_ren', 'xun_yu', 'xiahou_yuan', 'zhang_he'], // 조조 (허창)
+    '05:1': ['sun_quan', 'zhou_yu', 'lu_su', 'lu_meng', 'huang_gai', 'taishi_ci', 'gan_ning', 'cheng_pu_esc', 'han_dang_esc'], // 손권 (건업)
     '05:2': ['liu_bei', 'guan_yu', 'zhang_fei', 'zhao_yun', 'zhuge_liang'],     // 유비 (신야)
 
     // 06 출사표 (234년)
     '06:0': ['liu_bei', 'zhuge_liang', 'jiang_wei', 'wei_yan', 'zhao_yun', 'fa_zheng'], // 촉 (한중) — 대관례상 유비 생존 가정 (게임적 배려)
-    '06:1': ['cao_cao', 'sima_yi', 'zhang_he', 'xu_huang', 'cao_ren'],          // 위 (낙양) — 게임적 배려로 조조 생존
-    '06:2': ['sun_quan', 'lu_xun', 'lu_meng', 'gan_ning', 'sun_shangxiang'],    // 오 (건업)
+    '06:1': ['cao_cao', 'sima_yi', 'zhang_he', 'xu_huang', 'cao_ren', 'sima_zhao'], // 위 (낙양) — 게임적 배려로 조조 생존
+    '06:2': ['sun_quan', 'lu_xun', 'lu_meng', 'gan_ning', 'sun_shangxiang', 'zhuge_ke'], // 오 (건업)
+
+    // 05 유장 (익주) — 추가 세력은 SCENARIO_EXTRA_FACTIONS 참조
+    '05:3': ['liu_zhang', 'fa_zheng', 'zhang_song'],
 
     // 07 삼국鼎峙 (220년) — 유비·손권 사후의 안정화 탐색 시나리오 [5][106-114]
     '07:0': ['cao_pi', 'sima_zhao', 'zhang_song', 'xiahou_dun', 'cao_ren'],       // 위 (낙양)
@@ -512,18 +537,180 @@ const ESCORT_NAME_FIXES: Record<string, string> = {
  */
 const SCENARIO_FREE_OFFICERS: Record<string, Array<{ id: string; city: string }>> = {
     // 184년: 관우·장비·조운은 아직 백수 (역사적 배치)
-    '01': [{ id: 'guan_yu', city: '낙양' }, { id: 'zhang_fei', city: '낙양' }, { id: 'zhao_yun', city: '낙양' }],
+    '01': [{ id: 'guan_yu', city: '낙양' }, { id: 'zhang_fei', city: '낙양' }, { id: 'zhao_yun', city: '낙양' }, { id: 'dong_cheng', city: '낙양' }],
     // 190년: 유비 세력이 없으므로 관우·장비·조운 재야
-    '02': [{ id: 'guan_yu', city: '업' }, { id: 'zhang_fei', city: '업' }, { id: 'zhao_yun', city: '업' }],
+    '02': [{ id: 'guan_yu', city: '업' }, { id: 'zhang_fei', city: '업' }, { id: 'zhao_yun', city: '업' }, { id: 'liu_bei', city: '업' }],
     // 194년: 황충·마초은 아직 각지에 재야
-    '03': [{ id: 'huang_zhong', city: '수춘' }, { id: 'ma_chao', city: '연주' }],
+    '03': [{ id: 'huang_zhong', city: '수춘' }, { id: 'ma_chao', city: '연주' }, { id: 'zhang_he', city: '업' }],
     // 200년: 제갈량(미출사)·황충·방통 재야
-    '04': [{ id: 'zhuge_liang', city: '여남' }, { id: 'huang_zhong', city: '여남' }, { id: 'pang_tong', city: '여남' }],
-    // 207년: 황충·방통·위연 재야 (유비가 신야에서 영입한 시기)
-    '05': [{ id: 'huang_zhong', city: '신야' }, { id: 'pang_tong', city: '신야' }, { id: 'wei_yan', city: '신야' }],
+    '04': [{ id: 'zhuge_liang', city: '여남' }, { id: 'huang_zhong', city: '여남' }, { id: 'pang_tong', city: '여남' }, { id: 'sima_yi', city: '업' }],
+    // 207년: 황충·방통·위연 재야 (유비가 신야에서 영입한 시기) + 형주·남양의 재야 명사
+    '05': [{ id: 'huang_zhong', city: '신야' }, { id: 'pang_tong', city: '신야' }, { id: 'wei_yan', city: '신야' }, { id: 'liu_biao', city: '강릉' }, { id: 'huang_zu', city: '강릉' }, { id: 'ma_chao', city: '남양' }, { id: 'zhang_yan', city: '하비' }],
     // 234년: 황충·마초·방통이 촉 휘하가 아닌 가정 (등용 풀 확보)
     '06': [{ id: 'huang_zhong', city: '한중' }, { id: 'ma_chao', city: '한중' }, { id: 'pang_tong', city: '한중' }],
 };
+
+const SCENARIO_EXTRA_FACTIONS: Record<string, ScenarioFaction[]> = {
+    '05': [
+        { name: '유장', capital: '성도', leader_id: 'liu_zhang', color: '#7a4a9a' },
+    ],
+};
+
+const SCENARIO_EXTRA_CITIES: Record<string, ScenarioCityData[]> = {
+    '01': [
+        { name: '허창', faction_index: 0 },
+        { name: '장안', faction_index: 0 },
+        { name: '서주', faction_index: 0 },
+        { name: '여강', faction_index: 0 },
+        { name: '수춘', faction_index: 0 },
+        { name: '오', faction_index: 0 },
+        { name: '단양', faction_index: 0 },
+        { name: '무창', faction_index: 0 },
+        { name: '교지', faction_index: 0 },
+        { name: '장사', faction_index: 0 },
+        { name: '계양', faction_index: 0 },
+        { name: '영릉', faction_index: 0 },
+        { name: '성도', faction_index: 0 },
+        { name: '한중', faction_index: 0 },
+        { name: '남중', faction_index: 0 },
+        { name: '광한', faction_index: 0 },
+        { name: '상용', faction_index: 0 },
+        { name: '파동', faction_index: 0 },
+        { name: '건업', faction_index: 0 },
+        { name: '신야', faction_index: 1 },
+        { name: '남양', faction_index: 1 },
+        { name: '양양', faction_index: 1 },
+        { name: '강하', faction_index: 1 },
+        { name: '연주', faction_index: 1 },
+        { name: '하비', faction_index: 1 },
+        { name: '여남', faction_index: 1 },
+        { name: '진양', faction_index: 1 },
+    ],
+    '02': [
+        { name: '허창', faction_index: 2 },
+        { name: '수춘', faction_index: 2 },
+        { name: '신야', faction_index: 1 },
+        { name: '양양', faction_index: 1 },
+        { name: '거록', faction_index: 1 },
+        { name: '장안', faction_index: 0 },
+        { name: '한중', faction_index: 0 },
+        { name: '성도', faction_index: 0 },
+        { name: '남중', faction_index: 0 },
+        { name: '광한', faction_index: 0 },
+        { name: '상용', faction_index: 0 },
+        { name: '파동', faction_index: 0 },
+        { name: '오', faction_index: 3 },
+        { name: '건업', faction_index: 3 },
+        { name: '단양', faction_index: 3 },
+        { name: '무창', faction_index: 3 },
+        { name: '교지', faction_index: 3 },
+        { name: '강하', faction_index: 3 },
+        { name: '계양', faction_index: 3 },
+        { name: '영릉', faction_index: 3 },
+        { name: '진양', faction_index: 1 },
+    ],
+    '03': [
+        { name: '허창', faction_index: 0 },
+        { name: '낙양', faction_index: 0 },
+        { name: '장안', faction_index: 0 },
+        { name: '진양', faction_index: 0 },
+        { name: '신야', faction_index: 0 },
+        { name: '남양', faction_index: 0 },
+        { name: '성도', faction_index: 0 },
+        { name: '한중', faction_index: 0 },
+        { name: '남중', faction_index: 0 },
+        { name: '광한', faction_index: 0 },
+        { name: '상용', faction_index: 0 },
+        { name: '파동', faction_index: 0 },
+        { name: '양양', faction_index: 1 },
+        { name: '강하', faction_index: 1 },
+        { name: '건업', faction_index: 3 },
+        { name: '단양', faction_index: 3 },
+        { name: '무창', faction_index: 3 },
+        { name: '교지', faction_index: 3 },
+        { name: '장사', faction_index: 4 },
+        { name: '계양', faction_index: 4 },
+        { name: '영릉', faction_index: 4 },
+    ],
+    '04': [
+        { name: '낙양', faction_index: 0 },
+        { name: '장안', faction_index: 0 },
+        { name: '서주', faction_index: 0 },
+        { name: '수춘', faction_index: 0 },
+        { name: '성도', faction_index: 0 },
+        { name: '한중', faction_index: 0 },
+        { name: '남중', faction_index: 0 },
+        { name: '광한', faction_index: 0 },
+        { name: '상용', faction_index: 0 },
+        { name: '파동', faction_index: 0 },
+        { name: '진양', faction_index: 1 },
+        { name: '건업', faction_index: 2 },
+        { name: '단양', faction_index: 2 },
+        { name: '무창', faction_index: 2 },
+        { name: '남양', faction_index: 3 },
+        { name: '양양', faction_index: 3 },
+        { name: '강하', faction_index: 3 },
+        { name: '계양', faction_index: 2 },
+        { name: '영릉', faction_index: 3 },
+        { name: '교지', faction_index: 3 },
+    ],
+    '06': [
+        { name: '남중', faction_index: 0 },
+        { name: '광한', faction_index: 0 },
+        { name: '상용', faction_index: 0 },
+        { name: '파동', faction_index: 0 },
+        { name: '연주', faction_index: 1 },
+        { name: '하비', faction_index: 1 },
+        { name: '업', faction_index: 1 },
+        { name: '서주', faction_index: 1 },
+        { name: '진양', faction_index: 1 },
+        { name: '수춘', faction_index: 1 },
+        { name: '여남', faction_index: 1 },
+        { name: '남양', faction_index: 1 },
+        { name: '신야', faction_index: 1 },
+        { name: '여강', faction_index: 2 },
+        { name: '단양', faction_index: 2 },
+        { name: '무창', faction_index: 2 },
+        { name: '교지', faction_index: 2 },
+        { name: '강하', faction_index: 2 },
+        { name: '장사', faction_index: 2 },
+        { name: '계양', faction_index: 2 },
+        { name: '영릉', faction_index: 2 },
+        { name: '양양', faction_index: 2 },
+    ],
+    '05': [
+        { name: '업', faction_index: 0 },
+        { name: '낙양', faction_index: 0 },
+        { name: '장안', faction_index: 0 },
+        { name: '서주', faction_index: 0 },
+        { name: '진양', faction_index: 0 },
+        { name: '여강', faction_index: 0 },
+        { name: '단양', faction_index: 1 },
+        { name: '무창', faction_index: 1 },
+        { name: '교지', faction_index: 1 },
+        { name: '양양', faction_index: 2 },
+        { name: '강하', faction_index: 2 },
+        { name: '장사', faction_index: 2 },
+        { name: '계양', faction_index: 2 },
+        { name: '영릉', faction_index: 2 },
+        { name: '한중', faction_index: 3 },
+        { name: '남중', faction_index: 3 },
+        { name: '광한', faction_index: 3 },
+        { name: '상용', faction_index: 3 },
+        { name: '파동', faction_index: 3 },
+    ],
+};
+
+export function countWorldFactions(scenario: ScenarioData): number {
+    return scenario.factions.length + (SCENARIO_EXTRA_FACTIONS[scenario.id]?.length ?? 0);
+}
+
+/** 주인공 무장 확정 — 고른 무장이 플레이 세력 소속이면 그대로, 아니면 군주로 폴백한다. */
+export function resolveProtagonistId(world: BuiltWorld, officerId: string | null | undefined): string {
+    const faction = world.factions.find(f => f.id === world.playerFactionId);
+    if (officerId && faction?.officers.includes(officerId)) return officerId;
+    return faction?.leaderId ?? faction?.officers[0] ?? '';
+}
 
 export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): BuiltWorld {
     const { year } = parseStartDate(scenario.start_date);
@@ -532,7 +719,10 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
     const cities: City[] = [];
     const usedCityIds = new Set<string>();
 
-    scenario.factions.forEach((sf, idx) => {
+    const allFactions = [...scenario.factions, ...(SCENARIO_EXTRA_FACTIONS[scenario.id] ?? [])];
+    const allSecondaryCities = [...(scenario.cities ?? []), ...(SCENARIO_EXTRA_CITIES[scenario.id] ?? [])];
+
+    allFactions.forEach((sf, idx) => {
         const factionId = `fac_${idx}`;
         const leaderId = sf.leader_id;
 
@@ -623,7 +813,7 @@ export function buildWorld(scenario: ScenarioData, playerFactionIndex: number): 
     });
 
     // 이차 도시 — 수도 외 도시를 정규화된 월드에 추가 [5][49]
-    for (const [cityIndex, cityData] of (scenario.cities ?? []).entries()) {
+    for (const [cityIndex, cityData] of allSecondaryCities.entries()) {
         const faction = factions[cityData.faction_index];
         if (!faction) continue; // 잘못된 세력 인덱스는 fail-safe로 건너뛴다.
         let cityId = `city_${cityData.name}`;

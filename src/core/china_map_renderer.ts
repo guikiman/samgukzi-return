@@ -163,6 +163,7 @@ export class ChinaMapRenderer {
     private borderLayer: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; width: number; height: number } | null = null;
     private territoryLayerDirty = true;
     private borderLayerDirty = true;
+    private borderLayerZoom = 0;
 
     private static readonly CELL_SIZE = 0.014; // 정규화 공간 격자 간격 (≈72×72 격자) [269]
 
@@ -174,9 +175,6 @@ export class ChinaMapRenderer {
 
     /** 육지 판정용 마스크 알파 (0=바다, 255=육지). getLandMask가 함께 채운다. */
     private landAlpha: Uint8Array | null = null;
-
-    /** 지도 위에 곱해 낡은 종이감을 만드는 텍스처. 미로딩이면 생략. */
-    private paperTexture: HTMLImageElement | null = null;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -192,10 +190,7 @@ export class ChinaMapRenderer {
             this.territoryLayerDirty = true;
             this.borderLayerDirty = true;
         });
-        img.src = 'assets/map-china-4096.webp';
-        const paper = new Image();
-        paper.addEventListener('load', () => { this.paperTexture = paper; });
-        paper.src = 'assets/map-parchment-1024.webp';
+        img.src = 'assets/map-china-ai-4096.webp';
     }
 
     /**
@@ -215,7 +210,7 @@ export class ChinaMapRenderer {
         const img = cx.createImageData(S, S);
         for (let i = 0; i < S * S; i++) {
             const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
-            const isSea = Math.abs(r - 198) < 26 && Math.abs(g - 214) < 26 && Math.abs(b - 214) < 26;
+            const isSea = Math.abs(r - 3) < 28 && Math.abs(g - 103) < 28 && Math.abs(b - 121) < 28;
             const o = i * 4;
             img.data[o] = 255;
             img.data[o + 1] = 255;
@@ -397,13 +392,10 @@ export class ChinaMapRenderer {
     /**
      * 정규화 좌표(0~1) → 화면 픽셀 사각형.
      *
-     * assets/map-china-4096.webp 는 4096×4096 정사각 이미지다. 이전 코드는
-     * 「대륙 비율 1 : 0.92」를 가정해 baseScale 을 Math.min(width, height/0.92)
-     * 로 잡았는데, 그 값은 height 를 초과해 아래쪽 44~69px 가 캔버스 밖으로
-     * 잘린다(1584×796 에서 51px). 남부 도시(계양 y=0.72, 교지 y=0.79)가
-     * 잘리는 쪽이라 실제로 보이지 않았다.
-     *
-     * 정사각 이미지를 캔버스에 contain 으로 넣는다: scale = min(w,h)·0.96.
+     * assets/map-china-4096.webp 는 4096×4096 정사각 이미지다. 화면을 가득
+     * 채우도록 가로·세로 중 큰 쪽에 맞춘다(cover). 와이드 화면에서는
+     * 위·아래 바깥(사막·외해)이 잘리고 중원 도시 클러스터가 화면을 채운다.
+     * 잘린 영역은 드래그 팬·휠 줌으로 볼 수 있다.
      */
     private mapImageRect(width: number, height: number): { x: number; y: number; width: number; height: number } {
         const baseScale = this.baseScale();
@@ -479,16 +471,10 @@ export class ChinaMapRenderer {
         ctx.fillRect(0, 0, width, height);
 
         if (this.mapImage) {
-            // 실제 지형 비트맵 [지도][1:1]
+            // 실제 지형 비트맵 [지도][1:1] — 양피지 multiply는 밝은 신지도에서
+            // 세로 줄무늬 아티팩트를 만들므로 사용하지 않는다.
             const rect = this.mapImageRect(width, height);
             ctx.drawImage(this.mapImage, rect.x, rect.y, rect.width, rect.height);
-            if (this.paperTexture) {
-                ctx.save();
-                ctx.globalCompositeOperation = 'multiply';
-                ctx.globalAlpha = 0.38;
-                ctx.drawImage(this.paperTexture, rect.x, rect.y, rect.width, rect.height);
-                ctx.restore();
-            }
             const tint = this.seasonTintOverlay(width, height);
             if (tint) {
                 ctx.fillStyle = tint;
@@ -602,11 +588,11 @@ export class ChinaMapRenderer {
 
     /**
      * 영토 오프스크린 레이어 생성/갱신.
-     * 해상도: 대략 셀당 3~4픽셀 (확대 시 보간으로 부드러워짐).
+     * 해상도: 메인 해상도의 40% (경계선 번짐 방지).
      * 색은 최종 알파(플레이어 0.34 / 일반 0.22)를 미리 곱해 담는다.
      */
     private getTerritoryLayer(width: number, height: number): { canvas: HTMLCanvasElement; width: number; height: number } | null {
-        const scale = 0.25; // 메인 해상도의 25%
+        const scale = 0.4; // 메인 해상도의 40%
         const lw = Math.max(1, Math.floor(width * scale));
         const lh = Math.max(1, Math.floor(height * scale));
 
@@ -690,6 +676,10 @@ export class ChinaMapRenderer {
             this.borderLayer = border;
             this.borderLayerDirty = true;
         }
+        if (this.borderLayerZoom !== this.zoom) {
+            this.borderLayerDirty = true;
+            this.borderLayerZoom = this.zoom;
+        }
         if (!this.territoryDirty && !this.borderLayerDirty) {
             // 재사용
         } else {
@@ -703,9 +693,8 @@ export class ChinaMapRenderer {
             const keyOfFaction = (cell: { ownerColor: string | null } | undefined): string => cell?.ownerColor ?? '';
             const keyOfCity = (cell: { cityId: string | null } | undefined): string => cell?.cityId ?? '';
 
-            // 세력 구분선: 서로 다른 세력 영토를 어두운 굵은 경계로 분리한다.
-            bctx.fillStyle = 'rgba(20, 16, 8, 0.62)';
-            const factionLineW = Math.max(1, cellW * 0.5);
+                    bctx.fillStyle = 'rgba(20, 16, 8, 0.38)';
+                    const factionLineW = Math.max(0.8, cellW * 0.32);
 
             for (let gy = 0; gy < rows; gy++) {
                 for (let gx = 0; gx < cols; gx++) {
@@ -725,13 +714,17 @@ export class ChinaMapRenderer {
                     }
 
                     // 도시 구분선: 같은 세력 안에서도 서로 다른 도시 영토를 얇은 금색선으로 분리한다.
-                    const cityLineW = Math.max(0.6, cellW * 0.22);
-                    bctx.fillStyle = 'rgba(238, 214, 145, 0.52)';
-                    if (gx + 1 < cols && keyOfFaction(right) === keyOfFaction(cell) && keyOfCity(right) !== keyOfCity(cell)) {
-                        bctx.fillRect(x + cellW - cityLineW / 2, y - cellH * 0.5, cityLineW, cellH * 2);
-                    }
-                    if (gy + 1 < rows && keyOfFaction(down) === keyOfFaction(cell) && keyOfCity(down) !== keyOfCity(cell)) {
-                        bctx.fillRect(x - cellW * 0.5, y + cellH - cityLineW / 2, cellW * 2, cityLineW);
+                    // 도시가 많으면 경계가 빽빽해져 확대 보간 시 빛번짐이 되므로,
+                    // 줌인했을 때만 그린다 (개요 화면에서는 세력선만으로 충분하다).
+                    if (this.zoom >= 1.25) {
+                        const cityLineW = Math.max(0.5, cellW * 0.12);
+                        bctx.fillStyle = 'rgba(238, 214, 145, 0.26)';
+                        if (gx + 1 < cols && keyOfFaction(right) === keyOfFaction(cell) && keyOfCity(right) !== keyOfCity(cell)) {
+                            bctx.fillRect(x + cellW - cityLineW / 2, y - cellH * 0.5, cityLineW, cellH);
+                        }
+                        if (gy + 1 < rows && keyOfFaction(down) === keyOfFaction(cell) && keyOfCity(down) !== keyOfCity(cell)) {
+                            bctx.fillRect(x - cellW * 0.5, y + cellH - cityLineW / 2, cellW, cityLineW);
+                        }
                     }
                 }
             }
@@ -940,7 +933,9 @@ export class ChinaMapRenderer {
     }
 
     private drawCity(ctx: CanvasRenderingContext2D, city: MapCityView, width: number, height: number): void {
-        if (city.isDiscovered === false) {
+        // 전체 도시 모드(기본)에서는 미발견 도시도 세력색·이름·주둔군과 함께 배치한다.
+        // 실루엣은 발견 도시 모드에서만 쓴다.
+        if (city.isDiscovered === false && this.discoveredOnly) {
             this.drawUndiscoveredCity(ctx, city, width, height);
             return;
         }
@@ -1042,10 +1037,8 @@ export class ChinaMapRenderer {
     private baseScale(): number {
         const width = this.canvas.width;
         const height = this.canvas.height;
-        // [수정] 정사각(4096×4096) 비트맵을 캔버스에 contain 으로 넣는다.
-        // 이전의 Math.min(width/1.0, height/0.92) 는 height 를 초과해
-        // 남부 44~69px 를 잘랐다. mapImageRect 도 이 값을 그대로 쓴다.
-        return Math.min(width, height) * 0.96 * this.zoom;
+        // 화면 가득: 큰 쪽에 맞춘다. mapImageRect·영토·히트테스트가 같은 값을 쓰므로 일관된다.
+        return Math.max(width, height) * 0.96 * this.zoom;
     }
 
     /** 테스트/디버그용: 현재 지도에 표시되는 세력 라벨 목록 */

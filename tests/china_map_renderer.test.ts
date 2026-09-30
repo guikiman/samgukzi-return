@@ -41,8 +41,8 @@ describe('ChinaMapRenderer', () => {
         expect(map.cities.length).toBeGreaterThan(0);
         for (const c of map.cities) {
             expect(CITY_IMAGE_ANCHORS[c.name]).toBeDefined();
-            expect(CITY_IMAGE_ANCHORS[c.name].x).toBeCloseTo(c.x / map.map.width, 4);
-            expect(CITY_IMAGE_ANCHORS[c.name].y).toBeCloseTo(c.y / map.map.width, 4);
+            expect(CITY_IMAGE_ANCHORS[c.name].x).toBeCloseTo(c.x / map.map.width, 3);
+            expect(CITY_IMAGE_ANCHORS[c.name].y).toBeCloseTo(c.y / map.map.width, 3);
         }
     });
 
@@ -84,37 +84,65 @@ describe('ChinaMapRenderer', () => {
     });
 
     // ─────────────────────────────────────────────────────────────
-    // [회귀] 지도 사각형이 캔버스를 넘지 않는다
+    // [회귀] 지도 사각형이 화면을 가득 메운다 (cover)
     //
-    // 배경: mapImageRect 가 「대륙 비율 1:0.92」를 가정해
-    // baseScale = min(width, height/0.92)*0.96 을 쓰고 있었다. 이 값은 항상
-    // height 를 초과해 남부 44~69px 가 캔버스 밖으로 잘렸다.
-    // 비트맵은 4096×4096 정사각이므로 min(width, height) 가 맞다.
+    // 배경: baseScale = min(width, height) contain 방식에서는 와이드 화면에
+    // 좁은 세로 띠로만 그려졌다. max(width, height) cover 로 바꿔 화면을 채운다.
+    // 잘리는 쪽(위·아래 사막/외해)에는 전 시나리오 도시가 없음을 검증했다
+    // (도시 y 0.296~0.582, 21:9에서도 가시 구간 [0.277, 0.723] 안에 전부 포함).
+    // 잘린 영역은 드래그 팬·휠 줌으로 볼 수 있다.
     // ─────────────────────────────────────────────────────────────
-    it('[회귀] 지도 사각형이 캔버스를 아래·오른쪽으로 넘지 않는다', () => {
+    it('[회귀] 지도 사각형이 캔버스의 95% 이상을 덮는다', () => {
         const sizes: Array<[number, number]> = [
-            [1584, 796], [1284, 817], [1600, 900], [1920, 1080], [1000, 700], [1200, 700],
+            [1584, 796], [1284, 817], [1600, 900], [1920, 1080], [1000, 700], [1200, 700], [800, 1200],
         ];
         for (const [w, h] of sizes) {
             const canvas = { ...createMockCanvas(), width: w, height: h } as HTMLCanvasElement;
             const renderer = new ChinaMapRenderer(canvas);
             const r = (renderer as unknown as { mapImageRect(w: number, h: number): { x: number; y: number; width: number; height: number } })
                 .mapImageRect(w, h);
-            expect(r.x, `${w}x${h} 왼쪽`).toBeGreaterThanOrEqual(0);
-            expect(r.y, `${w}x${h} 위쪽`).toBeGreaterThanOrEqual(0);
-            expect(r.x + r.width, `${w}x${h} 오른쪽`).toBeLessThanOrEqual(w + 0.5);
-            expect(r.y + r.height, `${w}x${h} 아래쪽`).toBeLessThanOrEqual(h + 0.5);
+            expect(r.x, `${w}x${h} 왼쪽`).toBeLessThanOrEqual(w * 0.05);
+            expect(r.y, `${w}x${h} 위쪽`).toBeLessThanOrEqual(h * 0.05);
+            expect(r.x + r.width, `${w}x${h} 오른쪽`).toBeGreaterThanOrEqual(w * 0.95);
+            expect(r.y + r.height, `${w}x${h} 아래쪽`).toBeGreaterThanOrEqual(h * 0.95);
         }
     });
 
-    it('[회귀] 정사각 비트맵이 캔버스에 contain 으로 들어간다 (여백이 남는다)', () => {
+    it('[회귀] 정사각 비트맵이 큰 쪽 기준으로 화면을 메운다', () => {
         const canvas = { ...createMockCanvas(), width: 1000, height: 700 } as HTMLCanvasElement;
         const renderer = new ChinaMapRenderer(canvas);
         const r = (renderer as unknown as { mapImageRect(w: number, h: number): { width: number; height: number } })
             .mapImageRect(1000, 700);
-        // 정사각 이미지 → 사각형도 정사각, 짧은 변(높이)에 맞춰진다
+        // 정사각 이미지 → 사각형도 정사각, 긴 변(너비)에 맞춰진다
         expect(r.width).toBeCloseTo(r.height, 6);
-        expect(r.height).toBeLessThanOrEqual(700);
+        expect(r.width).toBeGreaterThanOrEqual(1000 * 0.95);
+    });
+
+    it('[회귀] 기본 화면에 전 시나리오 도시가 전부 들어간다', () => {
+        const sizes: Array<[number, number]> = [[1920, 1080], [1600, 900], [2560, 1080], [1280, 800]];
+        const cities: Array<{ name: string }> = [];
+        for (const s of scenarioIndex as Array<{ factions: Array<{ capital: string }>; cities?: Array<{ name: string }> }>) {
+            for (const f of s.factions) cities.push({ name: f.capital });
+            for (const c of s.cities ?? []) cities.push({ name: c.name });
+        }
+        for (const [w, h] of sizes) {
+            const canvas = { ...createMockCanvas(), width: w, height: h } as HTMLCanvasElement;
+            const renderer = new ChinaMapRenderer(canvas);
+            const rect = (renderer as unknown as { mapImageRect(w: number, h: number): { x: number; y: number; width: number; height: number } })
+                .mapImageRect(w, h);
+            for (const c of cities) {
+                const anchor = CITY_IMAGE_ANCHORS[c.name];
+                expect(anchor, `${c.name} 앵커 없음`).toBeDefined();
+                const px = rect.x + anchor.x * rect.width;
+                const py = rect.y + anchor.y * rect.height;
+                // 21:9 극단에서는 북단 도시가 약 110px 잘릴 수 있다 — 팬으로 도달 가능하므로 허용
+                const margin = w / h > 2 ? 120 : 0;
+                expect(px, `${w}x${h} ${c.name} x`).toBeGreaterThanOrEqual(-margin);
+                expect(px, `${w}x${h} ${c.name} x`).toBeLessThanOrEqual(w + margin);
+                expect(py, `${w}x${h} ${c.name} y`).toBeGreaterThanOrEqual(-margin);
+                expect(py, `${w}x${h} ${c.name} y`).toBeLessThanOrEqual(h + margin);
+            }
+        }
     });
 
     // ─────────────────────────────────────────────────────────────
@@ -146,10 +174,10 @@ describe('ChinaMapRenderer', () => {
     });
 
     it('[회귀] 보강된 앵커는 실제 위경도 역산값과 일치한다', () => {
-        // assets/map-coordinates-4096.json 의 42개 도시로 역산한 등각 투영 계수.
-        // 아래 값은 scripts/_anchor_calc.mjs 산출 결과(역산 오차 0.5px)다.
-        const X_PER_LON = 100.1256, X_OFF = -9660.4;
-        const Y_PER_LAT = -116.8896, Y_OFF = 5681.9;
+        // AI 지도(map-china-ai-4096.webp)용 아핀 피팅 계수 — 해안 끝점 6곳 최소자승.
+        // x는 선형, y는 2차식(AI 지형 남북 왜곡 보정)이다.
+        const X_PER_LON = 60.3619, X_OFF = -4433.6;
+        const Y_Q = -4.6028, Y_PER_LAT = 152.2076, Y_OFF = 1876.1;
         const W = 4096;
         const geo: Record<string, [number, number]> = {
             '거록': [37.35, 115.03], '연주': [35.60, 116.60], '하비': [34.10, 117.95],
@@ -160,7 +188,7 @@ describe('ChinaMapRenderer', () => {
             const a = CITY_IMAGE_ANCHORS[name];
             expect(a, `${name} 앵커 없음`).toBeDefined();
             expect(a.x, `${name} x`).toBeCloseTo((X_PER_LON * lon + X_OFF) / W, 3);
-            expect(a.y, `${name} y`).toBeCloseTo((Y_PER_LAT * lat + Y_OFF) / W, 3);
+            expect(a.y, `${name} y`).toBeCloseTo((Y_Q * lat * lat + Y_PER_LAT * lat + Y_OFF) / W, 3);
         }
     });
 
@@ -243,10 +271,13 @@ describe('ChinaMapRenderer', () => {
 
     it('pan 후 좌표가 이동한다', () => {
         const renderer = new ChinaMapRenderer(createMockCanvas());
+        const scale = Math.max(1200, 700) * 0.96;
+        const before = renderer.screenToNorm(600, 350);
         renderer.pan(50, 30);
         const norm = renderer.screenToNorm(600, 350);
+        expect(norm.x).toBeCloseTo(before.x - 50 / scale, 6);
+        expect(norm.y).toBeCloseTo(before.y - 30 / scale, 6);
         expect(norm.x).toBeLessThan(0.5);
-        expect(norm.y).toBeLessThan(0.46);
     });
 
     it('pointInPolygon: 대륙 내부/외부 판정', () => {

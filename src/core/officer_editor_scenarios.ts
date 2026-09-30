@@ -13,6 +13,7 @@
  */
 
 import type { ScenarioData } from './scenario_system.js';
+import { countWorldFactions } from './scenario_system.js';
 
 /** 무장편집에서 다루는 최소 정보. 기존/신규를 같은 형태로 다룬다. */
 export interface EditableOfficer {
@@ -91,7 +92,7 @@ export function evaluateScenarios(
             scenario,
             startYear,
             startMonth: Number(month) || 1,
-            factionCount: scenario.factions.length,
+            factionCount: countWorldFactions(scenario),
             playability: evaluatePlayability(officer, startYear),
         };
     });
