@@ -636,6 +636,40 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     max-height: 52vh;
 }
 .faction-list { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.officer-list {
+    display: grid;
+    gap: 12px;
+    overflow-y: auto;
+    padding: 4px 6px;
+    max-height: 52vh;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.officer-card {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    text-align: left;
+    padding: 10px 12px;
+    background: rgba(18, 20, 38, 0.6);
+    border: 1px solid var(--gold-dim);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform .2s, border-color .25s, box-shadow .25s;
+}
+.officer-card:hover {
+    border-color: var(--gold);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 18px rgba(212, 175, 55, 0.12);
+}
+.officer-portrait { width: 64px; height: 64px; flex-shrink: 0; }
+.officer-portrait svg { display: block; width: 100%; height: 100%; border-radius: 4px; }
+.officer-info { min-width: 0; }
+.officer-card-name { font-size: 16px; letter-spacing: 3px; color: var(--gold-bright); }
+.officer-card-name .officer-lord-mark { font-size: 10px; letter-spacing: 1px; color: var(--gold); border: 1px solid var(--gold-dim); border-radius: 3px; padding: 1px 5px; margin-left: 6px; }
+.officer-card-stats { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.officer-card-trait { font-size: 10px; color: var(--text-faint); margin-top: 2px; }
 
 /* [결함 수정] 시나리오 목록의 로딩/오류 상태.
    openScenarioScreen 이 화면을 먼저 띄우고 데이터를 나중에 채우도록 바뀌어
@@ -782,6 +816,21 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     transition: color .2s, border-color .2s;
 }
 .cdp-close:hover { color: var(--gold-bright); border-color: var(--gold-dim); }
+.cdp-summary { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.cdp-chip {
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.cdp-chip b { color: var(--text); font-weight: 600; margin-right: 2px; }
+.cdp-chip-accent { border-color: var(--gold-dim); color: var(--gold-bright); background: rgba(212, 175, 55, 0.08); }
+.cdp-chip-accent b { color: var(--gold-bright); }
+.cdp-count { font-size: 10px; color: var(--text-faint); letter-spacing: 1px; }
 .cdp-section { margin-top: 12px; }
 .city-scene-section { padding: 8px; border: 1px solid rgba(212,175,55,.22); border-radius: 6px; background: rgba(10, 20, 14, .35); }
 .city-scene-canvas { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; border: 1px solid rgba(220,210,170,.18); border-radius: 4px; background: #26382c; }
@@ -971,12 +1020,78 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     max-height: 100vh;
     border: 0;
     border-radius: 0;
-    padding: 24px clamp(18px, 5vw, 80px) 40px;
+    padding: 16px clamp(18px, 5vw, 80px) 24px;
     background: rgba(7, 9, 18, 0.985);
 }
 #city-detail-panel.city-entry-mode .city-scene-canvas { max-width: 960px; margin: 0 auto; }
 #city-detail-panel.city-entry-mode .cdp-section { max-width: 960px; margin-left: auto; margin-right: auto; }
-#city-detail-panel.city-entry-mode .cdp-header { max-width: 960px; margin-left: auto; margin-right: auto; }
+#city-detail-panel.city-entry-mode .cdp-header { max-width: 1100px; margin-left: auto; margin-right: auto; }
+#city-detail-panel.city-entry-mode .cdp-summary { max-width: 1100px; margin-left: auto; margin-right: auto; }
+
+/* 진입 화면 한 화면 구성 — 데스크톱 와이드에서 2열 그리드로 스크롤 없이 배치 */
+/* 대상 목록(출진·등용·습격)은 내부 스크롤로 묶어 패널 넘침을 막는다 */
+@media (min-width: 1100px) {
+    #city-detail-panel.city-entry-mode .cdp-grid-main,
+    #city-detail-panel.city-entry-mode .cdp-grid-sub {
+        display: grid;
+        gap: 0 18px;
+        max-width: 1100px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    #city-detail-panel.city-entry-mode .cdp-grid-main { grid-template-columns: 0.7fr 1.3fr; }
+    #city-detail-panel.city-entry-mode .cdp-grid-sub { grid-template-columns: 1.25fr 1fr; }
+    #city-detail-panel.city-entry-mode .cdp-grid-main .cdp-section,
+    #city-detail-panel.city-entry-mode .cdp-grid-sub .cdp-section { margin-top: 8px; }
+    #city-detail-panel.city-entry-mode .cdp-grid-main .cdp-section,
+    #city-detail-panel.city-entry-mode .cdp-grid-sub .cdp-section,
+    #city-detail-panel.city-entry-mode #cdp-captive-history-section {
+        max-width: none;
+        margin-left: 0;
+        margin-right: 0;
+    }
+    #city-detail-panel.city-entry-mode #cdp-captive-history-section {
+        max-width: 1100px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    #city-detail-panel.city-entry-mode .cdp-officers { grid-template-columns: 1fr 1fr; gap: 4px; }
+    #city-detail-panel.city-entry-mode .cdp-officer-row > div:first-child { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+    #city-detail-panel.city-entry-mode .cdp-officer-stats { margin-top: 0; white-space: nowrap; }
+    #city-detail-panel.city-entry-mode .cdp-expedition-targets,
+    #city-detail-panel.city-entry-mode .cdp-recruit-targets,
+    #city-detail-panel.city-entry-mode #cdp-raid-targets {
+        max-height: 168px;
+        overflow-y: auto;
+    }
+    #city-detail-panel.city-entry-mode .cdp-officer-row { padding: 4px 8px; }
+    #city-detail-panel.city-entry-mode #cdp-facilities { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+    #city-detail-panel.city-entry-mode .cdp-facility { padding: 6px; gap: 4px; }
+    #city-detail-panel.city-entry-mode .cdp-facility-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+    #city-detail-panel.city-entry-mode .cdp-facility-level { white-space: nowrap; font-size: 10px; }
+    #city-detail-panel.city-entry-mode .cdp-stats { gap: 5px; }
+    #city-detail-panel.city-entry-mode .cdp-stat-row { font-size: 11px; }
+    #city-detail-panel.city-entry-mode .cdp-section-title { margin-bottom: 6px; }
+}
+
+/* 명령 탭(등용/출진/습격) — 모든 너비에서 동작 */
+.cdp-side-tabs { display: flex; gap: 6px; margin: 8px 0 0; }
+.cdp-side-tab {
+    flex: 1;
+    padding: 6px 4px;
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    cursor: pointer;
+}
+.cdp-side-tab.is-active {
+    color: var(--gold-bright);
+    border-color: var(--gold-dim);
+    background: rgba(212, 175, 55, 0.10);
+}
 
 /* ---------- 세이브 슬롯 패널 [17][212] ---------- */
 #save-slots-panel {
@@ -1101,6 +1216,65 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     0%, 100% { outline-offset: 3px; box-shadow: 0 0 12px rgba(212, 175, 55, 0.45); }
     50% { outline-offset: 6px; box-shadow: 0 0 22px rgba(212, 175, 55, 0.7); }
 }
+
+/* ---------- 턴 실행 트레이스 패널 [디버그] ---------- */
+#trace-panel {
+    position: absolute;
+    top: 90px;
+    right: 16px;
+    width: 520px;
+    max-width: calc(100vw - 32px);
+    background: var(--panel-bg, rgba(20, 16, 12, 0.96));
+    border: 1px solid var(--gold);
+    border-radius: 6px;
+    padding: 14px;
+    z-index: 400;
+}
+.trace-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 11px;
+    color: var(--text-muted, #9a9484);
+}
+.trace-toggle { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.trace-tree {
+    max-height: min(64dvh, 560px);
+    overflow-y: auto;
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.65;
+}
+.trace-row {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    padding: 1px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.trace-num {
+    color: #d8b45c;
+    min-width: 42px;
+    text-align: right;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+.trace-label { color: #e8dcc8; }
+.trace-detail { color: #8fa88f; }
+.trace-time { color: #6b6a72; margin-left: auto; flex-shrink: 0; }
+.trace-row[data-cat="ai"] .trace-label,
+.trace-row[data-cat="faction"] .trace-label { color: #8ab4f8; }
+.trace-row[data-cat="command"] .trace-label { color: #f0b37e; }
+.trace-row[data-cat="economy"] .trace-label { color: #9fd6a0; }
+.trace-row[data-cat="diplomacy"] .trace-label { color: #c9a0dc; }
+.trace-row[data-cat="faction-action"] .trace-label,
+.trace-row[data-cat="diplomacy-action"] .trace-label,
+.trace-row[data-cat="social-action"] .trace-label,
+.trace-row[data-cat="roaming-action"] .trace-label,
+.trace-row[data-cat="visit-action"] .trace-label { color: #b8b0a0; }
+.trace-row[data-status="error"] .trace-label { color: #e06a6a; }
 
 /* ---------- 접근성 설정 패널 [461-480] ---------- */
 #a11y-panel {
@@ -1339,7 +1513,7 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 .cdp-officer-clickable:hover { border-color: var(--gold-dim, #d4af37); background: rgba(212, 175, 55, 0.05); }
 
 /* ---------- 복수 미니게임 모달 [32][33] ---------- */
-#vengeance-modal { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; background: rgba(10, 8, 6, 0.78); backdrop-filter: blur(3px); }
+#vengeance-modal { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center; background: rgba(10, 8, 6, 0.78); backdrop-filter: blur(3px); }
 .vm-frame { width: min(520px, 92vw); max-height: 88vh; overflow-y: auto; background: linear-gradient(160deg, #1c1710 0%, #14100b 100%); border: 1px solid var(--gold-dim, #d4af37); border-radius: 10px; padding: 14px 16px; box-shadow: 0 12px 48px rgba(0,0,0,.6); }
 .vm-header { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
 .vm-title { font-size: 16px; font-weight: bold; color: var(--gold, #d4af37); letter-spacing: 2px; }
@@ -1383,6 +1557,37 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
    ============================================================ */
 #roaming-modal { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); backdrop-filter: blur(2px); }
 .city-scene-stage { position: relative; overflow: hidden; border: 1px solid rgba(212,175,55,.28); border-radius: 7px; background: #26382c; }
+.city-command-screen { display: flex; gap: 10px; align-items: stretch; }
+.city-command-screen .city-scene-stage { flex: 1; min-width: 0; }
+.city-commander { width: 118px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px; border: 1px solid rgba(212,175,55,.25); border-radius: 6px; background: rgba(212,175,55,.05); }
+.city-commander-portrait svg { display: block; width: 88px; height: 88px; border-radius: 6px; border: 1px solid rgba(212,175,55,.35); }
+.city-commander-name { font-size: 13px; letter-spacing: 2px; color: var(--gold-bright); }
+.city-commander-stats { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+.city-commander-empty { font-size: 11px; color: var(--text-faint); margin: auto 0; }
+.city-scene-season { position: absolute; inset: 0; pointer-events: none; }
+.city-scene-season[data-season="spring"] { background: linear-gradient(180deg, rgba(255,200,220,.10), rgba(120,180,90,.10)); }
+.city-scene-season[data-season="summer"] { background: linear-gradient(180deg, rgba(255,240,180,.12), rgba(60,140,60,.08)); }
+.city-scene-season[data-season="autumn"] { background: linear-gradient(180deg, rgba(255,170,80,.12), rgba(140,90,40,.12)); }
+.city-scene-season[data-season="winter"] { background: linear-gradient(180deg, rgba(180,210,255,.14), rgba(120,140,180,.10)); }
+.city-scene-badges { position: absolute; inset: 0; pointer-events: none; }
+.city-badge {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--gold-dim);
+    background: rgba(10, 12, 26, 0.82);
+    color: var(--gold-bright);
+    cursor: pointer;
+    pointer-events: auto;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 0;
+    transition: transform .15s, box-shadow .15s;
+}
+.city-badge:hover { transform: translate(-50%, -50%) scale(1.12); box-shadow: 0 0 12px rgba(212,175,55,.5); }
+.city-badge-label { font-size: 13px; line-height: 1; }
+.city-badge-level { font-size: 8px; line-height: 1; color: var(--text-muted); }
+.city-hint-bar { margin-top: 6px; min-height: 18px; font-size: 11px; letter-spacing: .5px; color: var(--gold-bright); }
 .city-scene-canvas { display: block; width: 100%; height: auto; }
 .city-scene-particles { position: absolute; inset: 0; pointer-events: none; }
 .city-scene-particles i { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: rgba(255,238,170,.8); box-shadow: 0 0 8px rgba(255,220,120,.8); animation: city-particle 5.5s linear infinite; }
@@ -1767,6 +1972,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, [tabindex]:focu
    문서가 스크롤 가능해지고, 온보딩 스포트라이트의 scrollIntoView 가 본문을 밀어
    상단바(게임 시작 · 다음 月)가 화면 위로 사라진다. */
 .auth-panel-container {
+    display: none;
     position: fixed;
     left: 16px;
     bottom: 16px;

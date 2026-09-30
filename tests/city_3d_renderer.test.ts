@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { City3DRenderer } from '../src/core/city_3d_renderer';
+import { City3DRenderer, dayNightPhase, generateDecorations, CITY_DAY_NIGHT_PERIOD_MS } from '../src/core/city_3d_renderer';
 import { buildWorld } from '../src/core/scenario_system.js';
 import scenarioIndex from '../src/data/scenarios/index.json';
 
@@ -57,6 +57,20 @@ describe('City3DRenderer', () => {
         expect(screen.sy).toBe(48);  // (2+1)*32/2
     });
 
+    it('should place overlay badges at clamped percentages', () => {
+        // worldToScreen(2, 1, 42, 21) = (21, 31.5); origin (240, 148), buffer 480x240
+        const pos = renderer.buildingBadgePercent(2, 1, 42, 21, 240, 148, 480, 240);
+        expect(pos.left).toBeCloseTo((240 + 21) / 480 * 100, 6);
+        expect(pos.top).toBeCloseTo((148 + 31.5) / 240 * 100, 6);
+        // 화면 밖 건물은 4~96% 로 클램프된다
+        const edge = renderer.buildingBadgePercent(100, -100, 42, 21, 240, 148, 480, 240);
+        expect(edge.left).toBe(96);
+        const bottom = renderer.buildingBadgePercent(100, 100, 42, 21, 240, 148, 480, 240);
+        expect(bottom.top).toBe(96);
+        const neg = renderer.buildingBadgePercent(-100, 100, 42, 21, 240, 148, 480, 240);
+        expect(neg.left).toBe(4);
+    });
+
     it('should have buildings with labels', () => {
         const buildings = renderer.generateCityLayout('city_1', 5, 'SUMMER');
         expect(buildings.every(b => b.label.length > 0)).toBe(true);
@@ -66,6 +80,38 @@ describe('City3DRenderer', () => {
         const spring = renderer.generateCityLayout('city_1', 5, 'SPRING');
         const winter = renderer.generateCityLayout('city_1', 5, 'WINTER');
         expect(spring[0].color).not.toBe(winter[0].color);
+    });
+
+    it('computes day-night phases across one cycle', () => {
+        const period = CITY_DAY_NIGHT_PERIOD_MS;
+        expect(period).toBe(180000);
+        const dawn = dayNightPhase(0, period);
+        expect(dawn.t).toBe(0);
+        expect(dawn.nightFactor).toBeGreaterThan(0.9);
+        expect(dawn.phaseName).toBe('dawn');
+        const noon = dayNightPhase(period / 2, period);
+        expect(noon.nightFactor).toBeLessThan(0.1);
+        expect(noon.phaseName).toBe('day');
+        const dusk = dayNightPhase(period * 0.65, period);
+        expect(dusk.phaseName).toBe('dusk');
+        const night = dayNightPhase(period * 0.9, period);
+        expect(night.nightFactor).toBeGreaterThan(0.9);
+        expect(night.phaseName).toBe('night');
+        for (const ms of [0, 1000, 45000, 90000, 135000, 179999]) {
+            const p = dayNightPhase(ms, period);
+            expect(p.nightFactor).toBeGreaterThanOrEqual(0);
+            expect(p.nightFactor).toBeLessThanOrEqual(1);
+        }
+    });
+
+    it('generates deterministic decorations per city', () => {
+        const a = generateDecorations('city_허창', 3);
+        const b = generateDecorations('city_허창', 3);
+        expect(a).toEqual(b);
+        expect(a.length).toBeGreaterThanOrEqual(8);
+        expect(a.some(d => d.kind === 'pond')).toBe(true);
+        const c = generateDecorations('city_건업', 3);
+        expect(c).not.toEqual(a);
     });
 
     it('generates a valid building layout for every scenario city', () => {

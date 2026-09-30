@@ -119,7 +119,7 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
             '03': { cities: 31, factions: 5 },
             '04': { cities: 30, factions: 4 },
             '05': { cities: 30, factions: 4 },
-            '06': { cities: 32, factions: 3 },
+            '06': { cities: 31, factions: 3 },
         };
         for (const scenario of scenarioIndex as ScenarioData[]) {
             if (scenario.id === '07') continue;
@@ -148,6 +148,21 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
         expect(resolveProtagonistId(world, 'no_such_officer')).toBe('liu_bei');
     });
 
+    it('전 시나리오의 도시는 서로 다른 위치에 놓인다 — 같은 자리에 겹치면 클릭이 뒤바뀐다', () => {
+        // [결함] 07 시나리오가 청두와 성도(=成都, 같은 도시)를 2차도시로 함께 두어
+        // 두 도시가 같은 앵커(0.4512, 0.5407 / 0.4512, 0.5411)에 그려졌다.
+        // 좌표가 0.6px 차이라 지도 클릭이 항상 배열 선두(청두)로 해석됐다.
+        for (const scenario of scenarioIndex as ScenarioData[]) {
+            const world = buildWorld(scenario, 0);
+            const keys = world.cities.map(c => `${(c.mapImageX ?? c.mapX).toFixed(3)},${(c.mapImageY ?? c.mapY).toFixed(3)}`);
+            const dupAnchor = keys.filter((key, i) => keys.indexOf(key) !== i);
+            expect(dupAnchor, `${scenario.id} 앵커 중복: ${dupAnchor.join(' / ')}`).toHaveLength(0);
+            const names = world.cities.map(c => c.name);
+            const dupName = names.filter((name, i) => names.indexOf(name) !== i);
+            expect(dupName, `${scenario.id} 도시 이름 중복: ${dupName.join(' / ')}`).toHaveLength(0);
+        }
+    });
+
     it('07 삼국鼎峙 시나리오는 새 도시·무장·초기 인맥을 제공한다', () => {
         const scenario = (scenarioIndex as ScenarioData[]).find(s => s.id === '07')!;
         const world = buildWorld(scenario, 1);
@@ -155,7 +170,7 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
         // [결함 수정] 이전엔 세력당 2도시였고 세력 간 접경이 0쌍이라
         // AI가 24개월 내내 공격하지 못했다. 이제 위(4) 촉(3) 오(3) 다 2도시 이상.
         expect(world.cities.map(c => c.name)).toEqual([
-            '낙양', '청두', '부경', '서주', '진류', '강릉', '성도', '동정', '진주',
+            '낙양', '청두', '부경', '서주', '진류', '강릉', '한중', '동정', '진주',
         ]);
         expect(world.factions.map(f => f.cities.length)).toEqual([3, 3, 3]);
         expect(CITY_MAP_COORDS['청두']).toEqual({ x: 0.30, y: 0.57 });

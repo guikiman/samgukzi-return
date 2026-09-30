@@ -23,7 +23,9 @@
             <button id="btn-slots" class="game-btn" disabled>💾 슬롯</button>
             <button id="btn-help" class="game-btn" aria-keyshortcuts="H" title="도움말 (H)">❓ 도움말</button>
             <button id="btn-settings" class="game-btn">⚙️ 설정</button>
+            <button id="btn-auth" class="game-btn" title="계정 로그인">👤 로그인</button>
             <button id="btn-graph" class="game-btn" aria-keyshortcuts="G" title="인맥 관계망 (G)" disabled>🕸️ 人脈</button>
+            <button id="btn-trace" class="game-btn" title="턴 실행 과정 보기" disabled>🌲 軌跡</button>
             <button id="btn-diplomacy" class="game-btn" aria-keyshortcuts="D" title="외교 (D)" disabled>🕊️ 외교</button>
             <button id="btn-report" class="game-btn" aria-keyshortcuts="R" title="월간 보고 (R)" disabled>📊 보고</button>
             <button id="btn-battle" class="game-btn" disabled>⚔️ 전투</button>
@@ -97,7 +99,7 @@
 </div>
 
 <!-- Provider-neutral 인증 진입점: 실제 AuthClient 어댑터가 window.mountAuthFlow로 주입됩니다. -->
-<div id="auth-panel-container" class="auth-panel-container" aria-live="off">
+<div id="auth-panel-container" class="auth-panel-container" aria-live="off" style="display:none;">
     <section id="auth-test-root" class="auth-panel-root" data-auth-state="loading" aria-busy="true" aria-labelledby="auth-test-title">
         <h2 id="auth-test-title" data-auth-title="true" tabindex="-1">세션 확인 중</h2>
         <p role="status" aria-live="polite">저장된 인증 세션을 확인하고 있습니다.</p>
@@ -355,61 +357,82 @@
         </div>
         <button id="cdp-close" class="cdp-close" title="닫기">✕</button>
     </div>
+    <div id="cdp-summary" class="cdp-summary" aria-label="도시 요약"></div>
+    <div class="cdp-grid-main">
+        <div class="cdp-col">
     <div class="cdp-section city-scene-section">
         <div class="cdp-section-title">都市 — 도시 진입</div>
-        <div class="city-scene-stage">
-            <canvas id="city-scene-canvas" class="city-scene-canvas" width="480" height="240" aria-label="선택한 도시의 건물 배치도"></canvas>
-            <div id="city-scene-particles" class="city-scene-particles" aria-hidden="true">
-                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <div class="city-command-screen">
+            <div id="city-commander" class="city-commander" aria-label="주둔 무장"></div>
+            <div class="city-scene-stage">
+                <canvas id="city-scene-canvas" class="city-scene-canvas" width="480" height="240" aria-label="선택한 도시의 건물 배치도"></canvas>
+                <div id="city-scene-season" class="city-scene-season" aria-hidden="true"></div>
+                <div id="city-scene-badges" class="city-scene-badges"></div>
+                <div id="city-scene-particles" class="city-scene-particles" aria-hidden="true">
+                    <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                </div>
             </div>
         </div>
         <div id="city-building-detail" class="city-building-detail">건물을 클릭하면 상세 정보가 표시됩니다.</div>
+        <div id="city-hint-bar" class="city-hint-bar" aria-label="다음 행동 안내"></div>
         <div id="city-scene-summary" class="city-scene-summary"></div>
     </div>
-    <div class="cdp-section">
-        <div class="cdp-section-title">內政 — 내정치</div>
-        <div id="cdp-stats" class="cdp-stats"></div>
+            <div class="cdp-section" id="cdp-facilities-section">
+                <div class="cdp-section-title">施設 — 도시 시설</div>
+                <div id="cdp-facilities" class="cdp-facilities"></div>
+            </div>
+        </div>
+        <div class="cdp-col">
+            <div class="cdp-section">
+                <div class="cdp-section-title">內政 — 내정치</div>
+                <div id="cdp-stats" class="cdp-stats"></div>
+            </div>
+            <div class="cdp-section" id="cdp-actions-section">
+                <div class="cdp-section-title">命令 — 내정 명령</div>
+                <div id="cdp-actions" class="cdp-actions">
+                    <button class="cdp-action-btn" data-action="recruit" title="골드를 소모해 병사를 모집합니다">징병</button>
+                    <button class="cdp-action-btn" data-action="train" title="골드를 소모해 병사 사기를 높입니다">훈련</button>
+                    <button class="cdp-action-btn" data-action="patrol" title="치안을 높여 반란 위험을 낮춥니다">순찰</button>
+                    <button class="cdp-action-btn" data-action="auto-domestic" title="담당 무장을 능력치에 따라 내정 임무에 자동 배정합니다">자동 내정 배정</button>
+                    <button class="cdp-action-btn" data-action="develop" title="상업·농업을 동시에 개발합니다">개발</button>
+                </div>
+                <div id="cdp-action-result" class="cdp-action-result"></div>
+            </div>
+        </div>
     </div>
-    <div class="cdp-section">
-        <div class="cdp-section-title">武將 — 무장 목록</div>
-        <div id="cdp-officers" class="cdp-officers"></div>
+    <div class="cdp-grid-sub">
+        <div class="cdp-section">
+            <div class="cdp-section-title">武將 — 무장 목록 <span id="cdp-officer-count" class="cdp-count"></span></div>
+            <div id="cdp-officers" class="cdp-officers"></div>
+        </div>
+        <div class="cdp-col">
+            <div class="cdp-side-tabs" id="cdp-side-tabs" style="display:none;" role="tablist" aria-label="도시 명령 전환">
+                <button type="button" class="cdp-side-tab" data-tab="recruit">登用</button>
+                <button type="button" class="cdp-side-tab" data-tab="expedition">出征</button>
+                <button type="button" class="cdp-side-tab" data-tab="raid">復起</button>
+            </div>
+            <div class="cdp-section" id="cdp-recruit-section" style="display:none;">
+                <div class="cdp-section-title">登用 — 登用</div>
+                <div id="cdp-recruit-info" class="cdp-expedition-info">재야 무장을 등용합니다</div>
+                <div id="cdp-recruit-targets" class="cdp-expedition-targets"></div>
+            </div>
+            <div class="cdp-section" id="cdp-expedition-section" style="display:none;">
+                <div class="cdp-section-title">出征 — 出陣</div>
+                <div id="cdp-expedition-info" class="cdp-expedition-info"></div>
+                <div id="cdp-expedition-targets" class="cdp-expedition-targets"></div>
+            </div>
+            <!-- [83] 방랑군 습격 섹션 — 플레이어 세력이 방랑군일 때 표시 -->
+            <div class="cdp-section" id="cdp-raid-section" style="display:none;">
+                <div class="cdp-section-title">復起 — 방랑군 습격</div>
+                <div id="cdp-raid-info" class="cdp-expedition-info"></div>
+                <div id="cdp-raid-targets" style="margin-top:6px"></div>
+                <button id="cdp-raid-btn" class="game-btn" style="width:100%;margin-top:6px">습격</button>
+            </div>
+        </div>
     </div>
     <div class="cdp-section" id="cdp-captive-history-section">
         <div class="cdp-section-title">史記 — 포로 처분 기록</div>
         <div id="cdp-captive-history" class="cdp-expedition-info">도시의 포로 처분 기록이 없습니다.</div>
-    </div>
-    <div class="cdp-section" id="cdp-facilities-section">
-        <div class="cdp-section-title">施設 — 도시 시설</div>
-        <div id="cdp-facilities" class="cdp-facilities"></div>
-    </div>
-    <div class="cdp-section" id="cdp-actions-section">
-        <div class="cdp-section-title">命令 — 내정 명령</div>
-        <div id="cdp-actions" class="cdp-actions">
-            <button class="cdp-action-btn" data-action="recruit" title="골드를 소모해 병사를 모집합니다">징병</button>
-            <button class="cdp-action-btn" data-action="train" title="골드를 소모해 병사 사기를 높입니다">훈련</button>
-            <button class="cdp-action-btn" data-action="patrol" title="치안을 높여 반란 위험을 낮춥니다">순찰</button>
-            <button class="cdp-action-btn" data-action="auto-domestic" title="담당 무장을 능력치에 따라 내정 임무에 자동 배정합니다">자동 내정 배정</button>
-            <button class="cdp-action-btn" data-action="develop" title="상업·농업을 동시에 개발합니다">개발</button>
-        </div>
-        <div id="cdp-action-result" class="cdp-action-result"></div>
-    </div>
-    <!-- [83] 방랑군 습격 섹션 — 플레이어 세력이 방랑군일 때 표시 -->
-    <div class="cdp-section" id="cdp-raid-section" style="display:none;">
-        <div class="cdp-section-title">復起 — 방랑군 습격</div>
-        <div id="cdp-raid-info" class="cdp-expedition-info"></div>
-        <div id="cdp-raid-targets" style="margin-top:6px"></div>
-        <button id="cdp-raid-btn" class="game-btn" style="width:100%;margin-top:6px">습격</button>
-    </div>
-
-    <div class="cdp-section" id="cdp-expedition-section" style="display:none;">
-        <div class="cdp-section-title">出征 — 出陣</div>
-        <div id="cdp-expedition-info" class="cdp-expedition-info"></div>
-        <div id="cdp-expedition-targets" class="cdp-expedition-targets"></div>
-    </div>
-    <div class="cdp-section" id="cdp-recruit-section" style="display:none;">
-        <div class="cdp-section-title">登用 — 登用</div>
-        <div id="cdp-recruit-info" class="cdp-expedition-info">재야 무장을 등용합니다</div>
-        <div id="cdp-recruit-targets" class="cdp-expedition-targets"></div>
     </div>
 </div>
 
@@ -520,6 +543,21 @@
         <button id="a11y-close" class="cdp-close" title="닫기">✕</button>
     </div>
     <div id="a11y-content"></div>
+</div>
+
+<!-- 턴 실행 트레이스 패널 [디버그] — 1턴 동안 AI 가 수행한 전체 과정 -->
+<div id="trace-panel" role="dialog" aria-label="턴 실행 과정" tabindex="-1" style="display:none;">
+    <div class="cdp-header">
+        <span class="cdp-city-name">軌跡 — 턴 실행 과정</span>
+        <button id="trace-close" class="cdp-close" title="닫기">✕</button>
+    </div>
+    <div class="trace-toolbar">
+        <span id="trace-summary" class="trace-summary">아직 실행된 턴이 없습니다</span>
+        <label class="trace-toggle">
+            <input type="checkbox" id="trace-deep" /> 하위 단계 펼치기
+        </label>
+    </div>
+    <div id="trace-tree" class="trace-tree" role="tree" aria-label="턴 실행 단계"></div>
 </div>
 
 <!-- 인맥 그래프 패널 [269][33] -->
@@ -660,6 +698,20 @@
         <div id="faction-list" class="faction-list"></div>
         <div class="flow-footer">
             <button id="btn-faction-back" class="title-btn small">← 시나리오 선택으로</button>
+        </div>
+    </div>
+</div>
+
+<!-- 주인공 무장 선택 오버레이 — 세력을 고른 뒤 그 세력의 무장으로 플레이할 인물을 고른다 -->
+<div id="officer-screen" class="flow-screen" style="display:none;">
+    <div class="flow-frame">
+        <div class="flow-header">
+            <h2 class="flow-title">무장 선택</h2>
+            <div class="flow-sub" id="officer-screen-sub">플레이할 무장을 고르십시오</div>
+        </div>
+        <div id="officer-list" class="officer-list"></div>
+        <div class="flow-footer">
+            <button id="btn-officer-back" class="title-btn small">← 세력 선택으로</button>
         </div>
     </div>
 </div>
