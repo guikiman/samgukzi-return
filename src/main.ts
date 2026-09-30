@@ -2389,7 +2389,6 @@ officerDetail.addEventListener('click', (e) => {
 document.getElementById('cdp-close')!.addEventListener('click', () => {
     stopCityAmbient();
     cityDetailPanel.classList.remove('city-entry-mode');
-    cityDetailPanel.classList.remove('city-bleed');
     cityDetailPanel.style.display = 'none';
     citySceneCanvas?.classList.remove('is-active');
     if (lastCityView) chinaMap.setView(lastCityView);
@@ -3001,29 +3000,12 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
         });
     }
 
+    // 진입 화면은 한 가지 구성뿐이다 (2026-09-30 개편): 16:9 배경 그림 위에
+    // 상단 바·우측 통제 열·하단 무장 스트립이 반투명으로 얹힌다. 모드 전환이
+    // 없으므로 돌아오기 버튼(🏛 도시 관리)도 필요 없다 — 닫기는 ✕ 하나로 충분하다.
     cityDetailPanel.classList.add('city-entry-mode');
-    // 진입 화면 전체를 배경 그림으로 덮는다 (2026-09-30, 사용자 선택).
-    // 지표·내정·명령 패널은 숨겨지고 16:9 무대만 화면을 꽉 채운다.
-    // 관리 패널로 돌아가는 버튼을 제공하지 않으면 게임을 못 하게 된다.
-    cityDetailPanel.classList.add('city-bleed');
-    cityDetailPanel.style.display = 'block';
-    ensureBleedToggle();
-}
-
-/** 진입 화면(전체 덮기)에서 관리 패널로 돌아가는 버튼 — 없으면 게임을 못 한다. */
-function ensureBleedToggle(): void {
-    if (document.querySelector('.city-bleed-toggle')) return;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'city-bleed-toggle';
-    btn.textContent = '🏛 도시 관리';
-    btn.addEventListener('click', () => {
-        cityDetailPanel.classList.remove('city-bleed');
-        stopCityAmbient();
-        const city = currentPanelCityId ? engine?.['store'].getCity(currentPanelCityId) : null;
-        if (city) renderCityScene(city);
-    });
-    cityDetailPanel.appendChild(btn);
+    // 인라인 display 를 지워 CSS(.city-entry-mode 의 grid) 가 레이아웃을 결정하게 한다.
+    cityDetailPanel.style.display = '';
 }
 
 /** 명령 탭(등용/출진/습격) — 보이는 섹션이 2개 이상일 때만 탭 바를 내민다. */

@@ -654,8 +654,21 @@ async function main() {
             + "artComplete:(function(){var i=document.getElementById('city-scene-art');return !!(i&&i.complete&&i.naturalWidth>0);})(),"
             + "artSrc:(function(){var i=document.getElementById('city-scene-art');return i?i.getAttribute('src'):null;})(),"
             + "bleedMode:document.getElementById('city-detail-panel').classList.contains('city-bleed'),"
-            + "bleedToggle:!!document.querySelector('.city-bleed-toggle'),"
-            + "stageBox:(function(){var r=document.getElementById('city-scene-stage').getBoundingClientRect();return {w:Math.round(r.width),h:Math.round(r.height),ratio:+(r.width/Math.max(1,r.height)).toFixed(3)};})(),"
+            // 모드 전환 버튼(🏛 도시 관리)이 더 이상 없는지 + 반투명 유리 패널이 실제로 보이는지.
+            + "backButton:!!document.querySelector('.city-bleed-toggle'),"
+            + "layoutPanes:(function(){function vis(e){if(!e)return false;var r=e.getBoundingClientRect();return r.width>40&&r.height>20;}return {"
+            + "side:vis(document.querySelector('#city-detail-panel .cdp-side-pane')),"
+            + "list:vis(document.querySelector('#city-detail-panel .cdp-list-pane')),"
+            + "head:vis(document.querySelector('#city-detail-panel .cdp-header')),"
+            + "foot:vis(document.querySelector('#city-detail-panel .cdp-stage-foot')),"
+            + "actions:document.querySelectorAll('#cdp-actions .cdp-action-btn').length,"
+            + "officers:document.querySelectorAll('#cdp-officers .cdp-officer-row').length,"
+            // 그림이 유리 패널(하단 무장 스트립·우측 통제 열)에 가려지지 않는지.
+            + "clear:(function(){var st=document.getElementById('city-scene-stage').getBoundingClientRect();"
+            + "var lp=document.querySelector('#city-detail-panel .cdp-list-pane'),sd=document.querySelector('#city-detail-panel .cdp-side-pane');"
+            + "if(!lp||!sd)return false;var lb=lp.getBoundingClientRect(),sd2=sd.getBoundingClientRect();"
+            + "return st.bottom<=lb.top+1&&st.right<=sd2.left+1;})()};})(),"
+            + "stageBox:(function(){var r=document.getElementById('city-scene-stage').getBoundingClientRect();return {w:Math.round(r.width),h:Math.round(r.height),ratio:+(r.width/Math.max(1,r.height)).toFixed(3),fits:r.top>=-1&&r.bottom<=window.innerHeight+1&&r.left>=-1&&r.right<=window.innerWidth+1};})(),"
             + "badges:Array.prototype.map.call(document.querySelectorAll('#city-scene-badges .city-badge'),function(b){return b.style.left+','+b.style.top;})"
             +"};})()");
 
@@ -973,15 +986,24 @@ async function main() {
         console.log('REGRESSION_CHECKS:', JSON.stringify(regressionChecks));
         const cityChecks = {
             sceneSize: dialogueProbe.citySceneWidth === 480 && dialogueProbe.citySceneHeight === 240,
-            // 진입 화면 전체 덮기 + 배경 그림이 실제로 로드됐는지.
-            // artReady 를 확인하지 않으면 그림이 404 나서 조용히 절차 렌더로
-            // 물러나도 테스트는 통과한다 — 실제로 그랬다.
-            bleed: dialogueProbe.bleedMode === true
-                && dialogueProbe.bleedToggle === true
+            // 진입 화면 단일 구성: 모드 전환 버튼이 없고, 배경 그림이 실제로 로드됐으며,
+            // 16:9 무대가 화면 안에 들어가며, 유리 패널(상단 바·우측 통제 열·하단 무장
+            // 스트립)이 그림 위에 겹쳐 보인다. artReady 를 확인하지 않으면 그림이 404
+            // 나서 조용히 절차 렌더로 물러나도 테스트는 통과한다 — 실제로 그랬다.
+            entryLayout: dialogueProbe.backButton === false
+                && dialogueProbe.bleedMode === false
                 && dialogueProbe.artReady === true
                 && dialogueProbe.artComplete === true
                 && /city-scene-base\.webp$/.test(dialogueProbe.artSrc ?? '')
                 && Math.abs(dialogueProbe.stageBox.ratio - 16 / 9) < 0.02
+                && dialogueProbe.stageBox.fits === true
+                && dialogueProbe.layoutPanes.head === true
+                && dialogueProbe.layoutPanes.side === true
+                && dialogueProbe.layoutPanes.list === true
+                && dialogueProbe.layoutPanes.foot === true
+                && dialogueProbe.layoutPanes.actions === 5
+                && dialogueProbe.layoutPanes.officers >= 1
+                && dialogueProbe.layoutPanes.clear === true
                 && dialogueProbe.badges.length >= 5,
             buildingChips: dialogueProbe.buildingChips >= 4,
             buildingDetail: dialogueProbe.buildingDetail.includes('· Lv.'),
@@ -1043,8 +1065,8 @@ async function main() {
             && dialogueProbe.buildingChips >= 4
             && dialogueProbe.buildingDetail.includes('· Lv.')
             && dialogueProbe.entryMode === true
-            // 진입 화면 전체 덮기와 배경 그림 로드를 실제로 판정한다.
-            && cityChecks.bleed === true
+            // 진입 화면 단일 구성과 배경 그림 로드를 실제로 판정한다.
+            && cityChecks.entryLayout === true
             // 대화창 개편 회귀 [신규 기능]
             && dialogueProbe.dlgPortraitSvg === true
             && dialogueProbe.dlgSpeakerText.length > 0

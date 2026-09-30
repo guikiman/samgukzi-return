@@ -355,15 +355,13 @@
             <span id="cdp-city-name" class="cdp-city-name">-</span>
             <span id="cdp-faction-badge" class="cdp-faction-badge">-</span>
         </div>
+        <div id="cdp-summary" class="cdp-summary" aria-label="도시 요약"></div>
         <button id="cdp-close" class="cdp-close" title="닫기">✕</button>
     </div>
-    <div id="cdp-summary" class="cdp-summary" aria-label="도시 요약"></div>
-    <div class="cdp-grid-main">
-        <div class="cdp-col">
-    <div class="cdp-section city-scene-section">
-        <div class="cdp-section-title">都市 — 도시 진입</div>
-        <div class="city-command-screen">
-            <div id="city-commander" class="city-commander" aria-label="주둔 무장"></div>
+
+    <!-- 배경 그림 무대 — 패널 전체를 덮는 16:9 무대. 통제 UI 는 그 위에 반투명으로 얹는다. -->
+    <div class="cdp-stage-pane">
+        <div class="cdp-section city-scene-section">
             <div class="city-scene-stage" id="city-scene-stage">
                 <img id="city-scene-art" class="city-scene-art" alt="" aria-hidden="true" decoding="async">
                 <canvas id="city-scene-canvas" class="city-scene-canvas" width="480" height="240" aria-label="선택한 도시의 건물 배치도"></canvas>
@@ -373,38 +371,37 @@
                     <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
                 </div>
             </div>
-        </div>
-        <div id="city-building-detail" class="city-building-detail">건물을 클릭하면 상세 정보가 표시됩니다.</div>
-        <div id="city-hint-bar" class="city-hint-bar" aria-label="다음 행동 안내"></div>
-        <div id="city-scene-summary" class="city-scene-summary"></div>
-    </div>
-            <div class="cdp-section" id="cdp-facilities-section">
-                <div class="cdp-section-title">施設 — 도시 시설</div>
-                <div id="cdp-facilities" class="cdp-facilities"></div>
-            </div>
-        </div>
-        <div class="cdp-col">
-            <div class="cdp-section">
-                <div class="cdp-section-title">內政 — 내정치</div>
-                <div id="cdp-stats" class="cdp-stats"></div>
-            </div>
-            <div class="cdp-section" id="cdp-actions-section">
-                <div class="cdp-section-title">命令 — 내정 명령</div>
-                <div id="cdp-actions" class="cdp-actions">
-                    <button class="cdp-action-btn" data-action="recruit" title="골드를 소모해 병사를 모집합니다">징병</button>
-                    <button class="cdp-action-btn" data-action="train" title="골드를 소모해 병사 사기를 높입니다">훈련</button>
-                    <button class="cdp-action-btn" data-action="patrol" title="치안을 높여 반란 위험을 낮춥니다">순찰</button>
-                    <button class="cdp-action-btn" data-action="auto-domestic" title="담당 무장을 능력치에 따라 내정 임무에 자동 배정합니다">자동 내정 배정</button>
-                    <button class="cdp-action-btn" data-action="develop" title="상업·농업을 동시에 개발합니다">개발</button>
+            <div class="cdp-stage-foot">
+                <div id="city-building-detail" class="city-building-detail">건물을 클릭하면 상세 정보가 표시됩니다.</div>
+                <div class="cdp-stage-foot-row">
+                    <div id="city-hint-bar" class="city-hint-bar" aria-label="다음 행동 안내"></div>
+                    <div id="city-scene-summary" class="city-scene-summary"></div>
                 </div>
-                <div id="cdp-action-result" class="cdp-action-result"></div>
             </div>
         </div>
     </div>
-    <div class="cdp-grid-sub">
+
+    <!-- 우측 통제 열 — 지표·내정·명령·시설·도시 명령 (반투명 유리 패널) -->
+    <aside class="cdp-side-pane" aria-label="도시 통제">
+        <div id="city-commander" class="city-commander" aria-label="주둔 무장"></div>
         <div class="cdp-section">
-            <div class="cdp-section-title">武將 — 무장 목록 <span id="cdp-officer-count" class="cdp-count"></span></div>
-            <div id="cdp-officers" class="cdp-officers"></div>
+            <div class="cdp-section-title">內政 — 내정치</div>
+            <div id="cdp-stats" class="cdp-stats"></div>
+        </div>
+        <div class="cdp-section" id="cdp-actions-section">
+            <div class="cdp-section-title">命令 — 내정 명령</div>
+            <div id="cdp-actions" class="cdp-actions">
+                <button class="cdp-action-btn" data-action="recruit" title="골드를 소모해 병사를 모집합니다">징병</button>
+                <button class="cdp-action-btn" data-action="train" title="골드를 소모해 병사 사기를 높입니다">훈련</button>
+                <button class="cdp-action-btn" data-action="patrol" title="치안을 높여 반란 위험을 낮춥니다">순찰</button>
+                <button class="cdp-action-btn" data-action="auto-domestic" title="담당 무장을 능력치에 따라 내정 임무에 자동 배정합니다">자동 내정 배정</button>
+                <button class="cdp-action-btn" data-action="develop" title="상업·농업을 동시에 개발합니다">개발</button>
+            </div>
+            <div id="cdp-action-result" class="cdp-action-result"></div>
+        </div>
+        <div class="cdp-section" id="cdp-facilities-section">
+            <div class="cdp-section-title">施設 — 도시 시설</div>
+            <div id="cdp-facilities" class="cdp-facilities"></div>
         </div>
         <div class="cdp-col">
             <div class="cdp-side-tabs" id="cdp-side-tabs" style="display:none;" role="tablist" aria-label="도시 명령 전환">
@@ -430,10 +427,18 @@
                 <button id="cdp-raid-btn" class="game-btn" style="width:100%;margin-top:6px">습격</button>
             </div>
         </div>
-    </div>
-    <div class="cdp-section" id="cdp-captive-history-section">
-        <div class="cdp-section-title">史記 — 포로 처분 기록</div>
-        <div id="cdp-captive-history" class="cdp-expedition-info">도시의 포로 처분 기록이 없습니다.</div>
+        <div class="cdp-section" id="cdp-captive-history-section">
+            <div class="cdp-section-title">史記 — 포로 처분 기록</div>
+            <div id="cdp-captive-history" class="cdp-expedition-info">도시의 포로 처분 기록이 없습니다.</div>
+        </div>
+    </aside>
+
+    <!-- 하단 무장 스트립 -->
+    <div class="cdp-list-pane">
+        <div class="cdp-section">
+            <div class="cdp-section-title">武將 — 무장 목록 <span id="cdp-officer-count" class="cdp-count"></span></div>
+            <div id="cdp-officers" class="cdp-officers"></div>
+        </div>
     </div>
 </div>
 
