@@ -9,11 +9,11 @@
  *   1. 이름 해석 — 알려진 런타임 무장은 데이터셋 무장으로 풀린다.
  *   2. 동명이인 — 임의로 고르지 않고 `ambiguous` 로 표시된다.
  *   3. degrade — 해석 실패/빈 이름/빈 성향/빈 도장이 예외 없이 degradation 한다.
- *   4. 시나리오 데이터 무결성 — 07_officers.json / relationships.json 불변.
+ *   4. 시나리오 데이터 무결성 — 07_officers.json / relationships.json 값 불변.
+ *      (변조 여부 자체는 tests/support/data_guard_setup.ts 가 스위트 전체에 건다.)
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { resolve as resolvePath } from 'node:path';
 import {
     resolveOfficerIdByName,
@@ -215,17 +215,13 @@ describe('scenario data is untouched', () => {
         expect(raw.scenarios['07'].length).toBe(8);
     });
 
-    it('leaves the JSON files unmodified relative to HEAD', () => {
-        const diff = execFileSync(
-            'git',
-            ['diff', '--stat', 'HEAD', '--', 'src/data/scenarios/07_officers.json', 'src/data/scenarios/relationships.json'],
-            { cwd: REPO_ROOT, encoding: 'utf8' },
-        );
-        expect(diff.trim()).toBe('');
-    });
-
-    it('reports no modification to any file under src/data/', () => {
-        const status = execFileSync('git', ['status', '--porcelain', '--', 'src/data/'], { cwd: REPO_ROOT, encoding: 'utf8' });
-        expect(status.trim()).toBe('');
+    // 이전의 "HEAD 기준 diff 가 비어야 한다" / "git status 가 비어야 한다" 두 검사는
+    // 제거했다. 둘 다 커밋되지 않은 데이터 편집을 실패로 취급했기 때문이다.
+    // 그 불변식은 tests/support/data_guard_setup.ts 의 globalSetup 으로 옮겼다 —
+    // 커밋 타이밍과 무관하고, 이 파일뿐 아니라 스위트 전체를 대상으로 한다.
+    it('전역 데이터 가드가 vitest.config 에 연결돼 있다', () => {
+        const config = readFileSync(resolvePath(REPO_ROOT, 'vitest.config.ts'), 'utf8');
+        expect(config).toContain('globalSetup');
+        expect(config).toContain('tests/support/data_guard_setup.ts');
     });
 });
