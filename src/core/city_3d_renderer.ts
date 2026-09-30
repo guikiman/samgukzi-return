@@ -41,6 +41,13 @@ const BUILDING_DEFS: Record<CityBuildingType, { label: string; baseWidth: number
     HOUSE: { label: '주택', baseWidth: 30, baseHeight: 25 },
 };
 
+/**
+ * 선언된 건물 타입 전수 목록.
+ * 배경 그림의 라벨 앵커처럼 "타입마다 하나씩 있어야 하는" 표를 검증할 때 쓴다 —
+ * 타입이 늘어도 앵커를 빠뜨리지 않게 하기 위한 기준 목록이다.
+ */
+export const CITY_BUILDING_TYPES = Object.keys(BUILDING_DEFS) as CityBuildingType[];
+
 const SEASON_COLORS: Record<Season, Record<string, string>> = {
     SPRING: { roof: '#8BAA6E', wall: '#D4C5A9', ground: '#7CB342' },
     SUMMER: { roof: '#5B8C4E', wall: '#C4B599', ground: '#558B2F' },

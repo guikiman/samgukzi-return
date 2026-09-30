@@ -11,6 +11,7 @@ import { HexMapCanvasRenderer, HexTile } from './core/hex_map_canvas_renderer.js
 import { ChinaMapRenderer, MapCityView } from './core/china_map_renderer.js';
 import { City3DRenderer, type CityBuilding, dayNightPhase, generateDecorations } from './core/city_3d_renderer.js';
 import { createAmbientTicker, shouldRedrawAmbient, CITY_AMBIENT_INTERVAL_MS, type AmbientTicker } from './core/city_ambient_loop.js';
+import { CITY_SCENE_ART_PATH, anchorFor } from './core/city_scene_art.js';
 import { BattleFrontend, DeployableUnit, BattlePhase } from './core/battle_frontend.js';
 import { TitleScreen } from './core/title_screen.js';
 import { loadScenarios, getCachedScenarios, buildWorld, getKnownOfficerName, resolveProtagonistId } from './core/scenario_system.js';
@@ -1126,6 +1127,28 @@ const cdpStats = document.getElementById('cdp-stats')!;
 const cdpOfficers = document.getElementById('cdp-officers')!;
 const cdpFacilities = document.getElementById('cdp-facilities')!;
 const citySceneCanvas = document.getElementById('city-scene-canvas') as HTMLCanvasElement | null;
+const citySceneArt = document.getElementById('city-scene-art') as HTMLImageElement | null;
+const citySceneStage = document.getElementById('city-scene-stage');
+
+/**
+ * 배경 그림 로딩 상태.
+ * [실패해도 안전] 실패하면 art-ready 를 켜지 않는다. 그랬더니 절차 렌더가 그대로
+ * 남아 도시 화면은 항상 나타난다 — 그림이 없어도 도시가 비면 안 된다.
+ */
+let citySceneArtReady = false;
+if (citySceneArt) {
+    citySceneArt.addEventListener('load', () => {
+        citySceneArtReady = true;
+        citySceneStage?.classList.add('art-ready');
+        const city = citySceneCityId ? engine?.['store'].getCity(citySceneCityId) : null;
+        if (city) drawCityCanvas(city);
+    });
+    citySceneArt.addEventListener('error', () => {
+        citySceneArtReady = false;
+        citySceneStage?.classList.remove('art-ready');
+    });
+    citySceneArt.src = CITY_SCENE_ART_PATH;
+}
 const citySceneSummary = document.getElementById('city-scene-summary');
 const citySceneDetail = document.getElementById('city-building-detail');
 const citySceneRenderer = new City3DRenderer();
@@ -2366,6 +2389,7 @@ officerDetail.addEventListener('click', (e) => {
 document.getElementById('cdp-close')!.addEventListener('click', () => {
     stopCityAmbient();
     cityDetailPanel.classList.remove('city-entry-mode');
+    cityDetailPanel.classList.remove('city-bleed');
     cityDetailPanel.style.display = 'none';
     citySceneCanvas?.classList.remove('is-active');
     if (lastCityView) chinaMap.setView(lastCityView);
@@ -2552,6 +2576,21 @@ function drawCityCanvas(city: import('./core/types.js').City): void {
     citySceneCanvas.height = height;
     const night = currentNightFactor();
     ctx.clearRect(0, 0, width, height);
+
+    // 그림이 준비되면 캔버스는 **밤 안개만 얹는 층**이 된다. 그림은 <img> 가 밑에
+    // 깔려 있고, 여기서 불투명 배경을 칠하면 그림이 가려진다.
+    if (citySceneArtReady) {
+        const seasonNow = engine?.['store'].getGlobalState().season ?? 'SPRING';
+        const devNow = Math.max(1, Math.min(5, city.development / 20));
+        const statesNow = engine?.['store'].getGlobalState().cityBuildingStates?.[city.id] ?? {};
+        // 배치는 그림이 있어도 항상 다시 만들어야 한다 — 재사용하면 저장된
+        // 투자·레벨 상태가 반영되지 않아 투자 직후 화면이 안 바뀐다.
+        citySceneBuildings = citySceneRenderer.generateCityLayout(city.id, devNow, seasonNow, statesNow);
+        citySceneCityId = city.id;
+        citySceneRenderer.applyNightTint(ctx, width, height, night);
+        return;
+    }
+
     ctx.fillStyle = night > 0.5 ? '#141c2e' : '#26382c';
     ctx.fillRect(0, 0, width, height);
 
@@ -2652,9 +2691,11 @@ function renderCitySceneBadges(buildings: CityBuilding[], width: number, height:
         picked.push(building);
     }
     const badges: string[] = picked.map((building, i) => {
+        // 그림이 있으면 그림 위 좌표를 쓴다. 없으면 종전 타원 링 — 앵커는 그림 전용이라
+        // 절차 렌더와 어긋난다.
         const angle = -Math.PI / 2 + (i * Math.PI * 2) / Math.max(1, picked.length);
-        const left = 50 + 42 * Math.cos(angle);
-        const top = 50 + 36 * Math.sin(angle);
+        const left = citySceneArtReady ? anchorFor(building.type, i, picked.length).x : 50 + 42 * Math.cos(angle);
+        const top = citySceneArtReady ? anchorFor(building.type, i, picked.length).y : 50 + 36 * Math.sin(angle);
         return (
             `<button type="button" class="city-badge" data-building-id="${building.id}" ` +
             `style="left:${left.toFixed(1)}%;top:${top.toFixed(1)}%" title="${building.label} Lv.${building.level}">` +
@@ -2961,7 +3002,28 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
     }
 
     cityDetailPanel.classList.add('city-entry-mode');
+    // 진입 화면 전체를 배경 그림으로 덮는다 (2026-09-30, 사용자 선택).
+    // 지표·내정·명령 패널은 숨겨지고 16:9 무대만 화면을 꽉 채운다.
+    // 관리 패널로 돌아가는 버튼을 제공하지 않으면 게임을 못 하게 된다.
+    cityDetailPanel.classList.add('city-bleed');
     cityDetailPanel.style.display = 'block';
+    ensureBleedToggle();
+}
+
+/** 진입 화면(전체 덮기)에서 관리 패널로 돌아가는 버튼 — 없으면 게임을 못 한다. */
+function ensureBleedToggle(): void {
+    if (document.querySelector('.city-bleed-toggle')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'city-bleed-toggle';
+    btn.textContent = '🏛 도시 관리';
+    btn.addEventListener('click', () => {
+        cityDetailPanel.classList.remove('city-bleed');
+        stopCityAmbient();
+        const city = currentPanelCityId ? engine?.['store'].getCity(currentPanelCityId) : null;
+        if (city) renderCityScene(city);
+    });
+    cityDetailPanel.appendChild(btn);
 }
 
 /** 명령 탭(등용/출진/습격) — 보이는 섹션이 2개 이상일 때만 탭 바를 내민다. */

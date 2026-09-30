@@ -648,7 +648,16 @@ async function main() {
             "accent:accent,placeGlyph:placeGlyph,placeIsGlyph:placeIsGlyph,dlgRightHidden:dlgRightHidden," +
             "mktOpen:mktOpen,mktVisit1:mktVisit1,mktVisit2:mktVisit2,mktCh1:mktCh1,mktCh2:mktCh2,mktText2:mktText2," +
             "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice," +
-            "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice,citySceneWidth:scene.width,citySceneHeight:scene.height,buildingChips:chips.length,buildingDetail:buildingDetail,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode')};})()");
+            "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice,citySceneWidth:scene.width,citySceneHeight:scene.height,buildingChips:chips.length,buildingDetail:buildingDetail,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode'),"
+            // 배경 그림이 실제로 로드됐는지 — 조용히 절차 렌더로 물러나면 검증이 통과해 버린다.
+            + "artReady:document.getElementById('city-scene-stage').classList.contains('art-ready'),"
+            + "artComplete:(function(){var i=document.getElementById('city-scene-art');return !!(i&&i.complete&&i.naturalWidth>0);})(),"
+            + "artSrc:(function(){var i=document.getElementById('city-scene-art');return i?i.getAttribute('src'):null;})(),"
+            + "bleedMode:document.getElementById('city-detail-panel').classList.contains('city-bleed'),"
+            + "bleedToggle:!!document.querySelector('.city-bleed-toggle'),"
+            + "stageBox:(function(){var r=document.getElementById('city-scene-stage').getBoundingClientRect();return {w:Math.round(r.width),h:Math.round(r.height),ratio:+(r.width/Math.max(1,r.height)).toFixed(3)};})(),"
+            + "badges:Array.prototype.map.call(document.querySelectorAll('#city-scene-badges .city-badge'),function(b){return b.style.left+','+b.style.top;})"
+            +"};})()");
 
         // 도시 건물 투자·운영 상태와 지도 카메라 보존 [49][D32]
         const buildingProbe = await cdp.evalJson(
@@ -964,6 +973,16 @@ async function main() {
         console.log('REGRESSION_CHECKS:', JSON.stringify(regressionChecks));
         const cityChecks = {
             sceneSize: dialogueProbe.citySceneWidth === 480 && dialogueProbe.citySceneHeight === 240,
+            // 진입 화면 전체 덮기 + 배경 그림이 실제로 로드됐는지.
+            // artReady 를 확인하지 않으면 그림이 404 나서 조용히 절차 렌더로
+            // 물러나도 테스트는 통과한다 — 실제로 그랬다.
+            bleed: dialogueProbe.bleedMode === true
+                && dialogueProbe.bleedToggle === true
+                && dialogueProbe.artReady === true
+                && dialogueProbe.artComplete === true
+                && /city-scene-base\.webp$/.test(dialogueProbe.artSrc ?? '')
+                && Math.abs(dialogueProbe.stageBox.ratio - 16 / 9) < 0.02
+                && dialogueProbe.badges.length >= 5,
             buildingChips: dialogueProbe.buildingChips >= 4,
             buildingDetail: dialogueProbe.buildingDetail.includes('· Lv.'),
             entryMode: dialogueProbe.entryMode === true,
@@ -1024,6 +1043,8 @@ async function main() {
             && dialogueProbe.buildingChips >= 4
             && dialogueProbe.buildingDetail.includes('· Lv.')
             && dialogueProbe.entryMode === true
+            // 진입 화면 전체 덮기와 배경 그림 로드를 실제로 판정한다.
+            && cityChecks.bleed === true
             // 대화창 개편 회귀 [신규 기능]
             && dialogueProbe.dlgPortraitSvg === true
             && dialogueProbe.dlgSpeakerText.length > 0

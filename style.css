@@ -1024,6 +1024,55 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     background: rgba(7, 9, 18, 0.985);
 }
 #city-detail-panel.city-entry-mode .city-scene-canvas { max-width: 960px; margin: 0 auto; }
+
+/* 진입 화면 전체를 배경 그림으로 덮는 모드 (2026-09-30 추가).
+   사용자가 "전입 화면 전체를 덮음"을 선택했다. 지표·내정·명령 패널은 숨기고,
+   16:9 무대만 화면을 꽉 채운다. 관리 패널로 돌아가는 버튼만 남긴다. */
+#city-detail-panel.city-bleed {
+    position: fixed;
+    inset: 0;
+    z-index: 940;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    background: #05070d;
+    overflow: hidden;
+}
+#city-detail-panel.city-bleed .cdp-header,
+#city-detail-panel.city-bleed .cdp-summary,
+#city-detail-panel.city-bleed .cdp-grid-main > .cdp-col > .cdp-section:not(.city-scene-section),
+#city-detail-panel.city-bleed .city-commander,
+#city-detail-panel.city-bleed .cdp-section-title,
+#city-detail-panel.city-bleed .city-hint-bar { display: none; }
+#city-detail-panel.city-bleed .cdp-grid-main,
+#city-detail-panel.city-bleed .cdp-grid-main > .cdp-col { display: block; padding: 0; margin: 0; }
+#city-detail-panel.city-bleed .city-scene-section { margin: 0; padding: 0; max-width: none; border: 0; }
+/* 무대를 16:9 로 고정한다 — 비율이 고정돼야 라벨 % 좌표가 창 크기에 따라 밀리지 않는다. */
+#city-detail-panel.city-bleed .city-scene-stage {
+    width: min(100vw, calc(100vh * 16 / 9));
+    height: min(100vh, calc(100vw * 9 / 16));
+    margin: 0 auto;
+    border: 0;
+    border-radius: 0;
+}
+#city-detail-panel.city-bleed .city-scene-badges { z-index: 3; }
+#city-detail-panel.city-bleed .city-scene-canvas,
+#city-detail-panel.city-bleed .city-scene-art { width: 100%; height: 100%; max-width: none; margin: 0; }
+.city-bleed-toggle {
+    position: absolute;
+    right: 18px;
+    bottom: 18px;
+    z-index: 5;
+    padding: 8px 16px;
+    border: 1px solid rgba(212,175,55,.5);
+    border-radius: 5px;
+    background: rgba(10,14,26,.78);
+    color: var(--gold-bright);
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+}
+.city-bleed-toggle:hover { background: rgba(212,175,55,.22); }
 #city-detail-panel.city-entry-mode .cdp-section { max-width: 960px; margin-left: auto; margin-right: auto; }
 #city-detail-panel.city-entry-mode .cdp-header { max-width: 1100px; margin-left: auto; margin-right: auto; }
 #city-detail-panel.city-entry-mode .cdp-summary { max-width: 1100px; margin-left: auto; margin-right: auto; }
@@ -1557,6 +1606,13 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
    ============================================================ */
 #roaming-modal { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); backdrop-filter: blur(2px); }
 .city-scene-stage { position: relative; overflow: hidden; border: 1px solid rgba(212,175,55,.28); border-radius: 7px; background: #26382c; }
+
+/* 배경 그림 — 16:9 무대 전체를 덮는다. 로딩 전에는 숨기고, 절차 렌더가 보인다. */
+.city-scene-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+.city-scene-stage.art-ready .city-scene-art { display: block; }
+/* 그림이 밑에 있으면 캔버스는 밤 안개만 얹는 층이므로 배경을 비운다 */
+.city-scene-stage.art-ready .city-scene-canvas { background: transparent; }
+.city-scene-stage.art-ready { background: #0b1020; }
 .city-command-screen { display: flex; gap: 10px; align-items: stretch; }
 .city-command-screen .city-scene-stage { flex: 1; min-width: 0; }
 .city-commander { width: 118px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px; border: 1px solid rgba(212,175,55,.25); border-radius: 6px; background: rgba(212,175,55,.05); }
