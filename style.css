@@ -1017,8 +1017,8 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 /* 도시 클릭 시 진입하는 단일 화면 [49]
    2026-09-30 개편 — 예전엔 "그림으로 전체 덮기" 와 "관리 패널" 두 모드를 오갔다갔다
    했고, 돌아오기 버튼(🏛 도시 관리)을 눌러야 내정·명령을 쓸 수 있었다. 모드 자체를
-   없앤다. 이제 16:9 배경 그림 위에 반투명 유리 패널(상단 바 · 우측 통제 열 · 하단 무장
-   스트립)을 얹는 한 화면 구성 하나뿐이다. */
+   없앤다. 이제 16:9 배경 그림이 화면을 가득 채우고, 그 그림 위(안)에 상태 HUD(좌상단) ·
+   정보 HUD(좌하단) · 통제 열(우측)만 반투명으로 얹힌다. */
 #city-detail-panel.city-entry-mode {
     position: fixed;
     inset: 0;
@@ -1035,87 +1035,107 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     grid-template-columns: minmax(0, 1fr) 360px;
     grid-template-rows: auto minmax(0, 1fr) auto;
     grid-template-areas:
-        "head head"
-        "main side"
-        "list side";
+        "head side"
+        ".    side"
+        "info side";
     gap: 10px;
 }
-/* 배경 그림 무대 — 머리바와 무장 스트립 사이의 실제 빈 공간을 그대로 쓴다.
-   크기 컨테이너로 바꿔 그림을 그 빈 공간에 딱 맞게 16:9 로 맞춘다(아래 주석 참고). */
+/* 배경 그림 무대 — 패널 여백을 음수 마진으로 뒤집어 화면을 가득 채운다(풀블리드).
+   16:9 를 고정으로 유지해야 앵커 % 좌표가 창 크기에 따라 밀리지 않는다. */
 #city-detail-panel.city-entry-mode .cdp-stage-pane {
-    grid-area: main;
-    /* 머리바·무장 스트립에 가려지지 않게 빈 구역을 그대로 그림 크기로 쓴다.
-       16:9 비율이 고정돼야 앵커 % 좌표가 창 크기에 따라 밀리지 않는다. */
-    container-type: size;
+    grid-column: 1 / -1;
+    grid-row: 1 / -1;
+    margin: -12px;
+    z-index: 0;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
     min-width: 0;
     min-height: 0;
 }
 #city-detail-panel.city-entry-mode .city-scene-section {
-    /* 폴백: 컨테이너 쿼리 미지원 브라우저용 (vh 기준 대략값) */
-    width: min(100%, calc((100vh - 300px) * 16 / 9));
-    /* 컨테이너 크기(cqw/cqh)로 정확히 맞춘다 — 위보다 항상 우선 */
-    width: min(100cqw, calc((100cqh - 72px) * 16 / 9));
-    max-width: 100%;
+    /* min(화면 가로, 화면 세로 * 16/9) — 창이 16:9 면 정확히 맞고, 그 외엔 검은 여백만 남는다. */
+    width: min(100%, calc(100vh * 16 / 9));
     margin: 0;
     padding: 0;
     border: 0;
     background: none;
     display: flex;
     flex-direction: column;
-    gap: 8px;
 }
 #city-detail-panel.city-entry-mode .city-scene-stage {
     width: 100%;
     aspect-ratio: 16 / 9;
-    border-radius: 10px;
-    border: 1px solid rgba(212, 175, 55, .32);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, .62);
+    border-radius: 0;
+    border: 0;
 }
 #city-detail-panel.city-entry-mode .city-scene-canvas { width: 100%; height: 100%; max-width: none; margin: 0; }
 #city-detail-panel.city-entry-mode .city-scene-badges { z-index: 3; }
+/* 좌하단 정보 HUD */
+#city-detail-panel.city-entry-mode .cdp-info-pane {
+    grid-area: info;
+    align-self: end;
+    justify-self: start;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: max-content;
+    max-width: min(420px, 42vw);
+}
 #city-detail-panel.city-entry-mode .cdp-stage-foot {
     display: flex;
     flex-direction: column;
     gap: 4px;
     padding: 6px 10px;
     border-radius: 8px;
-    background: rgba(8, 11, 22, .72);
-    border: 1px solid rgba(212, 175, 55, .22);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+    min-width: 0;
 }
 #city-detail-panel.city-entry-mode .cdp-stage-foot-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; overflow: hidden; max-height: 34px; }
 #city-detail-panel.city-entry-mode .cdp-stage-foot .city-building-detail,
 #city-detail-panel.city-entry-mode .cdp-stage-foot .city-hint-bar,
 #city-detail-panel.city-entry-mode .cdp-stage-foot .city-scene-summary { margin-top: 0; }
+/* 주둔 무장 — 좌하단 HUD 카드 한 장 */
+#city-detail-panel.city-entry-mode .cdp-info-pane .city-commander {
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 8px;
+}
+#city-detail-panel.city-entry-mode .cdp-info-pane .city-commander-portrait svg { width: 72px; height: 72px; }
+#city-detail-panel.city-entry-mode .cdp-info-pane .city-commander-name { font-size: 13px; letter-spacing: 2px; }
+#city-detail-panel.city-entry-mode .cdp-info-pane .city-commander-empty { margin: 0; }
 
 /* 유리 패널 — 반투명이라 뒤의 그림이 비쳐 보인다. */
 #city-detail-panel.city-entry-mode .cdp-header,
-#city-detail-panel.city-entry-mode .cdp-side-pane,
-#city-detail-panel.city-entry-mode .cdp-list-pane {
+#city-detail-panel.city-entry-mode .cdp-info-pane > *,
+#city-detail-panel.city-entry-mode .cdp-side-pane {
     position: relative;
     z-index: 2;
-    background: linear-gradient(180deg, rgba(10, 14, 28, .84), rgba(6, 9, 20, .9));
+    background: linear-gradient(180deg, rgba(10, 14, 28, .8), rgba(6, 9, 20, .88));
     border: 1px solid rgba(212, 175, 55, .3);
     border-radius: 10px;
     box-shadow: 0 14px 38px rgba(0, 0, 0, .5);
     backdrop-filter: blur(7px) saturate(120%);
     -webkit-backdrop-filter: blur(7px) saturate(120%);
 }
+/* 좌상단 상태 HUD — 도시명·세력·요약 수치·닫기 */
 #city-detail-panel.city-entry-mode .cdp-header {
     grid-area: head;
+    align-self: start;
+    justify-self: start;
     display: flex;
     align-items: center;
     gap: 12px;
+    width: max-content;
+    max-width: min(880px, 62vw);
     margin-bottom: 0;
-    padding: 8px 12px;
+    padding: 7px 12px;
+    border-radius: 10px;
 }
-#city-detail-panel.city-entry-mode .cdp-header .cdp-summary { flex: 1 1 auto; justify-content: flex-end; margin-bottom: 0; }
+#city-detail-panel.city-entry-mode .cdp-header .cdp-summary { margin-bottom: 0; }
 #city-detail-panel.city-entry-mode .cdp-side-pane {
     grid-area: side;
     display: flex;
@@ -1134,35 +1154,19 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 #city-detail-panel.city-entry-mode .cdp-side-pane #cdp-raid-targets { max-height: 170px; overflow-y: auto; }
 #city-detail-panel.city-entry-mode .cdp-side-pane .cdp-facility-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
 #city-detail-panel.city-entry-mode .cdp-side-pane .cdp-facility-level { white-space: nowrap; font-size: 10px; }
-/* 주둔 무장은 그림을 가리지 않도록 통제 열 맨 위 한 줄 카드. */
-#city-detail-panel.city-entry-mode .cdp-side-pane .city-commander {
-    width: auto;
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 8px;
-}
-#city-detail-panel.city-entry-mode .cdp-side-pane .city-commander-portrait svg { width: 52px; height: 52px; }
-#city-detail-panel.city-entry-mode .cdp-side-pane .city-commander-name { font-size: 12px; letter-spacing: 1px; }
-#city-detail-panel.city-entry-mode .cdp-side-pane .city-commander-empty { margin: 0; }
-#city-detail-panel.city-entry-mode .cdp-list-pane { grid-area: list; min-width: 0; padding: 8px 12px; }
-#city-detail-panel.city-entry-mode .cdp-list-pane #cdp-officers { max-height: 126px; overflow-y: auto; grid-template-columns: 1fr 1fr; gap: 4px; }
-#city-detail-panel.city-entry-mode .cdp-list-pane .cdp-officer-row { padding: 4px 8px; }
-#city-detail-panel.city-entry-mode .cdp-list-pane .cdp-officer-row > div:first-child { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-#city-detail-panel.city-entry-mode .cdp-list-pane .cdp-officer-stats { margin-top: 0; white-space: nowrap; }
-/* 좁은 창 — 세로로 쌓는다. 그림 → 무장 스트립 → 통제 열 순.
-   이때는 행 높이가 내용으로 결정되므로 크기 컨테이너를 푼다(쿼리 단위가 0 이 된다). */
+#city-detail-panel.city-entry-mode .cdp-side-pane #cdp-officers { max-height: 150px; overflow-y: auto; }
+#city-detail-panel.city-entry-mode .cdp-side-pane .cdp-officer-row { padding: 4px 8px; }
+/* 좁은 창 — 통제 열을 그림 아래로 내린다. 그림은 그대로 화면을 가득 채운다. */
 @media (max-width: 1000px) {
     #city-detail-panel.city-entry-mode {
         grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto minmax(220px, 42vh) auto auto;
-        grid-template-areas: "head" "main" "list" "side";
-        overflow-y: auto;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        grid-template-areas: "head" "info" "side";
+        overflow: hidden;
     }
-    #city-detail-panel.city-entry-mode .cdp-stage-pane { container-type: normal; }
-    #city-detail-panel.city-entry-mode .city-scene-section { width: min(100%, calc((42vh - 72px) * 16 / 9)); }
-    #city-detail-panel.city-entry-mode .cdp-side-pane { overflow: visible; }
-    #city-detail-panel.city-entry-mode .cdp-list-pane #cdp-officers { grid-template-columns: 1fr; }
+    #city-detail-panel.city-entry-mode .cdp-header { max-width: calc(100% - 8px); }
+    #city-detail-panel.city-entry-mode .cdp-info-pane { max-width: calc(100% - 8px); }
+    #city-detail-panel.city-entry-mode .cdp-side-pane { max-height: 46vh; }
 }
 
 /* 명령 탭(등용/출진/습격) — 모든 너비에서 동작 */

@@ -359,7 +359,7 @@
         <button id="cdp-close" class="cdp-close" title="닫기">✕</button>
     </div>
 
-    <!-- 배경 그림 무대 — 패널 전체를 덮는 16:9 무대. 통제 UI 는 그 위에 반투명으로 얹는다. -->
+    <!-- 배경 그림 무대 — 화면을 가득 채우는 16:9 그림. 모든 UI 는 이 위(안)에 얹는다. -->
     <div class="cdp-stage-pane">
         <div class="cdp-section city-scene-section">
             <div class="city-scene-stage" id="city-scene-stage">
@@ -371,19 +371,23 @@
                     <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
                 </div>
             </div>
-            <div class="cdp-stage-foot">
-                <div id="city-building-detail" class="city-building-detail">건물을 클릭하면 상세 정보가 표시됩니다.</div>
-                <div class="cdp-stage-foot-row">
-                    <div id="city-hint-bar" class="city-hint-bar" aria-label="다음 행동 안내"></div>
-                    <div id="city-scene-summary" class="city-scene-summary"></div>
-                </div>
+        </div>
+    </div>
+
+    <!-- 좌측 하단 정보 HUD — 주둔 무장 · 선택 건물 · 다음 행동 (그림 위에 얹는다) -->
+    <div class="cdp-info-pane">
+        <div id="city-commander" class="city-commander" aria-label="주둔 무장"></div>
+        <div class="cdp-stage-foot">
+            <div id="city-building-detail" class="city-building-detail">건물을 클릭하면 상세 정보가 표시됩니다.</div>
+            <div class="cdp-stage-foot-row">
+                <div id="city-hint-bar" class="city-hint-bar" aria-label="다음 행동 안내"></div>
+                <div id="city-scene-summary" class="city-scene-summary"></div>
             </div>
         </div>
     </div>
 
     <!-- 우측 통제 열 — 지표·내정·명령·시설·도시 명령 (반투명 유리 패널) -->
     <aside class="cdp-side-pane" aria-label="도시 통제">
-        <div id="city-commander" class="city-commander" aria-label="주둔 무장"></div>
         <div class="cdp-section">
             <div class="cdp-section-title">內政 — 내정치</div>
             <div id="cdp-stats" class="cdp-stats"></div>
@@ -431,15 +435,11 @@
             <div class="cdp-section-title">史記 — 포로 처분 기록</div>
             <div id="cdp-captive-history" class="cdp-expedition-info">도시의 포로 처분 기록이 없습니다.</div>
         </div>
-    </aside>
-
-    <!-- 하단 무장 스트립 -->
-    <div class="cdp-list-pane">
-        <div class="cdp-section">
+        <div class="cdp-section" id="cdp-officers-section">
             <div class="cdp-section-title">武將 — 무장 목록 <span id="cdp-officer-count" class="cdp-count"></span></div>
             <div id="cdp-officers" class="cdp-officers"></div>
         </div>
-    </div>
+    </aside>
 </div>
 
 <!-- 범용 선택형 대화 모달: 무장·도시 시설·사건 상세 [24][49][441-460] -->

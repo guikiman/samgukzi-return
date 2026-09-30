@@ -654,21 +654,23 @@ async function main() {
             + "artComplete:(function(){var i=document.getElementById('city-scene-art');return !!(i&&i.complete&&i.naturalWidth>0);})(),"
             + "artSrc:(function(){var i=document.getElementById('city-scene-art');return i?i.getAttribute('src'):null;})(),"
             + "bleedMode:document.getElementById('city-detail-panel').classList.contains('city-bleed'),"
-            // 모드 전환 버튼(🏛 도시 관리)이 더 이상 없는지 + 반투명 유리 패널이 실제로 보이는지.
+            // 모드 전환 버튼(🏛 도시 관리)이 더 이상 없는지 + 반투명 HUD 가 실제로 보이는지.
             + "backButton:!!document.querySelector('.city-bleed-toggle'),"
             + "layoutPanes:(function(){function vis(e){if(!e)return false;var r=e.getBoundingClientRect();return r.width>40&&r.height>20;}return {"
             + "side:vis(document.querySelector('#city-detail-panel .cdp-side-pane')),"
-            + "list:vis(document.querySelector('#city-detail-panel .cdp-list-pane')),"
+            + "info:vis(document.querySelector('#city-detail-panel .cdp-info-pane')),"
             + "head:vis(document.querySelector('#city-detail-panel .cdp-header')),"
             + "foot:vis(document.querySelector('#city-detail-panel .cdp-stage-foot')),"
+            + "commander:vis(document.querySelector('#city-commander')),"
             + "actions:document.querySelectorAll('#cdp-actions .cdp-action-btn').length,"
             + "officers:document.querySelectorAll('#cdp-officers .cdp-officer-row').length,"
-            // 그림이 유리 패널(하단 무장 스트립·우측 통제 열)에 가려지지 않는지.
-            + "clear:(function(){var st=document.getElementById('city-scene-stage').getBoundingClientRect();"
-            + "var lp=document.querySelector('#city-detail-panel .cdp-list-pane'),sd=document.querySelector('#city-detail-panel .cdp-side-pane');"
-            + "if(!lp||!sd)return false;var lb=lp.getBoundingClientRect(),sd2=sd.getBoundingClientRect();"
-            + "return st.bottom<=lb.top+1&&st.right<=sd2.left+1;})()};})(),"
-            + "stageBox:(function(){var r=document.getElementById('city-scene-stage').getBoundingClientRect();return {w:Math.round(r.width),h:Math.round(r.height),ratio:+(r.width/Math.max(1,r.height)).toFixed(3),fits:r.top>=-1&&r.bottom<=window.innerHeight+1&&r.left>=-1&&r.right<=window.innerWidth+1};})(),"
+            // 그림이 화면을 가득 채우는지(풀블리드) — 창이 16:9 면 정확히 일치해야 한다.
+            + "fullBleed:(function(){var st=document.getElementById('city-scene-stage').getBoundingClientRect();"
+            + "var want=Math.min(window.innerWidth,window.innerHeight*16/9);"
+            + "return Math.abs(st.width-want)<=2&&Math.abs(st.height-want*9/16)<=2;})()};})(),"
+            // fits: 그림이 창 안에 들어 있는가. 진입 페이드(fadeUp)가 0.3초 동안 18px
+            // 아래로 미끄러지므로 그만큼의 여유를 둔다 — 안정 후에는 정확히 맞아야 한다.
+            + "stageBox:(function(){var r=document.getElementById('city-scene-stage').getBoundingClientRect();var tol=24;return {w:Math.round(r.width),h:Math.round(r.height),ratio:+(r.width/Math.max(1,r.height)).toFixed(3),fits:r.top>=-tol&&r.bottom<=window.innerHeight+tol&&r.left>=-tol&&r.right<=window.innerWidth+tol};})(),"
             + "badges:Array.prototype.map.call(document.querySelectorAll('#city-scene-badges .city-badge'),function(b){return b.style.left+','+b.style.top;})"
             +"};})()");
 
@@ -999,11 +1001,12 @@ async function main() {
                 && dialogueProbe.stageBox.fits === true
                 && dialogueProbe.layoutPanes.head === true
                 && dialogueProbe.layoutPanes.side === true
-                && dialogueProbe.layoutPanes.list === true
+                && dialogueProbe.layoutPanes.info === true
                 && dialogueProbe.layoutPanes.foot === true
+                && dialogueProbe.layoutPanes.commander === true
                 && dialogueProbe.layoutPanes.actions === 5
                 && dialogueProbe.layoutPanes.officers >= 1
-                && dialogueProbe.layoutPanes.clear === true
+                && dialogueProbe.layoutPanes.fullBleed === true
                 && dialogueProbe.badges.length >= 5,
             buildingChips: dialogueProbe.buildingChips >= 4,
             buildingDetail: dialogueProbe.buildingDetail.includes('· Lv.'),
