@@ -3,7 +3,7 @@
  * 파일: src/core/onboarding_state.ts
  *
  * 설계 (ownership: 이 파일은 온보딩 "상태"만 소유한다):
- * - tutorial_system.ts가 10단계 안내 문구와 rtk8_tutorial_done 플래그를 소유하므로
+ * - tutorial_system.ts가 10단계 안내 문구와 samgukzi_return_tutorial_done 플래그를 소유하므로
  *   여기서는 단계 수/단계 id를 다시 정의하지 않고 TUTORIAL_STEPS에서 파생한다.
  * - 이 모듈은 온보딩이 지금 어디까지 왔는지(단계), 닫혔는지/나중에 보기로 미뤘는지,
  *   온보딩에서 수집한 취향(난이도·시작 세력)만 담는다. 문구 렌더링과 DOM은 소유하지 않는다.
@@ -12,14 +12,14 @@
  * - 부작용은 localStorage 쓰기/읽기뿐. 스토리지는 주입 가능(StorageLike)이라
  *   DOM 없는 node 환경에서 그대로 단위 테스트할 수 있다.
  *
- * 저장 키는 기존 튜토리얼 키(rtk8_tutorial_done)와 반드시 달라야 한다.
+ * 저장 키는 기존 튜토리얼 키(samgukzi_return_tutorial_done)와 반드시 달라야 한다.
  * 두 키가 겹치면 온보딩을 초기화할 때 튜토리얼 완료 기록까지 지워져 버린다.
  */
 
 import { TUTORIAL_STEPS } from './tutorial_system.js';
 
-/** 온보딩 전용 로컬 스토리지 키 — rtk8_tutorial_done과 의도적으로 분리됨 */
-export const ONBOARDING_STORAGE_KEY = 'rtk8_onboarding_state_v1';
+/** 온보딩 전용 로컬 스토리지 키 — samgukzi_return_tutorial_done과 의도적으로 분리됨 */
+export const ONBOARDING_STORAGE_KEY = 'samgukzi_return_onboarding_state_v1';
 
 /** 온보딩이 수집하는 난이도 — 게임 전역 difficulty(1~5)와 동일한 도메인 */
 export type OnboardingDifficulty = 1 | 2 | 3 | 4 | 5;
@@ -334,7 +334,7 @@ export class OnboardingStateStore {
 
     /**
      * 온보딩을 처음부터 다시 — 온보딩 키만 초기 상태로 덮어쓴다.
-     * 튜토리얼 완료 키(rtk8_tutorial_done)는 절대 건드리지 않는다.
+     * 튜토리얼 완료 키(samgukzi_return_tutorial_done)는 절대 건드리지 않는다.
      */
     reset(): OnboardingState {
         this.cache = resetOnboardingState();

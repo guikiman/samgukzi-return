@@ -19,7 +19,7 @@
       "source": "Natural Earth vector GeoJSON (public domain) — scripts/generate_map.py 로 렌더",
       "license": "Public Domain (Natural Earth)",
       "method": "generated",
-      "note": "Total War 파생 비트맵을 대체한 지도. 생성 스크립트가 커밋에 있어 재현 가능하다."
+      "note": "파생 지도 비트맵을 대체한 지도. 생성 스크립트가 커밋에 있어 재현 가능하다."
     },
     {
       "path": "assets/map-china-guide-4096.png",

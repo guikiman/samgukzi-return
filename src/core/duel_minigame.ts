@@ -1,7 +1,7 @@
 /**
  * [B11] 일기토(Duel) 미니게임 엔진
  *
- * 삼국지 8 리메이크 스타일 5턴제 일기토
+ * 삼국지리턴 스타일 5턴제 일기토
  * 카드 대결: ATTACK > DEFENSE, DEFENSE > COUNTER, COUNTER > ATTACK
  * SPIRIT 시스템: 매 턴 +1 (최대 5), SPECIAL 카드 소모
  */

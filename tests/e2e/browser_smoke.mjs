@@ -583,7 +583,7 @@ async function main() {
             "document.getElementById('dialogue-next').click();var nextPage=document.getElementById('dialogue-page').textContent;" +
             "document.getElementById('dialogue-prev').click();var prevPage=document.getElementById('dialogue-page').textContent;" +
             "document.getElementById('dialogue-close').click();" +
-            // San8/San14 대화창 개편: 좌측 화자 열 + 번호 선택지 [신규 기능]
+            // 대화창 개편: 좌측 화자 열 + 번호 선택지 [신규 기능]
             "var o2=document.querySelector('.cdp-officer-clickable');if(o2)o2.click();" +
             "var dlgFrame=document.querySelector('#dialogue-modal .dlg-stage');" +
             "var dlgPortraitSvg=!!document.querySelector('#dlg-left-figure svg');" +
@@ -1024,7 +1024,7 @@ async function main() {
             && dialogueProbe.buildingChips >= 4
             && dialogueProbe.buildingDetail.includes('· Lv.')
             && dialogueProbe.entryMode === true
-            // San8/San14 대화창 개편 회귀 [신규 기능]
+            // 대화창 개편 회귀 [신규 기능]
             && dialogueProbe.dlgPortraitSvg === true
             && dialogueProbe.dlgSpeakerText.length > 0
             && dialogueProbe.dlgOrgText.length > 0

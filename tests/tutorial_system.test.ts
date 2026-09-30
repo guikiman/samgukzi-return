@@ -62,7 +62,7 @@ describe('[461-480] TutorialSystem', () => {
         expect(t.shouldShowOnStart()).toBe(true); // 첫 플레이
         t.complete();
         expect(t.shouldShowOnStart()).toBe(false); // 재시작 시 미표시
-        expect(storage['rtk8_tutorial_done']).toBe('done');
+        expect(storage['samgukzi_return_tutorial_done']).toBe('done');
     });
 
     it('reset으로 완료 기록을 지우면 다시 첫 플레이처럼 동작한다', () => {

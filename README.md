@@ -1,9 +1,9 @@
-# 삼국지 8 리메이크 (웹)
+# 삼국지리턴 (웹)
 
-삼국지조8의 핵심 시스템(평정·내정·외교·전투·인간관계·인생 시뮬레이션)을 웹 기술로 완전 복제하는 프로젝트입니다. 520개 체크리스트 기반으로 구현되었으며, 1,000명 규모 무장 AI를 Web Worker로 처리합니다.
+삼국지리턴은 삼국지 세계관의 핵심 시스템(평정·내정·외교·전투·인간관계·인생 시뮬레이션)을 웹 기술로 구현한 프로젝트입니다. 520개 체크리스트 기반으로 구축되었으며, 1,000명 규모 무장 AI를 Web Worker로 처리합니다.
 
-[![CI](https://github.com/guikiman/samgukzi8-re/actions/workflows/ci.yml/badge.svg)](https://github.com/guikiman/samgukzi8-re/actions/workflows/ci.yml)
-[![Play](https://img.shields.io/badge/▶_플레이-GitHub_Pages-2ea44f)](https://guikiman.github.io/samgukzi8-re/)
+[![CI](https://github.com/guikiman/samgukzi-return/actions/workflows/ci.yml/badge.svg)](https://github.com/guikiman/samgukzi-return/actions/workflows/ci.yml)
+[![Play](https://img.shields.io/badge/▶_플레이-GitHub_Pages-2ea44f)](https://guikiman.github.io/samgukzi-return/)
 
 ## 🎮 플레이
 
@@ -14,16 +14,16 @@
 
 ### 💻 데스크톱 버전 (Tauri)
 
-[![Desktop Release](https://img.shields.io/badge/⬇_다운로드-v1.0.0-2ea44f)](https://github.com/guikiman/samgukzi8-re/releases/tag/rtk8-desktop-v1.0.0)
+[![Desktop Release](https://img.shields.io/badge/⬇_다운로드-v1.0.0-2ea44f)](https://github.com/guikiman/samgukzi-return/releases/tag/samgukzi-return-desktop-v1.0.0)
 
 | 플랫폼 | 파일 | 비고 |
 |---|---|---|
-| Windows 10/11 (x64) | `rtk8-clone_1.0.0_x64-setup.exe` | 설치형 (`.msi`도 제공) |
-| macOS 11+ (Apple Silicon) | `rtk8-clone_1.0.0_aarch64.dmg` | 드래그&드롭 설치 |
-| Linux (x64) | `rtk8-clone_1.0.0_amd64.AppImage` | 실행권한 부여 후 바로 실행 (`.deb`/`.rpm`도 제공) |
+| Windows 10/11 (x64) | `samgukzi-return_1.0.0_x64-setup.exe` | 설치형 (`.msi`도 제공) |
+| macOS 11+ (Apple Silicon) | `samgukzi-return_1.0.0_aarch64.dmg` | 드래그&드롭 설치 |
+| Linux (x64) | `samgukzi-return_1.0.0_amd64.AppImage` | 실행권한 부여 후 바로 실행 (`.deb`/`.rpm`도 제공) |
 
 > 새 태그(`v*`) 푸시 시 GitHub Actions가 3개 플랫폼 패키지를 자동 빌드해
-> [Releases](https://github.com/guikiman/samgukzi8-re/releases)에 등록합니다.
+> [Releases](https://github.com/guikiman/samgukzi-return/releases)에 등록합니다.
 > 데스크톱 빌드도 웹과 동일한 PWA 오프라인 캐싱을 지원합니다.
 
 ## 🛠️ 개발
@@ -81,4 +81,4 @@ npm run test:e2e       # 빌드 + 브라우저 E2E 스모크 + SW 오프라인 �
 
 ## 📜 라이선스
 
-교육/연구 목적의 팬 리메이크 프로젝트입니다.
+교육/연구 목적의 개인 프로젝트입니다.

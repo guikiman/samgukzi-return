@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — 브라우저 엔트리 포인트
+ * 삼국지리턴 — 브라우저 엔트리 포인트
  *
  * GameEngine + BootstrapContext 초기화,
  * Canvas 렌더링 루프, UI 바인딩.
@@ -1422,9 +1422,9 @@ function renderScriptNode(): void {
    대화가 이어지는 동안 계속 열려 있다.
    ============================================================ */
 
-/** 세력별 물자 소지량. 세이브에 섞이지 않도록 rtk8_ 접두 키를 쓴다. */
+/** 세력별 물자 소지량. 세이브에 섞이지 않도록 samgukzi_return_ 접두 키를 쓴다. */
 function tradeStockKey(factionId: string): string {
-    return `rtk8_trade_stock_${factionId}`;
+    return `samgukzi_return_trade_stock_${factionId}`;
 }
 function loadTradeStock(factionId: string): Record<string, number> {
     try {
@@ -1871,7 +1871,7 @@ document.getElementById('dialogue-close')!.addEventListener('click', closeDialog
 document.getElementById('dialogue-close')!.addEventListener('click', closeDialogue);
 
 /**
- * 대화창 키보드 조작 [신규 기능] — San14 PK 방식.
+ * 대화창 키보드 조작 [신규 기능] — 단계 이동 방식.
  *  - 1~9 : 해당 번호 선택지 누르기 (선택지에 적힌 번호 그대로)
  *  - ←/→ : 이전/다음 단계
  *  - Esc  : 닫기 (전역 핸들러가 담당)
@@ -2193,7 +2193,7 @@ function openOfficerDialogue(officerId: string): void {
         };
     };
 
-    // San8/San14 톤: 좌측 상단에 화자 정보, 본문은 새 조립기가 만든다.
+    // 대화창 구성 원칙: 좌측 상단에 화자 정보, 본문은 새 조립기가 만든다.
     const gsNow = store.getGlobalState();
     const topicOf = (branchId: string): DialogueTopic =>
         (['military', 'strategy', 'domestic', 'diplomacy', 'personal'] as const)
@@ -2399,7 +2399,7 @@ const FACILITY_INFO: Record<FacilityType, { label: string; effect: string; icon:
 
 function getFacilityRows(city: import('./core/types.js').City): Array<{ type: FacilityType; level: number; maxLevel: number; investment: number }> {
     const existing = new Map(city.facilities.map(f => [f.type, f]));
-    // Koei식 도시 운영面板: 모든 핵심 시설을 선택 가능하게 하되,
+    // 도시 운영 패널: 모든 핵심 시설을 선택 가능하게 하되,
     // 아직 건설되지 않은 시설은 Lv.0으로 표시해 실제 건설 상태를 구분한다. [49]
     const defaults: FacilityType[] = [
         FacilityType.PALACE, FacilityType.WALL, FacilityType.MARKET, FacilityType.FARM,
@@ -3436,7 +3436,7 @@ function renderFrame(_dt: number): void {
         ctx.fillStyle = '#e94560';
         ctx.font = 'bold 36px "Malgun Gothic", sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('삼국지 8 리메이크', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillText('삼국지리턴', canvas.width / 2, canvas.height / 2 - 20);
         ctx.fillStyle = '#8080a0';
         ctx.font = '16px sans-serif';
         ctx.fillText('게임 시작을 눌러주세요', canvas.width / 2, canvas.height / 2 + 30);
@@ -4083,7 +4083,7 @@ function saveToSlot(slot: SlotId): void {
         const faction = gs.playerFactionId ? engine['store'].getFaction(gs.playerFactionId) : null;
         // [461-480] UI 설정 스냅샷 — 접근성·색약 모드·튜토리얼 상태 동반 저장
         let tutorialDone = false;
-        try { tutorialDone = localStorage.getItem('rtk8_tutorial_done') !== null; } catch { /* 무시 */ }
+        try { tutorialDone = localStorage.getItem('samgukzi_return_tutorial_done') !== null; } catch { /* 무시 */ }
         const ok = slotManager.save(slot, compressed, {
             year: gs.time.year,
             month: gs.time.month,

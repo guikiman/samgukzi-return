@@ -236,7 +236,7 @@ export class DomesticScheduler {
     // ============================================================
 
     /**
-     * 원작 삼국지 8 공식 기반 정밀 내정 상승량 계산기
+     * 내정 지표 상승량 계산기
      *
      * 공식:
      *   baseIncrement = ⌊(primaryStatSum / 12) × budgetModifier × synergyBonus⌋

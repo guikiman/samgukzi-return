@@ -16,7 +16,7 @@
 
 import { OFFICER_PROFILES } from './officer_profile_schema.js';
 import type { OfficerProfile, OfficerRelationKind } from './officer_profile_schema.js';
-import { getPersonalityEffect } from './rtk14_reference_data.js';
+import { getPersonalityEffect } from './tactic_reference_data.js';
 import type { OfficerID } from './types.js';
 
 // ---------------------------------------------------------------- 공개 타입

@@ -131,7 +131,7 @@ const DEFAULT_STEPS: readonly OnboardingStepCopy[] = [
     {
         id: 'welcome',
         title: '환영합니다 — 指南',
-        body: '이곳은 삼국지 8 리메이크 안내입니다. 여러 화면을 천천히 살펴보세요. 언제든 다시 불러올 수 있습니다.',
+        body: '이곳은 삼국지리턴 안내입니다. 여러 화면을 천천히 살펴보세요. 언제든 다시 불러올 수 있습니다.',
     },
     {
         id: 'turn',

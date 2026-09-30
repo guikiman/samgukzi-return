@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 웹 완벽 복제 프로젝트 - Phase 3 WebGL/Canvas 헥사곤 렌더러
+ * 삼국지리턴 웹 프로젝트 - Phase 3 WebGL/Canvas 헥사곤 렌더러
  * 60fps 프레임 동기화 및 전장의 안개(Fog of War) 마스킹 기능 포함
  */
 

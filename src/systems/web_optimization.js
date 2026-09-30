@@ -275,7 +275,7 @@ export class NormalizedStore {
 // ============================================================
 export class EdgeCache {
     constructor() {
-        this.cacheName = 'rtk8-assets-v1';
+        this.cacheName = 'samgukzi-return-assets-v1';
         this.ready = false;
     }
 
@@ -492,7 +492,7 @@ export class MemoryProfiler {
 export class AntiCheatValidator {
     constructor() {
         this.actionLogs = [];
-        this.secretKey = 'rtk8_hmac_secret_2026';
+        this.secretKey = 'samgukzi_return_hmac_secret_2026';
     }
 
     /** 클라이언트 액션 로그 기록 */

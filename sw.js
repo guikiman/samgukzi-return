@@ -15,7 +15,7 @@
 // [E43] 배포 후 이전 Tauri/WebView 자산이 남지 않도록 캐시 버전 관리
 // v7: 지도 비트맵이 map-china-4096.webp → map-china-ai-4096.webp 로 교체됨.
 //     프리캐시 목록이 바뀌었으므로 버전을 올려야 기존 설치본이 갱신된다.
-const CACHE_NAME = 'rtk8-v7';
+const CACHE_NAME = 'samgukzi-return-v7';
 
 /** 스코프 기준 상대 경로 → 절대 URL (서브경로 배포 호환) */
 function scoped(path) {

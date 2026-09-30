@@ -1,5 +1,5 @@
 /* ============================================================
-   삼국지 8 리메이크 — UI 테마
+   삼국지리턴 — UI 테마
    딥 다크 + 골드 액센트 + 글래스모피즘
    계절 테마: body[data-season="spring|summer|autumn|winter"]
    ============================================================ */
@@ -1611,7 +1611,7 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 .cdp-facility-name { font-size: 12px; font-weight: 700; color: var(--gold, #d4af37); }
 .cdp-facility-level { font-size: 10px; color: var(--text-muted, #aaa); white-space: nowrap; }
 /* ============================================================
-   대화 창 — San8 Remake 무대 방식 [신규 기능]
+   대화 창 — 무대(스테이지) 방식 [신규 기능]
    San7 과의 차이: 판(panel) 안에 카드를 놓지 않는다.
    인물이 서 있는 무대가 있고, 아래 반투명 바에 말이 오른다.
    ============================================================ */
@@ -1640,7 +1640,7 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     background: radial-gradient(ellipse at 50% 0%, #1a1d24 0%, #0b0d11 72%);
     flex: none; height: 38%; min-height: 170px; overflow: hidden;
 }
-/* 중앙에 흐릿한 격자 — San8 전장 배경의 격자를 연하게 본떴다 */
+/* 중앙에 흐릿한 격자 — 전장 배경 격자를 연하게 적용한다 */
 .dlg-cast::after {
     content: ""; position: absolute; inset: 0; pointer-events: none;
     background: repeating-linear-gradient(90deg, rgba(255,255,255,.028) 0 2px, transparent 2px 56px);
@@ -1651,7 +1651,7 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     min-width: 0; position: relative; z-index: 1; overflow: hidden;
 }
 .dlg-slot-left { border-right: 1px solid #1c2028; }
-/* 화자는 밝게, 상대는 뒤로 물러나게 — San8 은 언제나 화자를 밝힌다 */
+/* 화자는 밝게, 상대는 뒤로 물러나게 — 화자는 밝게, 상대는 어둡게 처리한다 */
 .dlg-figure {
     flex: 1 1 auto; min-height: 0; width: min(80%, 260px); margin: 10px 0 0;
     display: flex; align-items: flex-end; justify-content: center; overflow: hidden;

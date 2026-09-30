@@ -8,7 +8,7 @@
  *
  * 검증 축:
  * - 단계 이동이 양쪽 끝에서 클램프되는가
- * - 완료 기록이 rtk8_tutorial_done 이 아닌 별도 키에 남는가 (기존 튜토리얼 보존)
+ * - 완료 기록이 samgukzi_return_tutorial_done 이 아닌 별도 키에 남는가 (기존 튜토리얼 보존)
  * - reset 이 첫 실행 상태로 되돌리는가
  * - Math.random / Date.now 같은 비순수 호출로 결과가 흔들리지 않는가
  */
@@ -45,7 +45,7 @@ import type { OnboardingState, StorageLike } from '../src/core/onboarding_state.
 import { TUTORIAL_STEPS } from '../src/core/tutorial_system.js';
 
 /** 기존 튜토리얼 완료 키 — 온보딩이 이걸 덮어쓰면 안 된다 */
-const TUTORIAL_KEY = 'rtk8_tutorial_done';
+const TUTORIAL_KEY = 'samgukzi_return_tutorial_done';
 
 /** 쓰기 이력을 모두 기록하는 메모리 스토리지 */
 function createMemoryStorage(seed: Record<string, string> = {}): StorageLike & { writes: string[] } {

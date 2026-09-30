@@ -7,7 +7,7 @@
 
 | 경로 | 크기 | 삭제일 | 상태 |
 |---|---|---|---|
-| `D:\samgukzi8-pre-rewrite.bundle` | 85.8 MB | 2026-09-27 | ✅ 삭제 |
+| `D:\samgukzi-return-pre-rewrite.bundle` | 85.8 MB | 2026-09-27 | ✅ 삭제 |
 | `D:\samgukzi-re_DATA\삼국지 전국 지도.png` | 4.0 MB | 2026-09-27 | ✅ 삭제 |
 | `D:\Downloads\삼국지 화면\삼국지 전국 지도 A.png` | 4.0 MB | 2026-09-27 | ✅ 삭제 |
 
@@ -26,7 +26,7 @@
 SHA 만 바뀌고 실체는 같았다. 번들은 독립적인 가치가 없었고, 지워도
 작업 손실이 없다.
 
-### Total War 파생 지도 원본
+### 파생 지도 원본
 
 `assets/china-national-map.png` 의 원본(sha256 `02686e0a…`, 4,054,452 bytes)은
 프로젝트 밖에도 사본이 더 있었다. `D:\` 와 `C:\Users\YG_PC` 전수 재스캔 결과

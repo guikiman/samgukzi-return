@@ -40,7 +40,7 @@ self.onmessage = async (event) => {
 
 // 가중치 기반 무장 개별 AI 행동 추론 알고리즘
 function calculateOfficerDecision(officer, cities, factions) {
-  // 삼국지 8 리메이크 기획서 기준: 야망, 의리, 군주 성향 및 도시 자원 분석 데이터 반영
+  // 삼국지리턴 기획서 기준: 야망, 의리, 군주 성향 및 도시 자원 분석 데이터 반영
   // 예: 군주가 조조 성향(패도)이고 병력이 부족하다면 '징병' 또는 '순찰' 가중치 상향
   let action = 'IDLE';
   let targetId = null;

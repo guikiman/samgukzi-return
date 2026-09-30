@@ -1,6 +1,6 @@
-# 🤖 OpenCode Autonomous Agents Guide for RTK8 Remake Web Project
+# 🤖 OpenCode Autonomous Agents Guide for 삼국지리턴 Web Project
 
-이 문서는 AI 자율주행 개발 에이전트(Autonomous Agents)가 '삼국지 8 리메이크 웹 완벽 복제 프로젝트'의 핵심 아키텍처와 320개 기능 체크리스트를 오차 없이 구현하도록 자율 조종하는 마스터 프롬프트이자 가이드라인입니다.
+이 문서는 AI 자율주행 개발 에이전트(Autonomous Agents)가 '삼국지리턴 웹 프로젝트'의 핵심 아키텍처와 320개 기능 체크리스트를 오차 없이 구현하도록 자율 조종하는 마스터 프롬프트이자 가이드라인입니다.
 
 ---
 
@@ -58,12 +58,12 @@ master                ← 통합 전용. 직접 개발 금지
 **세션이 끝나면 에이전트는 기억을 잃습니다.** 새 세션을 시작하면 그 파일을 먼저
 읽고, 기한이 지났으면 정리한 뒤 체크를 갱신하십시오.
 
-- `D:\samgukzi8-pre-rewrite.bundle` (85.8 MB) — **2026-10-11 삭제 예정**
+- `D:\samgukzi-return-pre-rewrite.bundle` (85.8 MB) — **2026-10-11 삭제 예정**
   히스토리 재작성 전 유일한 복구 지점. 되돌릴 방법이 문서에 적혀 있습니다.
 
 ### 🚫 저작권 자산 게이트 (2026-09-27 도입)
 
-`assets/china-national-map.png` 은 Total War: Three Kingdoms(Creative Assembly/Sega)
+`assets/china-national-map.png` 은 상용 전략 게임의 파생 지도
 파생 지도였습니다. 렌더러에서 제거하고 untrack 했고, `git filter-repo` 로
 히스토리 136커밋에서도 제거했습니다. 대체본은 `assets/map-china-4096.webp`
 (Natural Earth 퍼블릭 도메인)입니다.

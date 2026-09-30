@@ -3,7 +3,7 @@
  *
  * 배경
  * ----
- * assets/china-national-map.png 은 Total War: Three Kingdoms(Creative Assembly/Sega)
+ * assets/china-national-map.png 은 상용 전략 게임의 파생 지도
  * 파생 지도였다. 렌더러에서 제거하고 untrack 했고(filter-repo 로 히스토리에서도 제거),
  * 지금은 Natural Earth 퍼블릭 도메인 데이터로 만든 map-china-4096.webp 가 그 자리를
  * 대신한다. 이 스크립트는 그것이 다시 들어오는 것을 경로명과 해시 양쪽으로 막는다.
@@ -28,7 +28,7 @@ import { resolve as resolvePath, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DENIED_PATHS = [
-    // Total War: Three Kingdoms 파생. 렌더링 경로에서도 서비스워커 캐시에서도 제거됨.
+    // 상용 전략 게임 파생 지도. 렌더링 경로에서도 서비스워커 캐시에서도 제거됨.
     'assets/china-national-map.png',
 ];
 

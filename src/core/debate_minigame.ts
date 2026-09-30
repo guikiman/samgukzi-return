@@ -1,7 +1,7 @@
 /**
  * [B12] 설전(Debate) 미니게임 엔진
  *
- * 삼국지 8 리메이크 스타일 설전 시스템
+ * 삼국지리턴 스타일 설전 시스템
  * INT/WIT/PRESSURE 속성 카드 대결
  * LOGIC > FALLACY, WIT > LOGIC, PRESSURE > WIT, FALLACY > PRESSURE
  * MOOD 시스템: 연속 승리 시 보정

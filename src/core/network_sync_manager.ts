@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — Seed 기반 결정론적 턴제 네트워크 동기화 매니저
+ * 삼국지리턴 — Seed 기반 결정론적 턴제 네트워크 동기화 매니저
  * 파일: src/core/network_sync_manager.ts
  *
  * [210] Supabase Realtime 멀티플레이 세션

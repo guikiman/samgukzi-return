@@ -25,7 +25,7 @@ export interface ArmyPreset {
     readonly updatedAt: number;
 }
 
-const STORAGE_KEY = 'rtk8_army_presets';
+const STORAGE_KEY = 'samgukzi_return_army_presets';
 const MAX_PRESETS = 20;
 const MAX_RECENT = 5;
 

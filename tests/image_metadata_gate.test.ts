@@ -76,7 +76,7 @@ describe('메타데이터 검사 도구', () => {
     it('PNG 텍스트 청크를 실제로 잡는다', () => {
         const out = join(TMP, 'with-text.png');
         // 원본 파일명이 남아 있으면 그것만으로도 출처가 드러난다.
-        pngWithTextChunk(basePng, 'Software', 'Total War: Three Kingdoms', out);
+        pngWithTextChunk(basePng, 'Software', '어떤 상용 게임의 지도', out);
         const [report] = inspectJson([out]);
         const chunks = report.chunks.map(c => c.chunk);
         expect(chunks, 'tEXt 청크를 잡지 못했다').toContain('tEXt');
@@ -86,7 +86,7 @@ describe('메타데이터 검사 도구', () => {
 
     it('WebP EXIF 청크를 실제로 잡는다', () => {
         const out = join(TMP, 'with-exif.webp');
-        webpWithExif(out, 'Photoshop 3.0 / Total War map');
+        webpWithExif(out, 'Photoshop 3.0 / 상용 게임 지도');
         const [report] = inspectJson([out]);
         expect(report.chunks.map(c => c.chunk), 'EXIF 청크를 잡지 못했다').toContain('EXIF');
     });
@@ -98,7 +98,7 @@ describe('메타데이터 검사 도구', () => {
 
     it('--fail-on-meta 는 메타데이터가 있으면 종료 코드 1 을 준다', () => {
         const out = join(TMP, 'with-text2.png');
-        pngWithTextChunk(basePng, 'Comment', 'derived from Total War', out);
+        pngWithTextChunk(basePng, 'Comment', '파생된 상용 게임 지도', out);
         let code = 0;
         try {
             execFileSync(process.execPath, [SCRIPT, '--fail-on-meta', out], { encoding: 'utf8', stdio: 'pipe' });

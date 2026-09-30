@@ -42,7 +42,7 @@ export const TEXT_SCALE_LABELS: Record<TextScale, string> = {
     1.3: '아주 크게 130%',
 };
 
-const STORAGE_KEY = 'rtk8_accessibility';
+const STORAGE_KEY = 'samgukzi_return_accessibility';
 
 export function loadAccessibilitySettings(): AccessibilitySettings {
     try {

@@ -34,7 +34,7 @@ export interface TutorialRenderResult {
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     {
         id: 'welcome',
-        title: ' Welcome — 삼국지 8 리메이크',
+        title: ' Welcome — 삼국지리턴',
         body: '군주가 되어 중원을 통일하는 것이 목표입니다. 매월 턴이 진행되며, 내정·외교·전쟁을 조합해 세력을 키웁니다.',
         targetHint: '게임 시작',
     },
@@ -110,7 +110,7 @@ export class TutorialSystem {
     private index = 0;
     private storageKey: string;
 
-    constructor(storageKey = 'rtk8_tutorial_done') {
+    constructor(storageKey = 'samgukzi_return_tutorial_done') {
         this.storageKey = storageKey;
     }
 

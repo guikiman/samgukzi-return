@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — 심층 AI 무장 심리 및 의사결정 엔진
+ * 삼국지리턴 — 심층 AI 무장 심리 및 의사결정 엔진
  * 파일: src/core/officer_ai_controller.ts
  *
  * FSM(유한상태기계) + Behavior Tree(행동 트리) 하이브리드

@@ -17,7 +17,7 @@ import {
     UNDEFINED_TACTICS,
     TACTIC_NAME_COLLISIONS,
     type TacticDef,
-} from './rtk14_reference_data.js';
+} from './tactic_reference_data.js';
 import { OFFICER_PROFILES } from './officer_profile_schema.js';
 import type { OfficerID } from './types.js';
 
