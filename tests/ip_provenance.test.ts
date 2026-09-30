@@ -26,13 +26,14 @@ const MANAGED_PREFIXES = ['assets/', 'src-tauri/icons/'];
 const BINARY_EXT = /\.(png|jpe?g|webp|gif|svg|ttf|otf|woff2?|eot|mp3|wav|ogg|mp4|webm|avi|mov|pdf|xlsx|docx|pptx|psd|blend)$/i;
 
 /**
- * 출처가 아직 미확인인 자산 — CI 가 현재 red 인 이유이자 미해결 항목이다.
- * 여기 적히지 않은 자산이 UNVERIFIED 가 되면 이 테스트가 red 가 되므로
- * "모르는 채로 넘어갔다"는 상태가 구조적으로 불가능해진다.
+ * 미확인 자산을 잠시 숨겨 두는 예외 목록 — **비어 있어야 한다.**
+ *
+ * 근거 없는 자산을 배포하지 않으려면 예외를 두는 탈출구 자체가 없어야 한다.
+ * 항목이 생기면 아래 검사 두 개가 동시에 red 가 되므로, 대장을 고치지 않고는
+ * 통과할 수 없다. 2026-09-30 기준 전부 해금 상태다 — AI 원화 지도의 출처를
+ * 작성자가 txt2img(ChatGPT) 임으로 확인해 대장에 근거를 기록했다.
  */
-const KNOWN_UNRESOLVED = new Set<string>([
-    'assets/map-china-ai-4096.webp',
-]);
+const KNOWN_UNRESOLVED = new Set<string>([]);
 
 /** 게이트와 동일한 규칙으로, 이 테스트가 직접 managed 바이너리를 계산한다. */
 function managedBinaries(): string[] {
@@ -65,12 +66,13 @@ describe('자산 출처 대장', () => {
         expect(mismatched, mismatched.join(' / ')).toEqual([]);
     });
 
-    it('근거 미확인 자산은 추적 가능한 목록에만 존재한다', () => {
+    it('미확인 자산이 하나도 없다 — 예외 목록도 비어 있어야 한다', () => {
         const unresolved = PROVENANCE.assets
             .filter(a => !a.license || a.license.toUpperCase().includes('UNVERIFIED'))
             .map(a => a.path);
-        // 미확인 자산이 늘면 그만큼 CI 가 red 다 — 숨길 수 없다.
-        expect(unresolved.filter(p => !KNOWN_UNRESOLVED.has(p)), '추적 목록에 없는 미확인 자산이 생겼다').toEqual([]);
+        // 이게 red 면 근거 없는 자산이 들어온 것이다. 대장을 고치거나 자산을 빼야 한다.
+        expect(unresolved, `근거 미확인 자산이 생겼다: ${unresolved.join(', ')}`).toEqual([]);
+        expect([...KNOWN_UNRESOLVED], '탈출구 목록은 비어 있어야 한다').toEqual([]);
     });
 
     it('미확인 자산은 대장에 왜 미확인인지 사유를 남기고 있다', () => {
