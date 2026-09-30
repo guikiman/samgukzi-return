@@ -5,6 +5,11 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # 배포는 수동으로만 한다.
+  # [중요] 예전엔 push to master 가 곧 배포였다. 테스트를 통과하면 아무도 묻지 않고
+  # GitHub Pages 에 올라갔다. 게임 완성도가 낮아서 개발 중 배포는 시간 낭비이고,
+  # 검증되지 않은 상태가 공개된다. 자동 배포 통로는 2026-09-30 에 제거했다.
+  workflow_dispatch:
 
 jobs:
   ip-gate:
@@ -70,11 +75,12 @@ jobs:
         run: node tests/e2e/sw_offline.mjs
 
   deploy:
-    # 테스트 통과 시 기본 브랜치에 한해 GitHub Pages 배포
-    # [결함 수정] 예전에는 test 만 기다렸다. ip-gate 가 실패해도 deploy 가 돌아가서
-    # 저작권 위반 자산이 그대로 공개 배포될 수 있었다. 게이트는 배포를 반드시 막아야 한다.
+    # 수동 실행(workflow_dispatch)에서만 배포한다.
+    # [결함 수정] 예전에는 master 로 push 하면 자동으로 배포됐다.저작권 게이트를 통과한
+    # 미완성 빌드가 아무 허락 없이 공개되었고, 개발할 때마다 배포 시도가 반복됐다.
+    # [결함 수정] needs 가 test 만이라 ip-gate 가 실패해도 배포가 돌아갈 수 있었다.
     needs: [ip-gate, test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       pages: write
