@@ -30,9 +30,6 @@ const PRECACHE_PATHS = [
     // 렌더러(ChinaMapRenderer)가 로드하는 실제 지형 비트맵.
     // 경로가 어긋나면 오프라인에서 503 → 스케치 지도로 폴백한다.
     'assets/map-china-ai-4096.webp',
-    // 도시 진입 화면 배경(AI 생성, txt2img). 없으면 오프라인에서 도시 화면이
-    // 절차 렌더로 물러난다 — 조용히 바뀌기 때문에 프리캐시에 넣어야 한다.
-    'assets/city-scene-base.png',
     'src/data/scenarios/index.json',
 ];
 

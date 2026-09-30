@@ -11,7 +11,6 @@ import { HexMapCanvasRenderer, HexTile } from './core/hex_map_canvas_renderer.js
 import { ChinaMapRenderer, MapCityView } from './core/china_map_renderer.js';
 import { City3DRenderer, type CityBuilding, dayNightPhase, generateDecorations } from './core/city_3d_renderer.js';
 import { createAmbientTicker, shouldRedrawAmbient, CITY_AMBIENT_INTERVAL_MS, type AmbientTicker } from './core/city_ambient_loop.js';
-import { CITY_SCENE_ART_PATH, computeCoverPlacement, anchorFor } from './core/city_scene_art.js';
 import { BattleFrontend, DeployableUnit, BattlePhase } from './core/battle_frontend.js';
 import { TitleScreen } from './core/title_screen.js';
 import { loadScenarios, getCachedScenarios, buildWorld, getKnownOfficerName, resolveProtagonistId } from './core/scenario_system.js';
@@ -1127,22 +1126,6 @@ const cdpStats = document.getElementById('cdp-stats')!;
 const cdpOfficers = document.getElementById('cdp-officers')!;
 const cdpFacilities = document.getElementById('cdp-facilities')!;
 const citySceneCanvas = document.getElementById('city-scene-canvas') as HTMLCanvasElement | null;
-
-/**
- * 도시 진입 화면 배경 그림 — 미로딩 동안에는 절차 렌더로 동작한다.
- * [실패해도 안전] 로드 실패는 조용히 넘기고 기존 절차 렌더를 쓴다. 그림이 없어도
- * 도시 화면은 반드시 나타난다.
- */
-const citySceneArt = new Image();
-let citySceneArtReady = false;
-citySceneArt.decoding = 'async';
-citySceneArt.addEventListener('load', () => {
-    citySceneArtReady = true;
-    const city = citySceneCityId ? engine?.['store'].getCity(citySceneCityId) : null;
-    if (city) drawCityCanvas(city);
-});
-citySceneArt.addEventListener('error', () => { citySceneArtReady = false; });
-citySceneArt.src = CITY_SCENE_ART_PATH;
 const citySceneSummary = document.getElementById('city-scene-summary');
 const citySceneDetail = document.getElementById('city-building-detail');
 const citySceneRenderer = new City3DRenderer();
@@ -2572,29 +2555,6 @@ function drawCityCanvas(city: import('./core/types.js').City): void {
     ctx.fillStyle = night > 0.5 ? '#141c2e' : '#26382c';
     ctx.fillRect(0, 0, width, height);
 
-    // 배경 그림이 준비되면 그것을 바탕으로 쓴다. 미로딩/로드 실패 시에는 아래의
-    // 절차 렌더로 물러난다 — 그림이 없어도 도시 화면이 비면 안 된다.
-    if (citySceneArtReady) {
-        const place = computeCoverPlacement(
-            citySceneArt.naturalWidth || 1,
-            citySceneArt.naturalHeight || 1,
-            width,
-            height,
-        );
-        ctx.drawImage(citySceneArt, place.sx, place.sy, place.sw, place.sh, 0, 0, width, height);
-        // 그림 위에 계절·주야를 얹는다. 절차 렌더는 배경을 직접 칠했으므로
-        // 여기서는 밤 안개만 덧씌운다.
-        citySceneRenderer.applyNightTint(ctx, width, height, night);
-        // 건물 데이터는 **그림이 있어도 항상 다시 만들어야 한다.** 재사용하면
-        // 저장된 투자·레벨 상태가 객체에 반영되지 않아 투자 직후 화면이 안 바뀐다.
-        const seasonNow = engine?.['store'].getGlobalState().season ?? 'SPRING';
-        const developmentNow = Math.max(1, Math.min(5, city.development / 20));
-        const statesNow = engine?.['store'].getGlobalState().cityBuildingStates?.[city.id] ?? {};
-        citySceneBuildings = citySceneRenderer.generateCityLayout(city.id, developmentNow, seasonNow, statesNow);
-        citySceneCityId = city.id;
-        return;
-    }
-
     // 지도 위에 도시가 놓인 느낌을 주는 가벼운 격자
     ctx.strokeStyle = 'rgba(220, 210, 170, 0.10)';
     ctx.lineWidth = 1;
@@ -2611,9 +2571,9 @@ function drawCityCanvas(city: import('./core/types.js').City): void {
     const buildings = citySceneRenderer.generateCityLayout(city.id, developmentLevel, season, buildingStates);
     citySceneBuildings = buildings;
     citySceneCityId = city.id;
+    const sorted = [...buildings].sort((a, b) => (a.x + a.y) - (b.x + b.y));
     const gridRadius = Math.ceil(Math.sqrt(Math.max(1, buildings.length)));
     const blossom = season === 'SPRING' ? '#f4a7c3' : season === 'SUMMER' ? '#8fce7a' : season === 'AUTUMN' ? '#e8955a' : '#d8d8e2';
-    const sorted = [...buildings].sort((a, b) => (a.x + a.y) - (b.x + b.y));
 
     ctx.save();
     ctx.translate(width / 2, height / 2 + 28);
@@ -2692,13 +2652,9 @@ function renderCitySceneBadges(buildings: CityBuilding[], width: number, height:
         picked.push(building);
     }
     const badges: string[] = picked.map((building, i) => {
-        // 배경 그림이 있으면 앵커를 쓴다. 그림은 회사가 그린이라 코드의 등각 좌표와
-        // 어긋나므로, 앵커를 통해 라벨이 실제 구역을 가리키게 한다.
-        // 그림이 없으면 절차 렌더가 화면에 그려지므로 종전의 타원 링을 유지한다 —
-        // 앵커를 쓰면 라벨이 아무 데나 떠 있게 된다.
         const angle = -Math.PI / 2 + (i * Math.PI * 2) / Math.max(1, picked.length);
-        const left = citySceneArtReady ? anchorFor(building.type, i, picked.length).x : 50 + 42 * Math.cos(angle);
-        const top = citySceneArtReady ? anchorFor(building.type, i, picked.length).y : 50 + 36 * Math.sin(angle);
+        const left = 50 + 42 * Math.cos(angle);
+        const top = 50 + 36 * Math.sin(angle);
         return (
             `<button type="button" class="city-badge" data-building-id="${building.id}" ` +
             `style="left:${left.toFixed(1)}%;top:${top.toFixed(1)}%" title="${building.label} Lv.${building.level}">` +
