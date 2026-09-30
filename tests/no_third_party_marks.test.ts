@@ -44,6 +44,9 @@ const FORBIDDEN: Array<{ pattern: RegExp; label: string }> = [
 const EXEMPT = [
     'docs/ip-evidence/',
     'scripts/check_ip_assets.mjs',   // 차단 대상을 식별해야 게이트가 동작한다
+    // 이 파일 자신. 검사 대상 문자열이 정의문으로 들어 있어 스스로를 잡는다.
+    // 자기 자신을 검사하는 순간 항상 red 가 되므로 구조적으로 제외가 불가피하다.
+    'tests/no_third_party_marks.test.ts',
 ];
 
 function scanTargets(): Array<{ file: string; hits: string[] }> {
@@ -87,5 +90,15 @@ describe('제3자 상표 배제', () => {
         const tracked = execFileSync('git', ['ls-files'], { encoding: 'utf8' });
         expect(tracked).toContain('docs/ip-evidence/');
         expect(tracked).toContain('scripts/check_ip_assets.mjs');
+    });
+
+    it('예외 목록이 늘어나지 않는다 — 조용히 면제해 숨기지 못하게', () => {
+        // 예외는 늘리기만 하면 되므로 방치하면 검사 자체가 무의미해진다.
+        // 새로 넣을 필요가 생기면 여기서 의도를 드러내야 한다.
+        expect([...EXEMPT].sort(), '예외가 추가됐다 — 근거를 PR 본문에 적고 검사를 갱신할 것').toEqual([
+            'docs/ip-evidence/',
+            'scripts/check_ip_assets.mjs',
+            'tests/no_third_party_marks.test.ts',
+        ]);
     });
 });
