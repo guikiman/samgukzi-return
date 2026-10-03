@@ -96,13 +96,8 @@ import {
 } from './ui/scenes/dialogue_scene.js';
 import { speakLine, stopSpeech } from './core/ai_tts_pipeline.js';
 
-// 게임 로직(연쇄 대화·교역)이 아직 참조하는 화면 요소. 씬이 그려도 게임은 직접 만진다.
-const dialogueModal = document.getElementById('dialogue-modal')!;
-const dlgContinue = document.getElementById('dlg-continue') as HTMLButtonElement;
-const dialoguePrev = document.getElementById('dialogue-prev') as HTMLButtonElement;
-const dialoguePageLabel = document.getElementById('dialogue-page')!;
-const dialogueTrade = document.getElementById('dialogue-trade')!;
-const dialogueResult = document.getElementById('dialogue-result')!;
+// 게임이 결정하고, 화면은 씬이 그린다.
+// 여기서 더 이상 대화창의 DOM 을 직접 만지지 않는다.
 /** 이전 이름 호환 — 씬 타입이 화면 구현을 그대로 물려받았다. */
 type DialogueChoice = DialogueSceneChoice;
 type DialoguePage = DialogueScenePage;
@@ -1842,10 +1837,11 @@ function renderScriptNode(): void {
 
     // 계속 화살표: 선택지가 없고 다음 장면이 있을 때만 살아 있다.
     const canAdvance = node.choices.length === 0 && !!node.next && !activeRunner!.finished;
-    dlgContinue.disabled = !canAdvance;
-    dlgContinue.classList.toggle('dlg-bouncing', canAdvance);
-    dialoguePrev.disabled = !activeRunner!.canGoBack;
-    dialoguePageLabel.textContent = `방문 ${activeRunner!.visitedCount}`;
+    dialogueScene.setNavState({
+        canAdvance,
+        canGoBack: activeRunner!.canGoBack,
+        pageLabel: `방문 ${activeRunner!.visitedCount}`,
+    });
     renderTradePanel();
 }
 
@@ -1881,14 +1877,13 @@ function isTradeScene(node: ScriptNode | undefined): boolean {
 function renderTradePanel(): void {
     const node = activeRunner?.current;
     if (!isTradeScene(node) || !engine || !tradeCityId) {
-        dialogueTrade.style.display = 'none';
-        dialogueTrade.innerHTML = '';
+        dialogueScene.hideTrade();
         return;
     }
     const store = engine['store'];
     const gs = store.getGlobalState();
     const faction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
-    if (!faction) { dialogueTrade.style.display = 'none'; return; }
+    if (!faction) { dialogueScene.hideTrade(); return; }
     const stock = loadTradeStock(faction.id);
 
     const rows = tradeOffer.map(r => {
@@ -1904,13 +1899,12 @@ function renderTradePanel(): void {
             + '</span></div>';
     }).join('');
 
-    dialogueTrade.innerHTML = '<div class="dlg-trade-head">'
+    dialogueScene.renderTrade('<div class="dlg-trade-head">'
         + '<span>물자</span><span>도시 매입가</span><span>도시 매도가</span><span></span>'
         + '<span class="dlg-trade-gold">보유 ' + faction.gold.toLocaleString() + '金</span>'
         + '</div>'
         + '<div class="dlg-trade-rows">' + rows + '</div>'
-        + '<div class="dlg-trade-note">10자 단위로 거래한다. 대화가 끝나도 물자는 남는다.</div>';
-    dialogueTrade.style.display = 'flex';
+        + '<div class="dlg-trade-note">10자 단위로 거래한다. 대화가 끝나도 물자는 남는다.</div>');
 }
 /** 매입/매도 실행. 10자 단위. */
 function runTrade(goodId: string, mode: 'buy' | 'sell'): void {
@@ -1926,26 +1920,23 @@ function runTrade(goodId: string, mode: 'buy' | 'sell'): void {
 
     if (mode === 'buy') {
         if (faction.gold < price * unit) {
-            dialogueResult.textContent = '금화가 부족합니다.';
-            dialogueResult.style.display = 'block';
+            dialogueScene.showResult('금화가 부족합니다.');
             return;
         }
         faction.gold -= price * unit;
         stock[goodId] = (stock[goodId] ?? 0) + unit;
-        dialogueResult.textContent = `${row.good.name} ${unit}자 매입 (${price * unit}金)`;
+        dialogueScene.showResult(`${row.good.name} ${unit}자 매입 (${price * unit}金)`);
     } else {
         const have = stock[goodId] ?? 0;
         if (have < unit) {
-            dialogueResult.textContent = '가진 물자가 부족합니다.';
-            dialogueResult.style.display = 'block';
+            dialogueScene.showResult('가진 물자가 부족합니다.');
             return;
         }
         stock[goodId] = have - unit;
         faction.gold += price * unit;
-        dialogueResult.textContent = `${row.good.name} ${unit}자 매도 (${price * unit}金)`;
+        dialogueScene.showResult(`${row.good.name} ${unit}자 매도 (${price * unit}金)`);
     }
     saveTradeStock(faction.id, stock);
-    dialogueResult.style.display = 'block';
     renderTradePanel();
 }
 
@@ -4559,9 +4550,11 @@ const shortcutButtons: Record<string, HTMLButtonElement> = {
     p: btnPause,
 };
 
+const dialogueSurface = dialogueScene.surface();
+
 function closeTopOverlay(): boolean {
     const overlays: Array<[string, HTMLElement, HTMLElement]> = [
-        ['dialogue-modal', dialogueModal, document.getElementById('dialogue-close')!],
+        ['dialogue-modal', dialogueSurface.panel, dialogueSurface.closeButton],
         ['roaming-modal', document.getElementById('roaming-modal')!, btnHelp],
         ['replay-panel', document.getElementById('replay-panel')!, btnBattleReplay],
         ['vengeance-modal', document.getElementById('vengeance-modal')!, btnBattle],

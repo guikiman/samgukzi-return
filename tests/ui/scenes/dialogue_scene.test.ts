@@ -439,6 +439,130 @@ describe('결함 방어', () => {
         expect(scene.isOpen()).toBe(true);
     });
 
+    it('surface() 로 창과 닫기 버튼을 얻는다 — Esc 처리가 이걸 본다', () => {
+        const scene = makeScene();
+        const s = scene.surface();
+        expect(s.panel.id).toBe('dialogue-modal');
+        expect(s.closeButton.id).toBe('dialogue-close');
+    });
+
+    it('surface 의 닫기 버튼을 누르면 창이 닫힌다', () => {
+        const scene = makeScene();
+        scene.open(simpleState());
+        scene.surface().closeButton.click();
+        expect(scene.isOpen()).toBe(false);
+    });
+// ---------------------------------------------------------------- 게임이 밀어넣는 것들
+
+describe('내비게이션 표시 (게임이 결정한다)', () => {
+    let scene: DialogueScene;
+    beforeEach(() => { mountFixture(); scene = makeScene(); });
+
+    it('canAdvance 로 계속 화살표를 살리고 흔든다', () => {
+        scene.open(simpleState());
+        scene.setNavState({ canAdvance: true, canGoBack: false, pageLabel: '방문 2' });
+        const cont = document.getElementById('dlg-continue') as HTMLButtonElement;
+        expect(cont.disabled).toBe(false);
+        expect(cont.classList.contains('dlg-bouncing')).toBe(true);
+    });
+
+    it('canAdvance 가 false 면 화살표를 잠근다', () => {
+        scene.open(simpleState());
+        scene.setNavState({ canAdvance: false, canGoBack: true, pageLabel: '' });
+        const cont = document.getElementById('dlg-continue') as HTMLButtonElement;
+        expect(cont.disabled).toBe(true);
+        expect(cont.classList.contains('dlg-bouncing')).toBe(false);
+    });
+
+    it('canGoBack 으로 ◀ 버튼을 살린다', () => {
+        scene.open(simpleState());
+        const prev = document.getElementById('dialogue-prev') as HTMLButtonElement;
+        scene.setNavState({ canAdvance: false, canGoBack: false, pageLabel: '' });
+        expect(prev.disabled).toBe(true);
+        scene.setNavState({ canAdvance: false, canGoBack: true, pageLabel: '' });
+        expect(prev.disabled).toBe(false);
+    });
+
+    it('게임이 준 페이지 표시를 쓴다', () => {
+        scene.open(simpleState());
+        scene.setNavState({ canAdvance: false, canGoBack: false, pageLabel: '방문 7' });
+        expect(el('dialogue-page').textContent).toBe('방문 7');
+    });
+
+    it('게임이 준 표시는 다음 장면을 그릴 때도 유지된다', () => {
+        scene.open(simpleState());
+        scene.setNavState({ canAdvance: true, canGoBack: true, pageLabel: '방문 3' });
+        // 연쇄 대화는 매 장면마다 창을 다시 연다
+        scene.open(simpleState('둘째 대사'), { keepTranscript: true });
+        expect(el('dialogue-page').textContent).toBe('방문 3');
+    });
+
+    it('닫으면 표시가 지워진다 — 다음 대화에 새면 안 된다', () => {
+        scene.open(simpleState());
+        scene.setNavState({ canAdvance: true, canGoBack: true, pageLabel: '방문 9' });
+        scene.close();
+        scene.open(simpleState('새 대화'));
+        expect(el('dialogue-page').textContent).toContain('/');
+        expect(el('dialogue-page').textContent).not.toContain('방문 9');
+    });
+});
+
+describe('교역 패널 (게임이 수치를 만든다)', () => {
+    let scene: DialogueScene;
+    beforeEach(() => { mountFixture(); scene = makeScene(); });
+
+    it('renderTrade 로 내용을 갈아끼우고 띄운다', () => {
+        scene.open(simpleState());
+        scene.renderTrade('<div class="dlg-trade-head">보유 500金</div>');
+        const trade = el('dialogue-trade');
+        expect(trade.style.display).toBe('flex');
+        expect(trade.textContent).toContain('보유 500金');
+    });
+
+    it('hideTrade 로 감추고 비운다', () => {
+        scene.open(simpleState());
+        scene.renderTrade('<div>내용</div>');
+        scene.hideTrade();
+        const trade = el('dialogue-trade');
+        expect(trade.style.display).toBe('none');
+        expect(trade.innerHTML).toBe('');
+    });
+
+    it('빈 문자열을 밀어넣으면 숨겨진다', () => {
+        scene.open(simpleState());
+        scene.renderTrade('');
+        expect(el('dialogue-trade').style.display).toBe('none');
+    });
+
+    it('매입 버튼 클릭이 runTrade 훅으로 전달된다', () => {
+        const runTrade = vi.fn();
+        const sceneWithHook = createDialogueScene(document.body, { runTrade });
+        sceneWithHook.open(simpleState());
+        sceneWithHook.renderTrade('<button data-trade-buy="GRAIN">매입</button>');
+        (document.querySelector('[data-trade-buy]') as HTMLButtonElement).click();
+        expect(runTrade).toHaveBeenCalledWith('GRAIN', 'buy');
+    });
+
+    it('매도 버튼도 같은 경로로 전달된다', () => {
+        const runTrade = vi.fn();
+        const sceneWithHook = createDialogueScene(document.body, { runTrade });
+        sceneWithHook.open(simpleState());
+        sceneWithHook.renderTrade('<button data-trade-sell="SILK">매도</button>');
+        (document.querySelector('[data-trade-sell]') as HTMLButtonElement).click();
+        expect(runTrade).toHaveBeenCalledWith('SILK', 'sell');
+    });
+});
+
+describe('결과줄', () => {
+    it('showResult 로 한 줄 띄운다', () => {
+        const scene = makeScene();
+        scene.open(simpleState());
+        scene.showResult('쌀 10자 매입 (200金)');
+        expect(el('dialogue-result').textContent).toBe('쌀 10자 매입 (200金)');
+        expect(el('dialogue-result').style.display).toBe('block');
+    });
+});
+
     it('닫고 다시 열어도 리스너가 늘지 않는다', () => {
         const scene = makeScene();
         const onSelect = vi.fn(() => '결과');

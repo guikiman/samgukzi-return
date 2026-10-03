@@ -86,8 +86,43 @@ export interface DialogueScene {
     isRevealDone(): boolean;
     /** 지금 타임아웃까지 몇 글자를 보여줬는지 — E2E/디버그 확인용. */
     revealProgress(): { readonly cursor: number; readonly total: number } | null;
+    /**
+     * 연쇄 대화용 내비게이션 표시를 갱신한다.
+     * 게임이 "다음 장면이 있는가" 를 결정하고, 그 사실만 씬에 알린다.
+     */
+    setNavState(state: DialogueNavState): void;
+    /**
+     * 교역 패널의 내용을 갈아끼운다.
+     * 게임이 물자 수치를 만들고, 씬은 그리기만 한다.
+     */
+    renderTrade(html: string): void;
+    /** 교역 패널을 감춘다. */
+    hideTrade(): void;
+    /** 결과줄에 한 줄 띄운다. */
+    showResult(message: string): void;
+    /**
+     * 창과 그 닫기 버튼을 돌려준다 — 최상위 오버레이 순회(Esc 처리)가 이걸 본다.
+     * 창을 직접 만지지 않고도 "열려 있는가/닫을 수 있는가" 를 알 수 있다.
+     */
+    surface(): DialogueSurface;
     /** 선물 아이템 목록을 등록한다(게임 데이터). */
     setGiftItems(items: readonly DialogueGiftItem[]): void;
+}
+
+/** 연쇄 대화 내비게이션 표시 — 게임이 결정하고 씬이 그린다. */
+export interface DialogueNavState {
+    /** 계속 화살표를 살려 두고 흔든다(다음 장면이 있을 때). */
+    readonly canAdvance: boolean;
+    /** ◀ 버튼을 살려 둔다(뒤로 갈 장면이 있을 때). */
+    readonly canGoBack: boolean;
+    /** 페이지 표시(예: "방문 2"). 빈 문자열이면 표시를 비운다. */
+    readonly pageLabel: string;
+}
+
+/** 오버레이 순회가 필요한 최소한의 창 정보. */
+export interface DialogueSurface {
+    readonly panel: HTMLElement;
+    readonly closeButton: HTMLElement;
 }
 
 /**
@@ -155,6 +190,8 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
     let revealSource = '';
     let forceInstant = false;
     let giftItems: readonly DialogueGiftItem[] = [];
+    /** 마지막으로 밀어넣은 페이지 표시 — 스크립트 노드가 갈 때 다시 그려지도록 기억한다. */
+    let pageLabel_ = '';
 // ------------------------------------------------------------ 기록 / 타이포그래피
 
     function resetTranscript(): void {
@@ -366,8 +403,9 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         result.textContent = '';
         prevBtn.disabled = state.index <= 0;
         nextBtn.disabled = state.index >= state.pages.length - 1;
-        pageLabel.textContent = `${state.index + 1} / ${state.pages.length}`;
-        if (cont) { cont.disabled = true; cont.classList.remove('dlg-bouncing'); }
+        // 연쇄 대화는 게임이 '방문 N' 같은 자체 표시를 밀어넣는다 — 덮어쓰면 안 된다.
+        pageLabel.textContent = pageLabel_ !== '' ? pageLabel_ : `${state.index + 1} / ${state.pages.length}`;
+        if (cont && pageLabel_ === '') { cont.disabled = true; cont.classList.remove('dlg-bouncing'); }
 
         // 지나온 장면을 기록에 싣는다.
         // 앞 페이지가 통째로 누락되지 않도록 0..index 를 순서대로 돌며 쌓는다.
@@ -401,6 +439,9 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         const onClose = state?.onClose;
         state = null;
         modal.style.display = 'none';
+        // 연쇄 대화가 밀어넣은 표시를 지운다 — 다음 대화에 '방문 N' 이 남으면 안 된다.
+        pageLabel_ = '';
+        if (cont) { cont.disabled = true; cont.classList.remove('dlg-bouncing'); }
         // 타이포그래피 타이머와 음성을 반드시 정리한다.
         // 남겨두면 다음 대화가 열렸는데 옛 대사가 깜빡이거나 읽힌다.
         stopRevealTimer();
@@ -512,5 +553,29 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         isRevealDone: () => isDone(reveal),
         revealProgress: () => reveal,
         setGiftItems: (items: readonly DialogueGiftItem[]) => { giftItems = items; },
+        setNavState: ({ canAdvance, canGoBack, pageLabel: label }) => {
+            if (cont) {
+                cont.disabled = !canAdvance;
+                cont.classList.toggle('dlg-bouncing', canAdvance);
+            }
+            prevBtn.disabled = !canGoBack;
+            pageLabel_ = label;
+            pageLabel.textContent = label;
+        },
+        renderTrade: (html: string) => {
+            if (!trade) return;
+            trade.innerHTML = html;
+            trade.style.display = html === '' ? 'none' : 'flex';
+        },
+        hideTrade: () => {
+            if (!trade) return;
+            trade.innerHTML = '';
+            trade.style.display = 'none';
+        },
+        showResult: (message: string) => {
+            result.textContent = message;
+            result.style.display = 'block';
+        },
+        surface: () => ({ panel: modal, closeButton: closeBtn }),
     };
 }
