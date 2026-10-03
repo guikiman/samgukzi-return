@@ -17,7 +17,7 @@
 
 import {
     createTranscriptEntry, recordChoice, renderTranscriptHtml, type TranscriptEntry,
-    createRevealMachine, advanceReveal, completeReveal, isRevealDone, renderReveal,
+    createRevealMachine, advanceReveal, completeReveal, renderReveal,
     planReveal,
     type DialogueScenePage, type DialogueSceneState, type DialogueSceneChoice,
     type OpenSceneOptions,
@@ -73,12 +73,34 @@ export interface DialogueScene {
     currentPage(): DialogueScenePage | null;
     /** 창이 닫힌 뒤 실행할 콜백을 건다(알현 → 교섭처럼 창을 이어서 띄울 때). */
     queueAfterClose(fn: () => void): void;
+    /**
+     * 대기 콜백을 이어 붙인다 — 앞서 걸린 것이 있으면 먼저 돌리고 그 다음 새 콜백을 실행한다.
+     * 순서가 뒤집히면 엉뚱한 창이 먼저 열리므로 '한 번만' 덮어쓰지 않는다.
+     */
+    queueAfterCloseChained(fn: () => void): void;
+    /** 대기 콜백을 버린다 — 다른 도시의 창이 먼저 열리지 않도록. */
+    clearQueuedClose(): void;
     /** 타이포그래피를 즉시 보여준다(E2E/디버그). */
     setForceInstant(on: boolean): void;
     /** 타이포그래피가 지금 끝났는가. */
     isRevealDone(): boolean;
+    /** 지금 타임아웃까지 몇 글자를 보여줬는지 — E2E/디버그 확인용. */
+    revealProgress(): { readonly cursor: number; readonly total: number } | null;
     /** 선물 아이템 목록을 등록한다(게임 데이터). */
     setGiftItems(items: readonly DialogueGiftItem[]): void;
+}
+
+/**
+ * 진행도 판정 — 씬 밖에서 상태를 들여다볼 때 쓴다(E2E 프로브).
+ * 씬 내부와 같은 규칙을 쓴다(규칙이 두 벌이면 서로 어긋난다).
+ */
+function isDone(state: { readonly cursor: number; readonly total: number } | null): boolean {
+    return state === null || state.cursor >= state.total;
+}
+
+/** 씬 밖에서 쓰는 진행도 판정 — 위와 같은 규칙. */
+export function isRevealDone(state: { readonly cursor: number; readonly total: number } | null): boolean {
+    return isDone(state);
 }
 
 type El = HTMLElement;
@@ -167,7 +189,7 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
 
     /** 글자를 다 보여준다. 이번에 실제로 건너뛰었으면 true. */
     function skipReveal(): boolean {
-        if (!reveal || isRevealDone(reveal)) return false;
+        if (!reveal || isDone(reveal)) return false;
         reveal = completeReveal(reveal);
         stopRevealTimer();
         text.textContent = renderReveal(revealSource, reveal);
@@ -189,7 +211,7 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
             if (!reveal) { stopRevealTimer(); return; }
             reveal = advanceReveal(reveal, 2);
             text.textContent = renderReveal(revealSource, reveal);
-            if (isRevealDone(reveal)) stopRevealTimer();
+            if (isDone(reveal)) stopRevealTimer();
         }, REVEAL_INTERVAL_MS);
     }
 
@@ -481,8 +503,14 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         isOpen: () => state !== null,
         currentPage: () => (state ? state.pages[state.index] ?? null : null),
         queueAfterClose: (fn: () => void) => { pendingAfter = fn; },
+        queueAfterCloseChained: (fn: () => void) => {
+            const previous = pendingAfter;
+            pendingAfter = () => { previous?.(); fn(); };
+        },
+        clearQueuedClose: () => { pendingAfter = null; },
         setForceInstant: (on: boolean) => { forceInstant = on; },
-        isRevealDone: () => reveal === null || isRevealDone(reveal),
+        isRevealDone: () => isDone(reveal),
+        revealProgress: () => reveal,
         setGiftItems: (items: readonly DialogueGiftItem[]) => { giftItems = items; },
     };
 }

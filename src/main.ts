@@ -88,11 +88,25 @@ import * as roaming_event_system from './core/roaming_event_system.js';
 // 로밍 대화 + 재야 방문 시스템 [25][461-480]
 import { getRoamingDialogue, resolveRoamingDialogue, type RoamingDialogueData } from './core/roaming_dialogue_system.js';
 import {
-    createTranscriptEntry, recordChoice, renderTranscriptHtml, type TranscriptEntry,
-    createRevealMachine, advanceReveal, completeReveal, isRevealDone, renderReveal,
-    planReveal, normalizeSpeech, DEFAULT_CHARS_PER_STEP, type RevealMachineState,
+    type DialogueSceneState, type DialogueScenePage, type DialogueSceneChoice,
+    type OpenSceneOptions,
 } from './core/dialogue_transcript.js';
+import {
+    createDialogueScene, isRevealDone,
+} from './ui/scenes/dialogue_scene.js';
 import { speakLine, stopSpeech } from './core/ai_tts_pipeline.js';
+
+// 게임 로직(연쇄 대화·교역)이 아직 참조하는 화면 요소. 씬이 그려도 게임은 직접 만진다.
+const dialogueModal = document.getElementById('dialogue-modal')!;
+const dlgContinue = document.getElementById('dlg-continue') as HTMLButtonElement;
+const dialoguePrev = document.getElementById('dialogue-prev') as HTMLButtonElement;
+const dialoguePageLabel = document.getElementById('dialogue-page')!;
+const dialogueTrade = document.getElementById('dialogue-trade')!;
+const dialogueResult = document.getElementById('dialogue-result')!;
+/** 이전 이름 호환 — 씬 타입이 화면 구현을 그대로 물려받았다. */
+type DialogueChoice = DialogueSceneChoice;
+type DialoguePage = DialogueScenePage;
+type DialogueState = DialogueSceneState;
 import { acceptVisit, declineVisit, type FreeOfficerVisit } from './core/free_officer_visit_system.js';
 import { getReputationDiplomacyModifier, describeReputationModifier } from './core/reputation_effect_system.js';
 import { getLeaderReputationVisual, getOfficerReputationVisual } from './core/reputation_visuals.js';
@@ -1027,8 +1041,8 @@ function queueCityWindowsAfterDialogue(cityId: CityID, skipTribe = false): void 
         if (skipTribe) { maybeOpenFeatureSiege(cityId); return; }
         if (!maybeOpenTribeNegotiation(cityId)) maybeOpenFeatureSiege(cityId);
     };
-    const previous = pendingAfterDialogue;
-    pendingAfterDialogue = () => { previous?.(); run(); };
+    // 앞선 대기 콜백이 있으면 먼저 돌린 뒤 우리 것을 건다 — 순서가 뒤집히면 엉뚱한 창이 먼저 열린다.
+    queueAfterDialogueChained(run);
 }
 
 /** 황제 알현 — 황제가 머무는 도시에서만 열고, 황제가 수락한 뒤 임무를 준다. @returns 창을 띄웠으면 true */
@@ -1366,7 +1380,7 @@ function openGateDialogue(cityId: string, strict: boolean): void {
         if (result.entered) {
             // 큐를 먼저 비운다. closeDialogue() 가 남아 있는 큐를 실행하면,
             // enterCity 가 새로 등록할 '이 도시' 교섭이 이전 도시 것으로 먼저 열린다.
-            pendingAfterDialogue = null;
+            clearQueuedDialogue();
             closeDialogue();
             enterCity(cityId);
         }
@@ -1608,142 +1622,67 @@ function preserveCityNavigation(cityId: string): void {
     chinaMap.setCities(worldCities);
 }
 
-// === 범용 선택형 대화 모달 [24][49][441-460] ===
-//
-// 화면·상태는 src/ui/scenes/dialogue_scene.ts 가 소유한다 (2026-10-03 추출).
-// 여기 남은 것은 **게임 쪽 책임**뿐이다:
-//   - 무장/초상/세력 같은 스토어 조회를 씬에 넘겨주는 훅
-//   - 스토어에 효과를 적용하는 코드 (연쇄 대화 재생기 아래)
-// 씬은 스토어를 모른다. 게임 쪽 조회는 아래 훅으로 주입한다.
-// 여기 남는 것은 **게임 책임**뿐이다: 씬에 무엇을 보여줄지 정하고, 효과를 스토어에 반영한다.
-//
-// 아래에는 아직 이전 구현(DOM 상수·무대 페인팅)이 남아 있다.
-// 씬 모듈이 35개 테스트로 검증된 뒤에야 이 중복을 지운다.
-
-type DialogueChoice = {
-    id: string;
-    label: string;
-    description: string;
-    disabled?: boolean;
-    onSelect?: () => string;
-};
-
-type DialoguePage = {
-    title: string;
-    subtitle?: string;
-    speaker: string;
-    /** 화자 무장 id — 있으면 왼쪽 열에 초상·세력·품계를 그린다. */
-    speakerId?: string;
-    /** 사람이 아닌 화자(시설/장소)의 표식 한 글자. */
-    placeMark?: string;
-    /** 표식 화자도 '사람'일 때 — 성문지기처럼 초상화를 세운다. */
-    speakerPortrait?: boolean;
-    text: string;
-    /** 우측(상대편) 무장 id. 없으면 빈 슬롯이 된다. */
-    rightOfficerId?: string;
-    rightSpeaker?: string;
-    rightPlaceMark?: string;
-    rightOrg?: string;
-    detail?: string[];
-    choices?: DialogueChoice[];
-    giftComposer?: {
-        actorId: string;
-        targetId: string;
-        currentAffinity: number;
-    };
-};
-
-type DialogueState = {
-    pages: DialoguePage[];
-    index: number;
-    onClose?: () => void;
-};
-
-let dialogueState: DialogueState | null = null;
-/**
- * 지금까지 오간 대화 기록 [대화 UI].
- * 대화가 닫히면 비운다 — 다음 대화에서 앞 화질이 새어 나오면 안 된다.
- */
-let dialogueTranscript: TranscriptEntry[] = [];
-/** 기록이 어디까지 쌓였는지 — 되돌아가기(◀)로 같은 장면을 중복 기록하지 않기 위한 표식. */
-let transcriptTopIndex = -1;
-/** 대화창이 닫힌 뒤 실행할 콜백. 알현 → 부족 교섭처럼 창을 이어서 띄울 때 쓴다. */
-let pendingAfterDialogue: (() => void) | null = null;
-const dialogueModal = document.getElementById('dialogue-modal')!;
-const dialogueTitle = document.getElementById('dialogue-title')!;
-const dialogueText = document.getElementById('dialogue-text')!;
-const dialogueDetail = document.getElementById('dialogue-detail')!;
-const dialogueChoices = document.getElementById('dialogue-choices')!;
-const dialogueResult = document.getElementById('dialogue-result')!;
-const dialoguePrev = document.getElementById('dialogue-prev') as HTMLButtonElement;
-const dialogueNext = document.getElementById('dialogue-next') as HTMLButtonElement;
-const dialoguePageLabel = document.getElementById('dialogue-page')!;
-const dialogueStep = document.getElementById('dialogue-progress-label')!;
-const dialogueNotes = document.getElementById('dialogue-notes')!;
-const dialogueStage = document.querySelector<HTMLElement>('#dialogue-modal .dlg-stage')!;
-const dlgFigure = {
-    left: document.getElementById('dlg-left-figure')!,
-    right: document.getElementById('dlg-right-figure')!,
-};
-// 사람 초상화가 있는 슬롯에서는 표식 글자를 숨긴다(창 안에 초상화만 남긴다).
-function syncPlaceGlyph(side: 'left' | 'right', visible: boolean): void {
-    const slot = dlgFigure[side].closest('.dlg-slot') as HTMLElement | null;
-    if (slot) slot.dataset.glyph = visible ? '1' : '0';
-}
-const dlgName = {
-    left: document.getElementById('dlg-left-name')!,
-    right: document.getElementById('dlg-right-name')!,
-};
-const dlgBandSpeaker = document.getElementById('dlg-band-speaker');
-const dlgPlacePortrait = document.getElementById('dlg-place-portrait');
-/**
- * 지금까지 오간 대화 기록을 그리는 영역.
- * 없으면 조용히 건너뛴다 — 추가 기능이라 그 영역이 없어도 게임은 돌아간다.
- */
-const dialogueHistory = document.getElementById('dialogue-history');
-
-/** 대화 기록을 비운다 — 대화가 닫힐 때 호출한다. */
-function resetTranscript(): void {
-    dialogueTranscript = [];
-    transcriptTopIndex = -1;
-    if (dialogueHistory) { dialogueHistory.innerHTML = ''; dialogueHistory.style.display = 'none'; }
-}
-
-/**
- * 화법 한 줄을 기록에 쌓고 화면에 반영한다.
- * 대사가 빈 장면은 기록하지 않는다 — 빈 상자를 화면에 남기지 않는다.
- */
-function recordTranscript(speaker: string, text: string): void {
-    const entry = createTranscriptEntry(speaker, text);
-    if (!entry) return;
-    dialogueTranscript = [...dialogueTranscript, entry];
-    renderTranscript();
-}
-
-/** 대화 기록을 화면에 반영한다. 2줄 미만이면 숨긴다(빈 상자를 띄우지 않는다). */
-function renderTranscript(): void {
-    if (!dialogueHistory) return;
-    dialogueHistory.innerHTML = renderTranscriptHtml(dialogueTranscript);
-    dialogueHistory.style.display = dialogueTranscript.length >= 2 ? 'block' : 'none';
-}
-
 /* ============================================================
-   타이포그래피 — 대사를 조금씩 드러낸다 [대화 UI][461-480]
+   대화 씬 배선 — 게임은 '무엇을 보여줄지'만 정하고, 화면은 씬이 그린다.
+   (2026-10-03) 이전에 여기 있던 DOM 상수·무대 페인팅·선택지 렌더는
+   src/ui/scenes/dialogue_scene.ts 로 옮겼다. 그 모듈은 스토어를 모른다.
    ============================================================ */
 
-/** 글자가 몇 글자씩 드러나는지. 1 틱 = 이 밀리초. */
-const REVEAL_INTERVAL_MS = 22;
-/**
- * 타이포그래피를 강제로 끌지 — E2E/디버그에서 즉시 전체가 보이게 하는 스위치.
- * 보통은 false 다. OS '모션 최소화'나 사용자 설정을 따른다.
- */
-let revealForceInstant = false;
-/** 지금 드러내고 있는 진행도. 대화가 없으면 null. */
-let revealState: RevealMachineState | null = null;
-/** 지금 도는 타이머. 대화가 닫히면 반드시 null 이 된다(남으면 새 대사에까지 전염된다). */
-let revealTimer: number | null = null;
-/** 타이포그래피가 진행 중인 장면의 원본 대사. */
-let revealSource = '';
+/** 씬이 요구한 훅 — 스토어 조회와 게임 명령만 주입한다. */
+const dialogueScene = createDialogueScene(document.body, {
+    lookupOfficer: (officerId) => {
+        if (!engine) return null;
+        const store = engine['store'];
+        const o = store.getOfficer(officerId);
+        if (!o) return null;
+        const f = o.factionId ? store.getFaction(o.factionId) : null;
+        return {
+            id: o.id, name: o.name, gender: o.gender === 'F' ? 'F' : 'M',
+            rank: o.rank, status: o.status,
+            factionName: f?.name ?? '재야', factionColor: f?.color ?? '#4a5160',
+        };
+    },
+    renderPortrait: (args) => renderPortraitSvg(args),
+    log: (text) => addLog(text),
+    sendGift: ({ actorId, targetId, itemId, gold }) => {
+        const result = executeInteraction(engine!['store'], actorId, targetId, 'GIFT', {
+            itemId: itemId as GiftItemId, gold,
+        } satisfies GiftOptions);
+        return { ok: result.success, message: result.message };
+    },
+    refreshOfficer: (officerId) => renderOfficerDetail(officerId),
+    speak: (args) => { speakLine(args, a11ySettings.speech); },
+    typewriter: () => typewriterEnabled(),
+    runTrade: (goodId, mode) => runTrade(goodId, mode),
+});
+dialogueScene.setGiftItems(Object.values(GIFT_ITEMS).map(item => ({
+    id: item.id, name: item.name, gradeLabel: item.gradeLabel, affinity: item.affinity,
+})));
+
+/** 씬에 창을 연다. 블록 밖 18곳이 이 함수를 쓴다. */
+function openDialogue(state: DialogueSceneState, opts?: OpenSceneOptions): void {
+    dialogueScene.open(state, opts);
+}
+/** 창을 닫는다. */
+function closeDialogue(): void {
+    dialogueScene.close();
+}
+/** 창이 열려 있는가 — 전역 키보드/ESC 핸들러가 이걸 본다. */
+function isDialogueOpen(): boolean {
+    return dialogueScene.isOpen();
+}
+/** 창이 닫힌 뒤 실행할 콜백을 건다(알현 → 교섭처럼 창을 이어서 띄울 때). */
+function queueAfterDialogue(fn: () => void): void {
+    dialogueScene.queueAfterClose(fn);
+}
+/** 대기 콜백을 이어 붙인다 — 앞선 것이 있으면 먼저 돌린다. */
+function queueAfterDialogueChained(fn: () => void): void {
+    dialogueScene.queueAfterCloseChained(fn);
+}
+/** 대기 콜백을 버린다 — 다른 도시의 창이 먼저 열리지 않도록. */
+function clearQueuedDialogue(): void {
+    dialogueScene.clearQueuedClose();
+}
 
 /** 타이포그래피가 도는지 — 사용자가 끄거나 모션 최소화를 존중하면 false. */
 function typewriterEnabled(): boolean {
@@ -1754,136 +1693,8 @@ function typewriterEnabled(): boolean {
     } catch { /* matchMedia 가 없으면 설정값을 따른다. */ }
     return true;
 }
-
-/** 도는 타이머를 반드시 멈춘다. */
-function stopRevealTimer(): void {
-    if (revealTimer === null) return;
-    clearInterval(revealTimer);
-    revealTimer = null;
-}
-
-/**
- * 대사를 한 번에 다 보여준다(타이포그래피를 끝낸다).
- * 클릭/스페이스로 '건너뛰기' 할 때 쓴다.
- * @returns 이번에 실제로 건너뛰었으면 true. 이미 다 보였으면 false — 그때는 페이지 이동이 된다.
- */
-function skipReveal(): boolean {
-    if (!revealState || isRevealDone(revealState)) return false;
-    revealState = completeReveal(revealState);
-    stopRevealTimer();
-    dialogueText.textContent = renderReveal(revealSource, revealState);
-    return true;
-}
-
-/**
- * 새 대사의 타이포그래피를 시작한다.
- * 끄었거나 대사가 비었으면 곧바로 끝낸다 — 타이머를 만들지 않는다.
- */
-function startReveal(text: string): void {
-    stopRevealTimer();
-    revealSource = text;
-    const { spoken, total } = planReveal(text, 0);
-    revealState = createRevealMachine(total);
-    if (!typewriterEnabled() || total === 0) {
-        revealState = completeReveal(revealState);
-        dialogueText.textContent = renderReveal(text, revealState);
-        return;
-    }
-    dialogueText.textContent = '';
-    revealTimer = window.setInterval(() => {
-        if (!revealState) { stopRevealTimer(); return; }
-        revealState = advanceReveal(revealState, DEFAULT_CHARS_PER_STEP);
-        dialogueText.textContent = renderReveal(revealSource, revealState);
-        if (isRevealDone(revealState)) stopRevealTimer();
-    }, REVEAL_INTERVAL_MS);
-}
-
-/** 화자 이름을 무대 이름표와 하단 두루마리 띠에 함께 반영한다. */
-function setSlotName(side: 'left' | 'right', text: string): void {
-    dlgName[side].textContent = text;
-    if (side === 'left' && dlgBandSpeaker) dlgBandSpeaker.textContent = text;
-}
-const dlgOrg = { left: document.getElementById('dlg-left-org')!, right: document.getElementById('dlg-right-org')! };
-const dlgRank = { left: document.getElementById('dlg-left-rank')!, right: document.getElementById('dlg-right-rank')! };
-const dialogueTrade = document.getElementById('dialogue-trade')!;
-const dlgContinue = document.getElementById('dlg-continue') as HTMLButtonElement;
-
-/** 무대 한쪽(좌/우)을 채운다. officerId 가 없으면 표식 글자를 쓴다. */
-function paintSlot(side: 'left' | 'right', spec: {
-    speaker: string; officerId?: string; placeMark?: string; org?: string; rank?: string; speakerPortrait?: boolean;
-}): void {
-    const fig = dlgFigure[side];
-    const slot = fig.closest('.dlg-slot') as HTMLElement | null;
-    // 자리를 채울 상대가 없으면 슬롯을 비운다 — 빈 자리에 표식이 서 있으면 이상하다.
-    if (!spec.officerId && !spec.placeMark) {
-        fig.classList.remove('dlg-place');
-        fig.innerHTML = '';
-        setSlotName(side, '');
-        dlgOrg[side].textContent = '';
-        dlgRank[side].textContent = '';
-        if (slot) slot.dataset.empty = '1';
-        return;
-    }
-    if (slot) delete slot.dataset.empty;
-    if (spec.officerId && engine) {
-        const o = engine['store'].getOfficer(spec.officerId);
-        if (o) {
-            fig.classList.remove('dlg-place');
-            fig.innerHTML = renderPortraitSvg({
-                id: o.id, name: o.name, gender: o.gender === 'F' ? 'F' : 'M',
-                grade: Math.max(0, Math.min(9, o.rank)),
-            });
-            const f = o.factionId ? engine['store'].getFaction(o.factionId) : null;
-            setSlotName(side, o.name);
-            dlgOrg[side].textContent = f?.name ?? '재야';
-            dlgRank[side].textContent = o.status === 'FREE' ? '재야' : `${o.rank}품`;
-            if (side === 'left') dialogueStage.style.setProperty('--dlg-accent', f?.color ?? '#4a5160');
-            if (side === 'left' && dlgPlacePortrait) dlgPlacePortrait.innerHTML = '';
-            syncPlaceGlyph(side, false);
-            return;
-        }
-    }
-    // 시설·장소 등 사람이 아닌 화자
-    fig.classList.add('dlg-place');
-    fig.textContent = spec.placeMark ?? '址';
-    setSlotName(side, spec.speaker);
-    dlgOrg[side].textContent = spec.org ?? '';
-    dlgRank[side].textContent = spec.rank ?? '';
-    // 성문지기는 사람이라 초상화를 그린다. 표식 글자와 별개 노드에 그린다 —
-    // #dlg-left-figure 안에는 svg 가 없어야 한다(E2E placeIsGlyph 가 이를 본다).
-    if (side === 'left' && dlgPlacePortrait) {
-        dlgPlacePortrait.innerHTML = spec.speakerPortrait
-            ? renderPortraitSvg({
-                id: `gate_keeper_${spec.placeMark ?? '址'}`,
-                name: spec.speaker,
-                gender: 'M',
-                grade: 4,
-            })
-            : '';
-    }
-    // 초상화가 서면 표식 글자는 감춘다(창 안에 초상화만 남긴다).
-    syncPlaceGlyph(side, !spec.speakerPortrait);
-}
-
-/** 대화 페이지로 무대 양쪽을 채운다. 화자는 왼쪽, 상대는 오른쪽. */
-function paintDialogueStage(page: DialoguePage): void {
-    paintSlot('left', {
-        speaker: page.speaker,
-        officerId: page.speakerId,
-        placeMark: page.placeMark,
-        org: page.subtitle,
-        speakerPortrait: page.speakerPortrait,
-    });
-    paintSlot('right', {
-        speaker: page.rightSpeaker ?? '',
-        officerId: page.rightOfficerId,
-        placeMark: page.rightPlaceMark,
-        org: page.rightOrg,
-    });
-    // 세력 색은 판 전체를 칠하지 않고 테두리/강조에만 쓴다.
-    if (!page.speakerId) dialogueStage.style.setProperty('--dlg-accent', '#4a5160');
-}
-
+/** E2E/디버그용 — 대사를 즉시 다 보여준다. */
+let revealForceInstant = false;
 
 /* ============================================================
    연쇄 대화 재생기 [신규 기능]
@@ -2365,260 +2176,6 @@ function openTradeDialogue(cityId: string): void {
     activeScriptContext = { cityId };
     renderScriptNode();
 }
-function renderDialoguePage(): void {
-    if (!dialogueState) return;
-    const state = dialogueState;
-    const page = state.pages[state.index];
-    if (!page) return;
-    dialogueTitle.textContent = page.title;
-    paintDialogueStage(page);
-    // 대사(빈 줄 앞)와 참고(빈 줄 뒤)를 나눠 그린다.
-    // 참고를 같은 크기로 꿰으면 '말'인지 '정보'인지 읽을 수 없다.
-    const sep = page.text.indexOf('\n\n');
-    if (sep >= 0) {
-        // 타이포그래피는 대사만 조금씩 드러낸다 — 참고는 정보이므로 한 번에 보여준다.
-        startReveal(page.text.slice(0, sep));
-        dialogueNotes.textContent = page.text.slice(sep + 2);
-        dialogueNotes.style.display = 'block';
-    } else {
-        startReveal(page.text);
-        dialogueNotes.textContent = '';
-        dialogueNotes.style.display = 'none';
-    }
-    // TTS: 화면 조각이 아니라 통으로 읽는다 — 소리가 끊겨 들리면 안 된다.
-    speakLine({ speaker: page.speaker, text: planReveal(page.text, 0).spoken }, a11ySettings.speech);
-    dialogueDetail.innerHTML = (page.detail ?? []).map(line => `<span>${line}</span>`).join('');
-    dialogueDetail.style.display = page.detail && page.detail.length > 0 ? 'grid' : 'none';
-    dialogueStep.textContent = state.pages.length > 1 ? `단계 ${state.index + 1} / ${state.pages.length}` : '';
-    dialogueChoices.innerHTML = (page.choices ?? []).map((choice, i) =>
-        `<button class="dlg-choice" data-choice="${choice.id}" ${choice.disabled ? 'disabled' : ''}>
-            <span class="dlg-choice-idx">${i + 1}</span>
-            <span class="dlg-choice-label">${choice.label}</span>
-            <span class="dlg-choice-desc">${choice.description}</span>
-        </button>`).join('');
-    if (page.giftComposer) {
-        const gift = page.giftComposer;
-        const items = Object.values(GIFT_ITEMS);
-        dialogueChoices.insertAdjacentHTML('beforeend', `
-            <div class="gift-composer" data-gift-composer>
-                <div class="gift-composer-title">선물 구성</div>
-                <label class="gift-row gift-row-wide">
-                    <span class="gift-label">아이템</span>
-                    <select data-gift-item>
-                        ${items.map(item => `<option value="${item.id}">${item.name} · ${item.gradeLabel} (+${item.affinity})</option>`).join('')}
-                    </select>
-                </label>
-                <label class="gift-row">
-                    <span class="gift-label">금화</span>
-                    <input data-gift-gold type="number" min="0" step="100" value="200" inputmode="numeric" />
-                </label>
-                <div class="gift-preview" data-gift-preview aria-live="polite"></div>
-                <button class="dlg-choice gift-send-choice" data-gift-send>
-                    <span class="dlg-choice-idx">✦</span>
-                    <span class="dlg-choice-label">선물 보내기</span>
-                    <span class="dlg-choice-desc">선택한 구성으로 우호도 상승</span>
-                </button>
-            </div>`);
-        const updatePreview = () => {
-            const root = dialogueChoices.querySelector('[data-gift-composer]');
-            if (!root) return;
-            const itemId = (root.querySelector('[data-gift-item]') as HTMLSelectElement).value as GiftItemId;
-            const gold = Math.max(0, Math.floor(Number((root.querySelector('[data-gift-gold]') as HTMLInputElement).value) || 0));
-            const item = GIFT_ITEMS[itemId];
-            const delta = calculateGiftAffinity({ itemId, gold });
-            const after = Math.max(-100, Math.min(100, gift.currentAffinity + delta));
-            (root.querySelector('[data-gift-preview]') as HTMLElement).innerHTML =
-                `<span>${item.name} · ${item.gradeLabel}</span><b>금화 +${delta - item.affinity}</b><strong>예상 우호도 ${gift.currentAffinity >= 0 ? '+' : ''}${gift.currentAffinity} → ${after >= 0 ? '+' : ''}${after} (+${delta})</strong>`;
-        };
-        dialogueChoices.querySelectorAll('[data-gift-item], [data-gift-gold]').forEach(input => input.addEventListener('input', updatePreview));
-        updatePreview();
-    }
-    dialogueResult.style.display = 'none';
-    dialogueResult.textContent = '';
-    dialoguePrev.disabled = state.index <= 0;
-    dialogueNext.disabled = state.index >= state.pages.length - 1;
-    dialoguePageLabel.textContent = `${state.index + 1} / ${state.pages.length}`;
-    // 지금 보이는 대사를 기록에 쌓는다. 되돌아가기(◀)로 같은 장면을 또 담지 않도록
-    // 페이지 인덱스가 커질 때만 추가한다.
-    if (state.index > transcriptTopIndex) {
-        transcriptTopIndex = state.index;
-        recordTranscript(page.speaker, page.text);
-    }
-    // 일반 페이지는 연쇄 대화가 아니므로 계속 화살표를 쓰지 않는다.
-    // renderScriptNode() 가 다시 켠다 — 여기서 초기화하지 않으면 직전 연쇄 대화의
-    // '다음 장면 있음' 상태가 그대로 새어 나간다.
-    dlgContinue.disabled = true;
-    dlgContinue.classList.remove('dlg-bouncing');
-}
-
-function openDialogue(state: DialogueState, opts?: { readonly keepTranscript?: boolean }): void {
-    if (state.pages.length === 0) return;
-    dialogueState = state;
-    // 연쇄 대화는 노드가 바뀔 때마다 openDialogue() 를 다시 부른다.
-    // 기록을 그대로 이어받아야 앞 장면의 말이 남는다(keepTranscript).
-    // 일반 대화는 새 창이므로 기록을 비운다.
-    if (!opts?.keepTranscript) {
-        dialogueTranscript = [];
-        transcriptTopIndex = -1;
-        if (dialogueHistory) { dialogueHistory.innerHTML = ''; dialogueHistory.style.display = 'none'; }
-    } else {
-        // 이어받는 경우에도 첫 장면(인덱스 0)은 다시 담지 않게 기준만 내린다.
-        transcriptTopIndex = -1;
-    }
-    renderDialoguePage();
-    dialogueModal.style.display = 'flex';
-    dialogueModal.focus({ preventScroll: true });
-}
-
-function closeDialogue(): void {
-    const onClose = dialogueState?.onClose;
-    dialogueState = null;
-    dialogueModal.style.display = 'none';
-    // 타이포그래피 타이머와 음성을 반드시 정리한다.
-    // 남겨두면 다음 대화가 열렸는데 옛 대사가 깜빡이거나 읽힌다.
-    stopRevealTimer();
-    revealState = null;
-    revealSource = '';
-    stopSpeech();
-    // 기록도 함께 버린다 — 다음 대화에서 앞 화질이 새어 나오면 안 된다.
-    resetTranscript();
-    // 스크립트 대화가 끝났으면 상태를 버린다. 다음 클릭에 이전 대화가 남으면 안 된다.
-    endScript();
-    onClose?.();
-    // 큐를 먼저 비운다 — queued() 안에서 새 대화가 열려 그쪽이 다시 닫힐 때
-    // 같은 큐를 두 번 실행하지 않게 하기 위함이다.
-    const queued = pendingAfterDialogue;
-    if (queued) {
-        pendingAfterDialogue = null;
-        queued();
-    }
-}
-
-/** 연쇄 대화가 떠 있으면 일반 페이지 이동 대신 스크립트를 움직인다. */
-function stepDialogue(delta: 1 | -1): void {
-    if (activeRunner) {
-        if (delta === 1) {
-            const r = activeRunner.advance();
-            if (r.ended) { closeDialogue(); return; }
-        } else {
-            if (!activeRunner.canGoBack) return;
-            activeRunner.back();
-        }
-        renderScriptNode();
-        return;
-    }
-    if (!dialogueState) return;
-    if (delta === 1 && dialogueState.index >= dialogueState.pages.length - 1) return;
-    if (delta === -1 && dialogueState.index <= 0) return;
-    dialogueState.index += delta;
-    renderDialoguePage();
-}
-
-/** 대화가 닫히면 스크립트 상태를 버린다 — 다음 클릭에 이전 대화가 남으면 안 된다. */
-function endScript(): void {
-    activeRunner = null;
-    activeScriptContext = null;
-    tradeCityId = null;
-    dialogueTrade.style.display = 'none';
-}
-
-dialoguePrev.addEventListener('click', () => stepDialogue(-1));
-dialogueNext.addEventListener('click', () => stepDialogue(1));
-dlgContinue.addEventListener('click', () => {
-    if (dlgContinue.disabled) return;
-    stepDialogue(1);
-});
-// 대사 본문을 클릭하면 글자를 다 보여준다(가상Novel 관습).
-dialogueText.addEventListener('click', () => { skipReveal(); });
-
-document.getElementById('dialogue-close')!.addEventListener('click', closeDialogue);
-
-/**
- * 대화창 키보드 조작 [신규 기능] — 단계 이동 방식.
- *  - 1~9 : 해당 번호 선택지 누르기 (선택지에 적힌 번호 그대로)
- *  - ←/→ : 이전/다음 단계
- *  - Esc  : 닫기 (전역 핸들러가 담당)
- * 입력칸에 커서가 있을 때는 건드리지 않는다 — 숫자를 못 찍게 하면 안 된다.
- */
-dialogueModal.addEventListener('keydown', (event) => {
-    if (!dialogueState) return;
-    const t = event.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-
-    // 스페이스/엔터: 글자가 다 안 나왔으면 먼저 끝낸다.
-    // 다 나왔을 때만 다음 단계로 넘어간다 — 한 번에 두 동작이 일어나지 않게 한다.
-    if (event.key === ' ' || event.key === 'Enter') {
-        if (skipReveal()) { event.preventDefault(); return; }
-    }
-
-    if (event.key === 'ArrowRight') {
-        if (dialogueNext.disabled) return;
-        event.preventDefault();
-        dialogueNext.click();
-        return;
-    }
-    if (event.key === 'ArrowLeft') {
-        if (dialoguePrev.disabled) return;
-        event.preventDefault();
-        dialoguePrev.click();
-        return;
-    }
-    // 숫자/숫자키패드만 받는다. 선택지가 9개를 넘으면 넘긴다.
-    if (!/^[1-9]$/.test(event.key)) return;
-    const buttons = dialogueChoices.querySelectorAll<HTMLButtonElement>('.dlg-choice:not([data-gift-send])');
-    const target = buttons[Number(event.key) - 1];
-    if (!target || target.disabled) return;
-    event.preventDefault();
-    target.click();
-});
-
-// 교역 패널은 dialogue-choices 의 형제라 별도 핸들러가 필요하다.
-// 이 등록은 반드시 모듈 최상단에서 한 번만 한다.
-// dialogueChoices 핸들러 안에 넣으면 선택지를 누를 때마다 리스너가 하나씩 늘어난다.
-dialogueTrade.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement;
-    const buyBtn = target.closest('[data-trade-buy]') as HTMLElement | null;
-    if (buyBtn) { runTrade(buyBtn.dataset.tradeBuy!, 'buy'); return; }
-    const sellBtn = target.closest('[data-trade-sell]') as HTMLElement | null;
-    if (sellBtn) { runTrade(sellBtn.dataset.tradeSell!, 'sell'); return; }
-});
-
-dialogueChoices.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement;
-
-    const giftSend = target.closest('[data-gift-send]') as HTMLButtonElement | null;
-    if (giftSend && dialogueState) {
-        const page = dialogueState.pages[dialogueState.index];
-        const composer = page?.giftComposer;
-        if (!composer) return;
-        const root = giftSend.closest('[data-gift-composer]') as HTMLElement | null;
-        if (!root) return;
-        const itemId = (root.querySelector('[data-gift-item]') as HTMLSelectElement).value as GiftItemId;
-        const gold = Math.max(0, Math.floor(Number((root.querySelector('[data-gift-gold]') as HTMLInputElement).value) || 0));
-        const result = executeInteraction(engine!['store'], composer.actorId, composer.targetId, 'GIFT', { itemId, gold } satisfies GiftOptions);
-        dialogueResult.textContent = result.message;
-        dialogueResult.style.display = 'block';
-        if (result.success) {
-            addLog(result.message);
-            renderOfficerDetail(composer.targetId);
-        }
-        return;
-    }
-    const button = target.closest('.dlg-choice') as HTMLButtonElement | null;
-    if (!button || button.disabled || !dialogueState) return;
-    const page = dialogueState.pages[dialogueState.index];
-    const choice = page.choices?.find(item => item.id === button.dataset.choice);
-    if (!choice?.onSelect) return;
-    const message = choice.onSelect();
-    dialogueResult.textContent = message;
-    dialogueResult.style.display = 'block';
-    // 방금 고른 선택과 결과를 기록 마지막 줄에 남긴다.
-    dialogueTranscript = recordChoice(dialogueTranscript, choice.label, message);
-    renderTranscript();
-    button.disabled = true;
-    // 연쇄 대화면 선택한 자리에 이어지는 장면이 있다. 바로 넘어간다.
-    if (activeRunner) renderScriptNode();
-});
 // === 무장 상세 표시 [27][11] ===
 
 /**
@@ -7162,7 +6719,7 @@ window.__game = {
      */
     setDialogueInstant: (instant: boolean) => { revealForceInstant = instant; return revealForceInstant; },
     /** E2E/디버그용: 타이포그래피가 지금 끝났는지. */
-    isDialogueRevealDone: () => revealState === null || isRevealDone(revealState),
+    isDialogueRevealDone: () => dialogueScene.isRevealDone(),
     getCitySceneBuildings: () => citySceneBuildings.map(building => ({
         id: building.id, type: building.type, level: building.level,
         investment: building.investment, active: building.active, label: building.label,
