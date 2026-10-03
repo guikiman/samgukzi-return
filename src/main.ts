@@ -11,7 +11,7 @@ import { HexMapCanvasRenderer, HexTile } from './core/hex_map_canvas_renderer.js
 import { ChinaMapRenderer, MapCityView } from './core/china_map_renderer.js';
 import { City3DRenderer, type CityBuilding, dayNightPhase, generateDecorations } from './core/city_3d_renderer.js';
 import { createAmbientTicker, shouldRedrawAmbient, CITY_AMBIENT_INTERVAL_MS, type AmbientTicker } from './core/city_ambient_loop.js';
-import { CITY_SCENE_ART_PATH, anchorFor, mapAnchorToStage, resolveVisibleAnchor, separateOverlaps, type SceneInset } from './core/city_scene_art.js';
+import { CITY_SCENE_ART_PATH, anchorFor, mapAnchorToStage, resolveVisibleAnchor, separateOverlaps, toStageInset, isVisibleRect, renderStatBar, type SceneInset } from './core/city_scene_art.js';
 import { mergeCityAndFreeOfficers, isFreeOfficer, isFreeOfficerInCity, officerRoleLabel } from './core/city_officer_roster.js';
 import { BattleFrontend, DeployableUnit, BattlePhase } from './core/battle_frontend.js';
 import { TitleScreen } from './core/title_screen.js';
@@ -2702,14 +2702,9 @@ function syncCityRailAutoCollapseOnResize(): void {
     autoCollapseCityRail();
 }
 
-/** 내정치 바 한 줄 생성 */
+/** 내정치 바 한 줄 생성 — 값→HTML 변환은 src/core/city_scene_art.ts 의 순수 함수가 한다. */
 function statBar(label: string, value: number, max: number, color: string): string {
-    const pct = Math.max(0, Math.min(100, (value / max) * 100));
-    return `<div class="cdp-stat-row">
-        <span class="cdp-stat-label">${label}</span>
-        <span class="cdp-stat-bar-track"><span class="cdp-stat-bar-fill" style="width:${pct}%;background:${color}"></span></span>
-        <span class="cdp-stat-value">${Math.round(value)}</span>
-    </div>`;
+    return renderStatBar({ label, value, max, color });
 }
 
 const FACILITY_INFO: Record<FacilityType, { label: string; effect: string; icon: string }> = {
@@ -2994,20 +2989,17 @@ function measureCitySceneInsets(): SceneInset[] {
     const stage = document.getElementById('city-scene-stage');
     if (!stage) return [];
     const stageRect = stage.getBoundingClientRect();
-    if (stageRect.width <= 0 || stageRect.height <= 0) return [];
+    if (!isVisibleRect(stageRect)) return [];
 
+    // 좌표 변환은 src/core/city_scene_art.ts 의 순수 함수(toStageInset)가 한다.
+    // 여기서는 "어느 패널이 보여 주는가" 만 판단한다 — 브라우저 없이 계산 자체를 검증할 수 있게.
     const insets: SceneInset[] = [];
     for (const selector of ['.cdp-header', '.cdp-stage-hud-left', '.cdp-stage-hud-right', '.cdp-stage-hud-bottom']) {
         const pane = document.querySelector(selector);
         if (!pane) continue;
         const rect = pane.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) continue;
-        insets.push({
-            left: (rect.left - stageRect.left) / stageRect.width * 100,
-            top: (rect.top - stageRect.top) / stageRect.height * 100,
-            right: (rect.right - stageRect.left) / stageRect.width * 100,
-            bottom: (rect.bottom - stageRect.top) / stageRect.height * 100,
-        });
+        if (!isVisibleRect(rect)) continue;
+        insets.push(toStageInset(rect, stageRect));
     }
     return insets;
 }
