@@ -215,3 +215,61 @@ stash 의 소스 34개 파일은 **과거 스키마**에 맞춰져 있다. maste
 34개에 구현이 더 많더라도(예: title_merit_manager 180줄 vs 10줄) 지금 흡수하면
 프로젝트를 컴파일 불가능하게 만든다. 되돌릴 때는 stash 를 건드리지 말고
 master 위에서 cherry-pick 하는 것이 맞다.
+
+## 2026-10-03 대화 UI 작업 — 사고 기록과 복구 절차
+
+### 사고 1: `git checkout -- src/main.ts` 로 커밋 안 된 작업이 사라졌다
+
+`git checkout -- <file>` 은 **커밋되지 않은 변경까지 함께 되돌린다.**
+TTS 연동 작업을 지우려던 과정에서, 이미 세션이 시작되기 전부터 uncommitted 상태였던
+도시 진입 화면 작업까지 함께 날아갔다.
+
+- 발견: 단위 테스트 실패가 7건 → **14건으로 증가** (city_entry_layout 이 갑자기 늘었다)
+- 복구: 클라인 체크포인트 커밋에서 파일만 꺼내 되돌림
+  ```
+  git --no-pager log --all --oneline | findstr checkpoint   # 최신 체크포인트 찾기
+  git checkout <체크포인트-sha> -- src/main.ts                # 파일 하나만 복구
+  ```
+- 결과: 2379 pass / 7 fail — 원래 상태로 완전 복구 확인
+
+**규칙(앞으로 지킬 것)**
+1. worktree 에 커밋 안 된 변경이 있으면 `git checkout --` 를 쓰지 않는다.
+   먼저 `git stash push -- <file>` 하거나, 체크포인트 커밋을 만든 뒤 건드린다.
+2. 여러 사람이(또는 여러 세션이) 같은 worktree 를 쓰는 이 저장소에서는
+   `git checkout --` / `git reset --hard` 가 **타인의 작업을 지우는 도구**다.
+3. 되돌리기 전에 항상 `npm test` 를 한 번 돌려 "실패 수가 늘었는지"를 본다.
+
+### 사고 2: PowerShell `Set-Content` 가 한글(UTF-8) 을 깨뜨렸다
+
+`Get-Content | Set-Content` 로 대량 줄 삭제를 하려 했더니
+`btnPause.dataset.icon = paused ? '?? : '??;` 처럼 한글이 `?` 로 바뀌었다.
+
+**대안(검증된 방법)**
+```powershell
+# 읽고 쓸 때 인코딩을 명시한다. 기본값은 시스템 코드 페이지라 UTF-8 이 아니다.
+$l = [System.IO.File]::ReadAllLines($p, [System.Text.Encoding]::UTF8)
+$new = $l[0..1609] + $l[1881..($l.Count-1)]
+[System.IO.File]::WriteAllLines($p, $new, (New-Object System.Text.UTF8Encoding($false)))
+```
+커밋 메시지도 같은 이유로 파일로 만들어 쓴다(`-F` 옵션).
+
+### 사고 3: 편집 도구 insert_line 이 코드를 잘라 중복을 남겼다
+
+`insert_line` 을 여러 번 호출하는 동안 함수가 중간에서 잘리고
+중복 블록이 남았다. 편집 후에는 반드시 세 가지를 확인한다.
+```powershell
+# 1) 중괄호 균형
+$d=0; foreach($l in $lines){ foreach($c in $l.ToCharArray()){ if($c -eq '{'){$d++} elseif($c -eq '}'){$d--} } }
+# 2) 손상 문자(U+FFFD)
+# 3) 타입체크
+npx tsc --noEmit
+```
+
+### 이번 세션에 남긴 안전 지점
+
+| 커밋 | 내용 |
+|---|---|
+| `8cf12a8` | 대화 UI 작업 상태 체크포인트 (추출 전) |
+| `9f1de2f` | 대화창 `src/ui/scenes/` 추출 완료 (main.ts -522줄) |
+
+추출이 실패하면 `git checkout 8cf12a8 -- src/main.ts` 로 바로 되돌릴 수 있다.
