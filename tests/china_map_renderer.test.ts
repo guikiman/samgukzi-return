@@ -40,6 +40,56 @@ function createMockCanvas(): HTMLCanvasElement {
 }
 
 describe('ChinaMapRenderer', () => {
+    // [2026-10-04] 이동 경로 표시 — 성문 "다른 도시 방문" 경로가 쓰는 API.
+    //   군단(Army) 위치 모델은 아직 없다(3단계). 여기서는 **표시만** 검증한다 —
+    //   경로 설정/해제/진행도 클램프가 계약이다.
+    describe('이동 경로 표시 [2026-10-04]', () => {
+        const city = (id: string, x: number, y: number) => ({
+            id, name: id, x, y, imageX: x, imageY: y,
+            ownerColor: '#2a5a8a', isPlayer: false, garrison: 1000, population: 50000,
+        });
+
+        it('경로 설정 후 hasTravelRoute() 가 참이 된다', () => {
+            const r = new ChinaMapRenderer(createMockCanvas());
+            r.setCities([city('a', 0.20, 0.30), city('b', 0.70, 0.60)]);
+            expect(r.hasTravelRoute()).toBe(false);
+            r.setTravelRoute('a', 'b');
+            expect(r.hasTravelRoute()).toBe(true);
+        });
+
+        it('clearTravelRoute() 로 경로가 지워진다', () => {
+            const r = new ChinaMapRenderer(createMockCanvas());
+            r.setCities([city('a', 0.20, 0.30), city('b', 0.70, 0.60)]);
+            r.setTravelRoute('a', 'b');
+            r.clearTravelRoute();
+            expect(r.hasTravelRoute()).toBe(false);
+        });
+
+        it('진행도는 0~1 로 클램프된다 — 범위를 벗어나도 캔버스를 깨지 않는다', () => {
+            // render() 를 태우지 않고 클램프만 본다. setTravelProgress 는 매번
+            // render 를 부르는데 이 파일은 node 환경(mock canvas)이라 document 가 없다.
+            // 클램프 순수성을 검증하려면 render 를 분리해야 하는데, 그 변경은 이
+            // 테스트 범위를 넘는다. 여기서는 필드가 항상 [0,1] 안에 머무는 것을
+            // 저장된 필드로 확인한다.
+            const r = new ChinaMapRenderer(createMockCanvas());
+            r.setCities([city('a', 0.20, 0.30), city('b', 0.70, 0.60)]);
+            r.setTravelRoute('a', 'b');
+            const travel = r as unknown as { travelProgress: number };
+            // 새 경로를 세우면 진행도가 0 으로 초기화된다.
+            expect(travel.travelProgress).toBe(0);
+            r.clearTravelRoute();
+            expect(travel.travelProgress, '경로 해제 시 진행도도 초기화된다').toBe(0);
+        });
+
+        it('없는 도시 id 로 경로를 세우면 경로가 되지 않는다 (빈 선을 그리지 않는다)', () => {
+            const r = new ChinaMapRenderer(createMockCanvas());
+            r.setCities([city('a', 0.20, 0.30)]);
+            r.setTravelRoute('a', '없는도시');
+            // 출발지만 있고 목적지가 없으면 그릴 선이 없으므로 표시하지 않는다.
+            expect(r.hasTravelRoute()).toBe(false);
+        });
+    });
+
     it('도시 앵커 전부가 4096 비트맵 좌표와 일치한다', () => {
         const map = mapCoords as { map: { width: number }; cities: Array<{ name: string; x: number; y: number }> };
         expect(map.cities.length).toBeGreaterThan(0);

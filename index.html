@@ -39,6 +39,9 @@
             </div>
         </div>
         <canvas id="game-canvas" aria-label="중국 전도. 도시를 탭하면 상세 정보가 열립니다." role="img"></canvas>
+        <!-- [2026-10-04] 이동 모드 안내 — 성문에서 "다른 도시 방문"을 고르면 지도가 뜨고
+             이 토스트가 취소 경로를 제공한다. ESC 로도 취소할 수 있다. -->
+        <div id="travel-hint" class="travel-hint" role="status" aria-live="polite" hidden></div>
         <!-- [312][461-480] 전투 리플레이 속도: 네이티브 radio로 키보드·터치 접근 제공 -->
         <fieldset id="replay-speed-controls" class="replay-speed-controls" hidden aria-describedby="replay-speed-help">
             <legend>🎬 재생 속도</legend>

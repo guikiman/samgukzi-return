@@ -677,6 +677,10 @@ export class ChinaMapRenderer {
     /** 도시별 확정 좌표 — 바다 위 앵커를 육지로 당긴 결과 (rebuildCityPositions 가 채운다) */
     private cityPos = new Map<string, { x: number; y: number }>();
 
+    /** [2026-10-04] 이동 경로 표시(시각 전용) — 군단 위치 모델은 3단계 대상 */
+    private travelRoute: { from: MapCityView; to: MapCityView } | null = null;
+    private travelProgress = 0;
+
     /** 초기 시점을 육지에 맞췄는가 — 한 번만 적용한다 */
     private viewFramed = false;
 
@@ -1479,6 +1483,89 @@ export class ChinaMapRenderer {
         return { x: point.px, y: point.py };
     }
 
+    // ============================================================
+    // 이동 경로 표시 [2026-10-04]
+    // ============================================================
+
+    /**
+     * 출발지→목적지 이동 경로를 설정한다.
+     *
+     * [왜 상태가 아니라 표시인가]
+     * 군단(Army) 위치 모델은 아직 없다. 지금은 선을 그리고 끝에 마커를
+     * 움직이는 **시각 표시**까지만 담당한다. 도착 판정·지속시간·사건은
+     * Army 모델이 들어올 때 이 위에 얹는다 — 그때 이 필드는 경로
+     * 스냅샷으로만 쓰고 진행 상태는 엔진 쪽이 갖는다.
+     */
+    setTravelRoute(fromCityId: string, toCityId: string): void {
+        const from = this.cities.find(c => c.id === fromCityId);
+        const to = this.cities.find(c => c.id === toCityId);
+        if (!from || !to) { this.travelRoute = null; return; }
+        this.travelRoute = { from, to };
+        this.travelProgress = 0;
+    }
+
+    /** 이동 표시를 지운다 — 애니메이션 종료·취소 시 호출. */
+    clearTravelRoute(): void {
+        this.travelRoute = null;
+        this.travelProgress = 0;
+    }
+
+    /** 이동 진행도 0~1. 애니메이션 루프가 매 프레임 부른다. */
+    setTravelProgress(t: number): void {
+        this.travelProgress = Math.max(0, Math.min(1, t));
+        this.render();
+    }
+
+    /** 현재 이동 표시가 있는지 — E2E 가 읽는다. */
+    hasTravelRoute(): boolean { return this.travelRoute !== null; }
+
+    /**
+     * 이동 경로를 그린다.
+     *
+     * 도시 아이콘보다 **뒤**에 그린다(순서 중요) — 도시 위에 선이 겹치면 도시를
+     * 가리는 것이고, 도시가 더 중요하기 때문이다.
+     */
+    private drawTravelRoute(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        const route = this.travelRoute;
+        if (!route) return;
+        const a = this.cityMapToPixel(route.from, width, height);
+        const b = this.cityMapToPixel(route.to, width, height);
+        const t = this.travelProgress;
+
+        // 두 점을 잇는 직선 위에서 t 만큼 진행한 점.
+        const cx = a.px + (b.px - a.px) * t;
+        const cy = a.py + (b.py - a.py) * t;
+
+        // 경로선 — 진행한 구간만 밝게, 남은 구간은 흐리게.
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.setLineDash([6 * this.zoom, 6 * this.zoom]);
+        ctx.strokeStyle = 'rgba(240, 200, 96, 0.35)';
+        ctx.lineWidth = 2.5 * this.zoom;
+        ctx.beginPath();
+        ctx.moveTo(a.px, a.py);
+        ctx.lineTo(b.px, b.py);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+        ctx.strokeStyle = 'rgba(255, 226, 130, 0.95)';
+        ctx.lineWidth = 3 * this.zoom;
+        ctx.beginPath();
+        ctx.moveTo(a.px, a.py);
+        ctx.lineTo(cx, cy);
+        ctx.stroke();
+
+        // 이동 마커 — 작은 원 + 테두리.
+        ctx.fillStyle = 'rgba(255, 226, 130, 0.95)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 5 * this.zoom, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(60, 40, 10, 0.9)';
+        ctx.lineWidth = 1.5 * this.zoom;
+        ctx.stroke();
+        ctx.restore();
+    }
+
     render(): void {
         const ctx = this.ctx;
         const width = this.canvas.width;
@@ -1530,6 +1617,10 @@ export class ChinaMapRenderer {
 
         // ---- 세력 영토 (도시 좌표에서 산출한 보로노이 근사) ----
         this.drawTerritory(ctx, width, height);
+
+        // ---- [2026-10-04] 이동 경로 — 도시 아이콘보다 먼저 그린다. 도시를 가리면
+        //      도시가 핵심 정보인데 경로가 위에 얹히면 정반대가 된다.
+        this.drawTravelRoute(ctx, width, height);
 
         // ---- [321-340] 지도 날씨 오버레이 — 도시 위 날씨 아이콘 + 악천후 수확 경고 ----
         this.drawWeatherOverlay(ctx, width, height);

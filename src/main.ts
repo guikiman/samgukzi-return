@@ -945,6 +945,16 @@ function selectCityAtClientPoint(clientX: number, clientY: number): boolean {
         sidebarSelectedCityId = null;
         return false;
     }
+    // [2026-10-04] 이동 모드에서는 한 번의 클릭으로 바로 이동한다.
+    //   지도 클릭 계약(1회=선적, 2회=진입)은 이동 모드가 아닐 때만 적용된다 —
+    //   browser_smoke 가 그 계약을 검증하므로 두 경로를 섞지 않는다.
+    if (travelModeActive) {
+        if (!city) return false;
+        const dest = engine?.['store'].getCity(city.id);
+        if (!dest) return false;
+        confirmTravelTo(dest);
+        return true;
+    }
     // 같은 도시를 다시 누른 두 번째 클릭 — 진입(성문 검문 → 도시 진입).
     if (sidebarSelectedCityId === city.id) {
         sidebarSelectedCityId = null;
@@ -1396,6 +1406,199 @@ function openGateDialogue(cityId: string, strict: boolean): void {
         index: 0,
     });
 }
+
+// ============================================================
+// 성문 — 성문지기 대화 / 다른 도시 방문 [2026-10-04]
+// ============================================================
+
+// [2026-10-04] 이동 모드 — 성문에서 "다른 도시 방문"을 고른 뒤 지도가 뜨는 구간.
+//   군단(Army) 위치 모델은 아직 없다(3단계). 지금은 출발지/목적지 좌표만
+//   보관해 경로 선을 그리고, 애니메이션이 끝나면 목적지 도시를 연다.
+let travelModeActive = false;
+let travelModeOriginId: string | null = null;
+let travelReturnCityId: string | null = null;
+let travelRoute: { from: string; to: string } | null = null;
+let travelAnimToken = 0;
+
+/**
+ * 이동 대상 도시 목록 (현재 도시 제외).
+ *
+ * 정렬은 이름 순이다. 이동 경로를 아직 상태로 갖고 있지 않으므로(2단계는 시각
+ * 표시만), 가까운 순으로 보여주면 도착 시간을 예측할 수 없는 순서로 보게 된다.
+ */
+function travelTargetCities(): Array<import('./core/types.js').City> {
+    if (!engine) return [];
+    return engine['store'].getAllCities()
+        .filter(c => c.id !== citySceneCityId)
+        .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+}
+
+/**
+ * 성문지기 대화 — 선택지 2개.
+ *
+ * 1) 성문지기와 이야기한다 (현재 도시 정보)
+ * 2) 다른 도시 방문하기 (지도 활성화 → 도시 선택)
+ *
+ * [왜 기존 openGateDialogue 와 다른가]
+ * openGateDialogue 는 **타 도시로 들어갈 때** 문지기를 통과하는 절차라 선택지가
+ * 뇌물·잠입·철수로 게임 규칙(금화·악명)을 건드린다. 여기서는 **내 도시 성문에서
+ * 떠나는** 대화라 규칙 변화 없이 정보 제공과 이동 선택만 한다. 성문지기를 공유할
+ * 뿐 목적이 다르므로 분리했다.
+ */
+function openCityGatekeeperDialogue(city: import('./core/types.js').City | null | undefined): void {
+    if (!engine || !city) return;
+    const store = engine['store'];
+    const gs = store.getGlobalState();
+    const faction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
+    const officerCount = countCityOfficers(city);
+    const text = `“문은 열려 있소. ${city.name}의 일은 언제든 말씀하시지. `
+        + `지금 치안은 ${city.developmentStats.publicOrder}이고, 병영에 무장 ${officerCount}명이 있습니다. `
+        + `바깥은 넓으니 다른 도시로도 얼마든지 다닐 수 있지요.”`;
+
+    openDialogue({
+        pages: [{
+            title: `성문 — ${city.name}`,
+            subtitle: faction ? `${faction.name} · ${city.name} 성문` : `${city.name} 성문`,
+            speaker: '성문지기',
+            placeMark: '門',
+            speakerPortrait: true,
+            text,
+            choices: [
+                {
+                    id: 'talk',
+                    label: '성문지기와 이야기한다',
+                    description: `치안 ${city.developmentStats.publicOrder} · 무장 ${officerCount}명 · 식량 수입 ${city.foodIncome.toLocaleString()}`,
+                    onSelect: () => `“${city.name}은 지금 크게 번영하고 있소. 무장들 얼굴도 다 알고 있지.”`,
+                },
+                {
+                    id: 'travel',
+                    label: '다른 도시 방문하기',
+                    description: '전국 지도를 열어 다른 도시로 향한다',
+                    onSelect: () => {
+                        // 결과를 창에 보여준 뒤 지도를 연다. 곧바로 닫으면 눌린감이 없다.
+                        closeDialogue();
+                        setTimeout(openWorldMapForTravel, 180);
+                        return `${city.name} 성문을 나선다.`;
+                    },
+                },
+            ],
+        }],
+        index: 0,
+    });
+}
+
+/** 이 도시에 주둔한 무장 수 — 시트의 무장 목록과 **같은 기준**을 쓴다. */
+function countCityOfficers(city: import('./core/types.js').City): number {
+    if (!engine) return 0;
+    const store = engine['store'];
+    const cityOfficers = city.officerIds
+        .map(id => store_getOfficerSafe(id))
+        .filter((o): o is NonNullable<typeof o> => o !== null);
+    return mergeCityAndFreeOfficers(cityOfficers, store.getAllOfficers(), city.id).length;
+}
+
+/**
+ * 이동 모드 — 전국 지도를 열어 목적지 도시를 고르게 한다.
+ *
+ * [E2E 계약에 대한 주의]
+ * 지도 클릭은 이미 "1회=선적, 2회=진입" 계약을 쓰고 browser_smoke 가 그것을
+ * 검증한다. 이동 모드에서는 그 계약과 무관하게 **한 번의 클릭**으로 이동이
+ * 성사되도록 별도 분기를 둔다.
+ */
+function openWorldMapForTravel(): void {
+    const targets = travelTargetCities();
+    if (targets.length === 0) {
+        addLog('이 세계에는 방문할 다른 도시가 없다.');
+        return;
+    }
+    // 도시 화면을 먼저 닫는다 — 닫지 않으면 지도 위에 도시 패널이 겹친다.
+    closeCityPanel();
+    travelModeOriginId = citySceneCityId;
+    travelModeActive = true;
+    travelReturnCityId = travelModeOriginId;
+    addLog('어느 도시로 갈까? 지도의 도시를 누르면 이동한다.');
+    renderTravelHint(targets.length);
+    requestAnimationFrame(() => {
+        syncChinaMapCities();
+        chinaMap?.render();
+    });
+}
+
+/** 이동 모드 안내 — 지도 위 토스트. 취소할 수 있어야 한다. */
+function renderTravelHint(count: number): void {
+    const hint = document.getElementById('travel-hint');
+    if (!hint) return;
+    hint.innerHTML = `<span class="travel-hint-text">이동할 도시를 고르시오 — ${count}개 도시</span>`
+        + '<button type="button" class="travel-hint-cancel">취소</button>';
+    hint.hidden = false;
+    hint.querySelector('.travel-hint-cancel')?.addEventListener('click', cancelTravel);
+}
+
+/** 이동 모드를 끝내고 원래 도시 화면으로 돌아간다. */
+function cancelTravel(): void {
+    if (!travelModeActive) return;
+    travelModeActive = false;
+    travelModeOriginId = null;
+    travelRoute = null;
+    chinaMap?.clearTravelRoute();
+    document.getElementById('travel-hint')?.setAttribute('hidden', '');
+    const back = travelReturnCityId;
+    travelReturnCityId = null;
+    if (back) showCityInfo(back);
+    addLog('이동을 취소했다.');
+}
+
+/**
+ * 목적지 확정 — 경로를 그리고(시각 표시 전용) 목적지 도시를 연다.
+ *
+ * 여기까지는 **상태를 만들지 않는다.** 군단(Army) 위치 모델은 3단계에서 넣고,
+ * 지금은 출발지→목적지 선을 그렸다가 도착 도시 화면을 여는 것까지만 한다.
+ */
+function confirmTravelTo(dest: import('./core/types.js').City): void {
+    const originId = travelModeOriginId;
+    travelModeActive = false;
+    document.getElementById('travel-hint')?.setAttribute('hidden', '');
+    if (!originId) {
+        addLog(`${dest.name}(으)로 향한다.`);
+        enterCity(dest.id);
+        return;
+    }
+    travelRoute = { from: originId, to: dest.id };
+    chinaMap?.setTravelRoute(originId, dest.id);
+    addLog(`${dest.name}(으)로 이동한다.`);
+    playTravelAnimation(originId, dest.id, () => {
+        travelRoute = null;
+        chinaMap?.clearTravelRoute();
+        enterCity(dest.id);
+    });
+}
+
+/**
+ * 출발지 → 목적지 이동 연출.
+ *
+ * 지도 위 한 점을 시간에 따라 이동시키고 완료 콜백을 부른다. 상태를 만들지
+ * 않으므로(3단계 대상) 끝난 뒤 흔적은 남지 않는다.
+ * prefers-reduced-motion 을 존중해 즉시 완료한다 — [461-480] 접근성 축.
+ */
+function playTravelAnimation(_from: string, _to: string, done: () => void): void {
+    const reduced = typeof matchMedia === 'function'
+        && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) { done(); return; }
+    const token = ++travelAnimToken;
+    const start = performance.now();
+    const DURATION = 900;
+    const step = (now: number): void => {
+        // 새 이동이 시작되면 이전 애니메이션은 즉시 포기한다.
+        if (token !== travelAnimToken) return;
+        const t = Math.min(1, (now - start) / DURATION);
+        chinaMap?.setTravelProgress(t);
+        if (t < 1) { requestAnimationFrame(step); return; }
+        chinaMap?.setTravelProgress(1);
+        done();
+    };
+    requestAnimationFrame(step);
+}
+
 
 function endPointerInteraction(e: PointerEvent): void {
     if (activePointerId !== e.pointerId) return;
@@ -2646,6 +2849,12 @@ function closeCitySceneSheet(): void {
 
 document.getElementById('cdp-sheet-close')?.addEventListener('click', closeCitySceneSheet);
 
+// [2026-10-04] 이동 모드 취소 — ESC. 토스트의 취소 버튼만으로도 되지만,
+//   지도를 켠 뒤 아무것도 안 누른 상태에서 빠져나갈 수단이 필요하다.
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && travelModeActive) cancelTravel();
+});
+
 /** 내정치 바 한 줄 생성 — 값→HTML 변환은 src/core/city_scene_art.ts 의 순수 함수가 한다. */
 function statBar(label: string, value: number, max: number, color: string): string {
     return renderStatBar({ label, value, max, color });
@@ -3082,6 +3291,14 @@ function renderCitySceneBadges(buildings: CityBuilding[], width: number, height:
             const target = citySceneBuildings.find(b => b.id === btn.dataset.buildingId);
             if (!target) return;
             showCitySceneBuildingDetail(target);
+            // [2026-10-04] 성문은 다른 건물과 흐름이 다르다. 정보 시트(명령·무장·
+            //   세력 목록)가 아니라 **성문지기와의 대화**를 먼저 치는 게 자연스럽다.
+            //   이동 전 상태를 되돌릴 수 있게 "다른 도시 방문" 선택지는 시트 경로를 쓴다.
+            if (target.type === 'WALL') {
+                // 저장소가 비어 있을 수도 있어 null 을 그대로 넘긴다 — 아래에서 걸러 낸다.
+                openCityGatekeeperDialogue(citySceneCityId ? engine?.['store'].getCity(citySceneCityId) : undefined);
+                return;
+            }
             if (citySceneCityId) {
                 const city = engine?.['store'].getCity(citySceneCityId);
                 if (city) openCitySceneSheet(city);
@@ -6549,6 +6766,12 @@ window.__game = {
     getVisibleCityIds: () => chinaMap?.getVisibleCityIds() ?? [],
     getFactionLabels: () => chinaMap?.getFactionLabels() ?? [],
     getCityVisibilityMode: () => cityVisibilityMode,
+    // [2026-10-04] 이동 상태 — E2E 가 "경로가 그려졌나 / 도착했나" 를 읽는다.
+    //   군단 위치 모델은 아직 없어 진행도는 0~1 시각 값일 뿐이다.
+    isTravelModeActive: () => travelModeActive,
+    getTravelRoute: () => (travelRoute ? { ...travelRoute } : null),
+    hasTravelRoute: () => chinaMap?.hasTravelRoute() ?? false,
+    getCurrentPanelCityId: () => currentPanelCityId,
     getCityScreenPosition: (cityId: string) => chinaMap?.getCityScreenPosition(cityId) ?? null,
     getEngine: () => engine,
     getStore: () => engine?.['store'] ?? null,

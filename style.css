@@ -1369,6 +1369,40 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     line-height: 1;
     cursor: pointer;
 }
+/* [2026-10-04] 이동 모드 안내 토스트 — 지도 위 중앙 상단.
+   취소 버튼이 반드시 있어야 한다 — 지도를 켠 뒤 되돌아갈 수단이 없으면
+   플레이어가 목적지를 고를 수 없을 때 갇힌다. */
+.travel-hint {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    background: rgba(12, 18, 14, .92);
+    border: 1px solid rgba(212, 175, 55, .55);
+    border-radius: 6px;
+    color: #f0e6c8;
+    font-size: 13px;
+    letter-spacing: .5px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
+}
+.travel-hint[hidden] { display: none; }
+.travel-hint-cancel {
+    padding: 3px 10px;
+    background: rgba(56, 46, 34, .95);
+    border: 1px solid rgba(212, 175, 55, .5);
+    border-radius: 4px;
+    color: #f0e6c8;
+    font-size: 12px;
+    cursor: pointer;
+}
+.travel-hint-cancel:hover { background: rgba(80, 66, 44, .95); }
+.travel-hint-cancel:focus-visible { outline: 2px solid #f0c860; outline-offset: 1px; }
+
 .cdp-sheet-close:hover { background: rgba(56, 46, 34, .95); }
 .cdp-sheet-close:focus-visible { outline: 2px solid #f0c860; outline-offset: 1px; }
 .cdp-sheet-body .city-commander {
