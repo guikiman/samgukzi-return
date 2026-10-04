@@ -1420,6 +1420,8 @@ let travelModeOriginId: string | null = null;
 let travelReturnCityId: string | null = null;
 let travelRoute: { from: string; to: string } | null = null;
 let travelAnimToken = 0;
+/** [2026-10-04] 지도 위 마커의 현재 진행도 — 턴 이동에서 애니메이션의 시작점이 된다. */
+let travelProgressCurrent = 0;
 
 /**
  * 이동 대상 도시 목록 (현재 도시 제외).
@@ -1566,6 +1568,10 @@ function confirmTravelTo(dest: import('./core/types.js').City): void {
     }
     travelRoute = { from: originId, to: dest.id };
     chinaMap?.setTravelRoute(originId, dest.id);
+    // 새 이동은 출발점에서 시작한다 — 이전 이동의 진행도가 남아 있으면
+    // 두 번째 도시가 출발하자마자 중간 지점에 있는 것처럼 보인다.
+    travelProgressCurrent = 0;
+    chinaMap?.setTravelProgress(0);
 
     // [2026-10-04] 이동 시간을 계산한다. 육로는 말, 바다는 배 — 배가 더 느리다.
     const plan = chinaMap?.getTravelPlan() ?? null;
@@ -1650,6 +1656,11 @@ export function advanceActiveTravelOneDay(): string | null {
         });
         const dest = store.getCity(active.toCityId);
         if (dest) renderActiveTravelHint(dest, left);
+        // [2026-10-04] 지도 위에서 실제로 한 칸 앞으로 이동시킨다.
+        //   진행도를 **날짜 비율**이 아니라 **경로 거리 비율**로 환산해야 한다.
+        //   말 구간과 배 구간의 하루 이동 거리가 다르므로, 날짜 비율을 그대로 쓰면
+        //   빠른 말 구간에서 마커가 지형을 뚫고 앞질러 나간다.
+        syncTravelProgressToDays(active.daysTotal, left);
         return null;
     }
     // 도착 — 상태를 비우고 경로를 지운다.
@@ -1660,6 +1671,61 @@ export function advanceActiveTravelOneDay(): string | null {
     const dest = store.getCity(active.toCityId);
     addLog(`${dest?.name ?? '목적지'}(으)로 도착했다.`);
     return active.toCityId;
+}
+
+/**
+ * 남은 일수 → 지도 위 진행도(0~1).
+ *
+ * [왜 거리 비율로 환산하는가]
+ * 이동 계획의 구간마다 소요 일수가 다르다(말은 빠르고 배는 느리다). 날짜 비율을
+ * 그대로 진행도에 쓰면, 3일 걸리는 구간을 하루 만에 지나가 버린다 — 지형을 무시하고
+ * 순간이동하는 것처럼 보인다. 그래서 **해당 날짜 지점에서 실제로 어디쯤인지** 를
+ * 거리로 환산해야 한다.
+ *
+ * 렌더러가 구간별 누적 거리를 갖고 있으므로 그쪽에서 계산한다. 여기서는 목표
+ * 진행도만 넘긴다.
+ *
+ * @param daysTotal 총 소요 일수
+ * @param daysLeft  남은 일수
+ */
+function syncTravelProgressToDays(daysTotal: number, daysLeft: number): void {
+    if (daysTotal <= 0) return;
+    // 거리 기준 환산은 렌더러가 한다(구간별 일일 거리를 갖고 있으니).
+    const target = chinaMap?.progressForDays(daysLeft, daysTotal) ?? 0;
+    animateTravelProgressTo(target);
+}
+
+/**
+ * 진행도를 한 프레임씩 부드럽게 만든다.
+ *
+ * [즉시 set 하지 않는 이유]
+ * 턴이 한 달씩 넘어가는데 마커가 순간이동하면 "이동 중"이라는 사실이 눈에 안
+ * 들어온다. 약간의 부드러짐을 주면 "한 걸음 다가갔다" 는 인지가 생긴다.
+ * prefers-reduced-motion 이면 즉시 이동한다 — [461-480] 접근성 축.
+ */
+function animateTravelProgressTo(target: number): void {
+    const reduced = typeof matchMedia === 'function'
+        && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) { chinaMap?.setTravelProgress(target); return; }
+
+    const token = ++travelAnimToken; // 이전 애니메이션을 취소한다
+    const start = travelProgressCurrent;
+    const delta = target - start;
+    // 이미 그 자리면 움직일 것이 없다.
+    if (Math.abs(delta) < 0.001) return;
+    const startTime = performance.now();
+    const DURATION = 420;
+    const step = (now: number): void => {
+        if (token !== travelAnimToken) return;
+        const t = Math.min(1, (now - startTime) / DURATION);
+        // ease-out — 출발할 때 빠르고 끝날 때 느리다(가속/감속).
+        const eased = 1 - Math.pow(1 - t, 3);
+        travelProgressCurrent = start + delta * eased;
+        chinaMap?.setTravelProgress(travelProgressCurrent);
+        if (t < 1) { requestAnimationFrame(step); return; }
+        travelProgressCurrent = target;
+    };
+    requestAnimationFrame(step);
 }
 
 /**
@@ -6869,6 +6935,8 @@ window.__game = {
     // [2026-10-04] 이동 계획 — 육로/해로 구간별 소요 일수
     getTravelPlan: () => chinaMap?.getTravelPlan() ?? null,
     getActiveTravel: () => engine?.['store'].getGlobalState().activeTravel ?? null,
+    // [2026-10-04] 진행도(0~1) — 턴마다 마커가 실제로 전진하는지 E2E 가 확인한다.
+    getTravelProgress: () => (chinaMap as unknown as { travelProgress?: number } | undefined)?.travelProgress ?? 0,
     // [2026-10-04] 검증용 — 두 도시 id 사이 경로를 즉시 세운다(UI 를 거치지 않고).
     setTravelRouteForTest: (fromId: string, toId: string) => {
         chinaMap?.setTravelRoute(fromId, toId);

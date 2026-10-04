@@ -1558,6 +1558,46 @@ export class ChinaMapRenderer {
     }
 
     /**
+     * 남은 소요 일수 → 지도 위 진행도(0~1) 를 **경로 거리 기준**으로 환산한다.
+     *
+     * [왜 거리 기준인가 — 이 메서드가 존재하는 이유]
+     * 각 구간의 하루 이동 거리가 다르다(말 0.085, 배 0.051). 날짜 비율을 그대로
+     * 진행도에 쓰면 3일짜리 말 구간을 하루 만에 통과해 버린다 — 마커가 지형을
+     * 뚫고 순간이동하는 것처럼 보인다.
+     *
+     * 그래서 "그 날짜까지 실제로 걸려간 거리" 를 누적해서 전체 거리로 나눈다.
+     * 이러면 배가 느린 구간에서 마커가 실제로 더 오래 머문다.
+     *
+     * @param daysLeft 남은 일수
+     * @param daysTotal 총 소요 일수
+     */
+    progressForDays(daysLeft: number, daysTotal: number): number {
+        const route = this.travelRoute;
+        if (!route || daysTotal <= 0) return 0;
+        const legs = route.legs ?? [];
+        if (legs.length === 0) {
+            // 구간 정보가 없으면 날짜 비율로 대체한다 — 선형 경로라 차이가 없다.
+            return 1 - Math.max(0, Math.min(1, daysLeft / daysTotal));
+        }
+        const totalDays = legs.reduce((s, l) => s + l.days, 0);
+        if (totalDays <= 0) return 0;
+        const totalDist = legs.reduce((s, l) => s + l.distance, 0);
+        if (totalDist <= 0) return 0;
+
+        // 경과 일수 → 경과 거리. 구간을 날짜 순으로 소비한다.
+        const elapsed = Math.max(0, Math.min(totalDays, totalDays - daysLeft));
+        let accDays = 0;
+        let accDist = 0;
+        for (const leg of legs) {
+            if (elapsed <= accDays) break;
+            const take = Math.min(leg.days, elapsed - accDays);
+            accDist += leg.distance * (take / leg.days);
+            accDays += leg.days;
+        }
+        return Math.max(0, Math.min(1, accDist / totalDist));
+    }
+
+    /**
      * 두 도시를 잇는 경로를 **도로 그래프 위에서** 찾는다.
      *
      * [그래프 구성]
@@ -1819,14 +1859,32 @@ export class ChinaMapRenderer {
             strokeRange(from, Math.min(to, target), true);
         }
 
-        // 이동 마커
+        // 이동 마커 — 진행 중인 위치에 세운다.
+        // [말/배 표식] 육로에서는 말을, 해로에서는 배를 그린다. 단순 원만 두면
+        // "이동 중" 임을 알 수 있지만 무엇으로 이동하는지는 안 보인다 — 이미 색으로
+        // 구분하지만 표식까지 있으면 거리에서 읽힌다.
         ctx.setLineDash([]);
         const marker = toPx(head);
-        ctx.fillStyle = 'rgba(255, 226, 130, 0.95)';
+        const r = 7 * this.zoom;
+        // 머리 위 흰 테두기 — 어떤 지형 위에서도 눈에 띄게.
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
         ctx.beginPath();
-        ctx.arc(marker.px, marker.py, 5 * this.zoom, 0, Math.PI * 2);
+        ctx.arc(marker.px, marker.py, r + 2, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(60, 40, 10, 0.9)';
+        // 현재 구간의 수송 색.
+        ctx.fillStyle = BOAT_COLOR;
+        // 마커가 어느 구간에 있는지 찾는다 — 지점이 속한 구간이 그 구간의 수송이다.
+        for (let i = 0; i < legInfo.length; i++) {
+            const from = cum[i], to = cum[i + 1] ?? total;
+            if (target >= from && target <= to) {
+                ctx.fillStyle = legInfo[i].mode === 'BOAT' ? BOAT_COLOR : HORSE_COLOR;
+                break;
+            }
+        }
+        ctx.beginPath();
+        ctx.arc(marker.px, marker.py, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(40, 28, 8, 0.95)';
         ctx.lineWidth = 1.5 * this.zoom;
         ctx.stroke();
         ctx.restore();
