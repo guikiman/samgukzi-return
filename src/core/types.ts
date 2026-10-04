@@ -602,6 +602,17 @@ export interface GlobalState {
     /** [49] 플레이어가 방문한 도시 ID — 세이브/로드 후에도 지도 발견 상태를 복원한다. */
     visitedCityIds?: CityID[];
     /**
+     * [2026-10-04] 저장 시각 (Date.now, ms). 오프라인 진행용.
+     *
+     * optional 로 둔 이유: 구버전 세이브에 이 필드가 없다. 없으면 오프라인
+     * 진행을 하지 않고 그냥 로드한다(프로젝트 관례). 저장할 때마다 갱신한다.
+     *
+     * [왜 globalState 에 두는가]
+     * 세이브 파일에 이미 globalState 가 들어간다. 여기에 두면 저장 파이프라인
+     * (prepareSave → loadFromSave) 을 건드리지 않고 로드에서 바로 읽는다.
+     */
+    savedAt?: number;
+    /**
      * [2026-10-04] 진행 중인 이동 — 도착까지 턴이 필요하다.
      *
      * optional 로 둔 이유: 구버전 세이브에 이 필드가 없다. undefined 면 이동 중이

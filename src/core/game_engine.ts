@@ -1886,7 +1886,9 @@ export class GameEngine {
     } {
         return {
             state: this.store.createSnapshot(),
-            globalState: this.store.getGlobalState(),
+            // [2026-10-04] 저장 시각 — 오프라인 진행용. globalState 안에 두면
+            //   저장 파이프라인을 건드리지 않고 로드에서 바로 읽는다.
+            globalState: { ...this.store.getGlobalState(), savedAt: Date.now() },
             // 실행된 커맨드는 현재 상태에 이미 반영되므로 저장 후 재실행하지 않는다. [17]
             commands: this.commandQueue.serializePending(),
             diplomacy: this.diplomacy.serialize(),

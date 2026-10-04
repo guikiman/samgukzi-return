@@ -72,6 +72,7 @@ import { checkInteraction, executeInteraction, getAffinityBetween, GIFT_ITEMS, c
 import { ConversationSystem } from './core/conversation_system.js';
 import { shouldInspectAtGate, resolveGateChoice, gateBribeCost, gateSneakThreshold } from './core/city_gate_system.js';
 import { describeTravelPlan } from './core/travel_transport.js';
+import { catchUpOfflineTurns } from './core/offline_catchup.js';
 import type { GateChoiceId } from './core/city_gate_system.js';
 import { StrategicOptionSystem } from './core/strategic_option_system.js';
 import type { DialogueContext } from './core/dialogue_engine.js';
@@ -5222,7 +5223,41 @@ function loadFromSlot(slot: SlotId): void {
     restoreUiSettings(slotManager.getUiSettings(slot));
     saveSlotsPanel.style.display = 'none';
     addLog(`슬롯 ${slot === 'auto' ? '자동' : slot}에서 불러왔습니다`);
+
+    // [2026-10-04] 오프라인 진행 — 로드는 즉시 끝내고, 턴 돌리기는 백그라운드로.
+    //   최대 24턴이라 몇 초가 걸릴 수 있어 await 하면 화면이 멈춘다.
+    void catchUpOfflineAfterLoad();
     void startGame(null);
+}
+
+/**
+ * 로드 직후 오프라인 진행. [2026-10-04]
+ *
+ * [왜 UI 를 먼저 띄우는가]
+ * 24턴 몰아 돌리기는 AI 포함 수 초가 걸린다. 화면이 멈추면 사용자가 "죽었다"
+ * 고 판단한다. 먼저 게임을 띄우고 진행을 뒤에 돌리면, 로그에서 "동안 N턴
+ * 진행" 을 읽으며 자연스럽게 기다린다.
+ */
+async function catchUpOfflineAfterLoad(): Promise<void> {
+    if (!engine) return;
+    try {
+        const { turns, message } = await catchUpOfflineTurns(engine);
+        if (turns <= 0) return;
+        addLog(`🌙 ${message}`);
+        // 진행 결과를 화면에 반영한다 — 턴 끝 처리와 같은 갱신.
+        syncChinaMapCities();
+        if (currentPanelCityId) {
+            const store = engine['store'];
+            const city = store.getCity(currentPanelCityId);
+            if (city) {
+                renderCityDetailPanel(city, city.ownerId ? store.getFaction(city.ownerId) : null, false);
+            }
+        }
+        updateSettlementPanel();
+    } catch (err) {
+        // 오프라인 진행은 실패해도 게임이 죽으면 안 된다. 로드된 상태는 그대로.
+        addLog(`🌙 오프라인 진행 실패 (세계는 저장 시점 그대로): ${err}`);
+    }
 }
 
 /** 세이브에 포함된 UI 설정 복원 (구버전 세이브: null이면 무시) [461-480] */
