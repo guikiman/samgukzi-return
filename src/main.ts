@@ -71,6 +71,7 @@ import { MultiTabMutexCoordinator } from './core/multi_tab_mutex_coordinator.js'
 import { checkInteraction, executeInteraction, getAffinityBetween, GIFT_ITEMS, calculateGiftAffinity, type GiftItemId, type GiftOptions } from './core/officer_interaction_system.js';
 import { ConversationSystem } from './core/conversation_system.js';
 import { shouldInspectAtGate, resolveGateChoice, gateBribeCost, gateSneakThreshold } from './core/city_gate_system.js';
+import { describeTravelPlan } from './core/travel_transport.js';
 import type { GateChoiceId } from './core/city_gate_system.js';
 import { StrategicOptionSystem } from './core/strategic_option_system.js';
 import type { DialogueContext } from './core/dialogue_engine.js';
@@ -1565,12 +1566,100 @@ function confirmTravelTo(dest: import('./core/types.js').City): void {
     }
     travelRoute = { from: originId, to: dest.id };
     chinaMap?.setTravelRoute(originId, dest.id);
-    addLog(`${dest.name}(으)로 이동한다.`);
-    playTravelAnimation(originId, dest.id, () => {
-        travelRoute = null;
-        chinaMap?.clearTravelRoute();
-        enterCity(dest.id);
+
+    // [2026-10-04] 이동 시간을 계산한다. 육로는 말, 바다는 배 — 배가 더 느리다.
+    const plan = chinaMap?.getTravelPlan() ?? null;
+    const days = plan?.totalDays ?? 0;
+    const how = plan ? describeTravelPlan(plan) : '이동 경로 없음';
+    addLog(`${dest.name}(으)로 이동한다 — ${how}`);
+
+    // 1일 미만이면 턴을 쓰지 않고 즉시 도착한다. 부분일을 1일로 올려도 괜찮지만,
+    // 여기서는 "같은 도시 안에서의 이동"이 이 값에 걸릴 수 있어 0 을 먼저 거른다.
+    if (days <= 0) {
+        playTravelAnimation(originId, dest.id, () => {
+            travelRoute = null;
+            chinaMap?.clearTravelRoute();
+            enterCity(dest.id);
+        });
+        return;
+    }
+
+    // 턴이 필요한 이동 — 상태에 넣고 "이동 중" 지도 모드로 둔다.
+    const store = engine['store'];
+    store.setGlobalState({
+        ...store.getGlobalState(),
+        activeTravel: {
+            fromCityId: originId,
+            toCityId: dest.id,
+            daysRemaining: days,
+            daysTotal: days,
+        },
     });
+    travelReturnCityId = null; // 이동 중에는 원래 도시로 돌아가지 않는다
+    renderActiveTravelHint(dest, days);
+}
+
+/**
+ * 이동 중 안내 — "목적지까지 N일" 을 보여주고 취소를 제공한다.
+ *
+ * [왜 map 위가 아니라 지도 위 토스트인가]
+ * 이동 중에는 도시 화면이 닫혀 있고 지도가 보인다. 진행 상태를 지도 위에 두는
+ * 것이 사용자가 자연스럽게 보는 곳이다.
+ */
+function renderActiveTravelHint(dest: import('./core/types.js').City, days: number): void {
+    const hint = document.getElementById('travel-hint');
+    if (!hint) return;
+    hint.innerHTML = `<span class="travel-hint-text">${dest.name}로 이동 중 — 남은 ${days}일</span>`
+        + '<button type="button" class="travel-hint-cancel">이동 중지</button>';
+    hint.hidden = false;
+    hint.querySelector('.travel-hint-cancel')?.addEventListener('click', cancelActiveTravel);
+}
+
+/** 이동 중지 — 출발 도시로 돌아간다. 도착한 것처럼 행동한 적은 없다. */
+function cancelActiveTravel(): void {
+    const store = engine?.['store'];
+    const active = store?.getGlobalState().activeTravel;
+    if (!store || !active) return;
+    store.setGlobalState({ ...store.getGlobalState(), activeTravel: undefined });
+    travelRoute = null;
+    chinaMap?.clearTravelRoute();
+    document.getElementById('travel-hint')?.setAttribute('hidden', '');
+    addLog('이동을 중지했다.');
+    showCityInfo(active.fromCityId);
+}
+
+/**
+ * 턴 경계마다 이동 1일 경과 — 턴이 끝날 때마다 부른다.
+ *
+ * [3단계로 이어지는 자리]
+ * 지금은 "하루씩 줄이고 0 이 되면 도착" 만 한다. 군단(Army) 이 붙으면 여기에
+ * 행군 사건(식량 고갈·길목 교전·날씨 페널티)을 끼워 넣으면 된다. 지금 넣으면
+ * Army 가 없는 상태에서 규칙이 죽으므로 넣지 않는다.
+ *
+ * @returns 도착했으면 목적지 도시 id, 아니면 null
+ */
+export function advanceActiveTravelOneDay(): string | null {
+    const store = engine?.['store'];
+    const active = store?.getGlobalState().activeTravel;
+    if (!store || !active) return null;
+    const left = active.daysRemaining - 1;
+    if (left > 0) {
+        store.setGlobalState({
+            ...store.getGlobalState(),
+            activeTravel: { ...active, daysRemaining: left },
+        });
+        const dest = store.getCity(active.toCityId);
+        if (dest) renderActiveTravelHint(dest, left);
+        return null;
+    }
+    // 도착 — 상태를 비우고 경로를 지운다.
+    store.setGlobalState({ ...store.getGlobalState(), activeTravel: undefined });
+    travelRoute = null;
+    chinaMap?.clearTravelRoute();
+    document.getElementById('travel-hint')?.setAttribute('hidden', '');
+    const dest = store.getCity(active.toCityId);
+    addLog(`${dest?.name ?? '목적지'}(으)로 도착했다.`);
+    return active.toCityId;
 }
 
 /**
@@ -5430,6 +5519,11 @@ btnNextMonth.addEventListener('click', async () => {
             }
         }
         if (diplomacyPanel.style.display === 'block') renderDiplomacyPanel();
+        // [2026-10-04] 진행 중인 이동 1일 경과. 도착하면 목적지 도시를 연다.
+        //   턴이 한 달(한 기) 진행될 때 1일만 줄어든다는 점이 규칙의 핵심이다 —
+        //   가까운 도시는 1~2개월, 먼 곳은 여러 달 걸린다.
+        const arrived = advanceActiveTravelOneDay();
+        if (arrived) enterCity(arrived);
     } catch (err) {
         addLog(`턴 진행 실패: ${err}`);
     } finally {
@@ -6772,6 +6866,9 @@ window.__game = {
     getTravelRoute: () => (travelRoute ? { ...travelRoute } : null),
     hasTravelRoute: () => chinaMap?.hasTravelRoute() ?? false,
     getTravelRoutePoints: () => chinaMap?.getTravelRoutePoints() ?? [],
+    // [2026-10-04] 이동 계획 — 육로/해로 구간별 소요 일수
+    getTravelPlan: () => chinaMap?.getTravelPlan() ?? null,
+    getActiveTravel: () => engine?.['store'].getGlobalState().activeTravel ?? null,
     // [2026-10-04] 검증용 — 두 도시 id 사이 경로를 즉시 세운다(UI 를 거치지 않고).
     setTravelRouteForTest: (fromId: string, toId: string) => {
         chinaMap?.setTravelRoute(fromId, toId);

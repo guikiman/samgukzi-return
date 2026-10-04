@@ -601,6 +601,25 @@ export interface GlobalState {
     cityBuildingStates?: Record<CityID, Record<string, CityBuildingState>>;
     /** [49] 플레이어가 방문한 도시 ID — 세이브/로드 후에도 지도 발견 상태를 복원한다. */
     visitedCityIds?: CityID[];
+    /**
+     * [2026-10-04] 진행 중인 이동 — 도착까지 턴이 필요하다.
+     *
+     * optional 로 둔 이유: 구버전 세이브에 이 필드가 없다. undefined 면 이동 중이
+     * 아니라고 간주하��� 로드 경로에서 분기를 만들지 않아도 된다(프로젝트 관례).
+     *
+     * [3단계로 이어지는 자리]
+     * 지금은 `daysTotal` = 0 (즉시 도착)이다. 턴 경계마다 1씩 줄이고 0 이 되면
+     * 목적지 도시를 열게 만들면 된다. 군단(Army) 이 붙으면 ownerId 로 묶어
+     * 여러 부대의 이동을 한 건으로 표현할 수 있다.
+     */
+    activeTravel?: {
+        fromCityId: CityID;
+        toCityId: CityID;
+        /** 남은 일수. 0 이 되면 도착 확정. */
+        daysRemaining: number;
+        /** 총 소요 일수 — "3일 중 2일째" 같은 안내에 쓴다. */
+        daysTotal: number;
+    };
 }
 
 // ============================================================

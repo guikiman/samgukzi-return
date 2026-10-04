@@ -1,5 +1,6 @@
 import { relaxCityPlacement } from './city_placement.js';
 import { traceIsoContours } from './marching_squares.js';
+import { planTravel, type TravelPlan } from './travel_transport.js';
 import { MAP_FEATURE_ANCHORS } from './scenario_system.js';
 
 /**
@@ -683,6 +684,11 @@ export class ChinaMapRenderer {
         to: MapCityView;
         /** 도로를 따라가는 정규화 좌표 꺾은선. 없으면 직선. */
         points: Array<{ x: number; y: number }>;
+        /**
+         * 지형별로 나눈 구간 — 말(육로) / 배(해로). 그릴 때 색을 다르게 한다.
+         * setTravelRoute 가 계산해 넣는다.
+         */
+        legs?: Array<{ mode: 'HORSE' | 'BOAT'; ax: number; ay: number; bx: number; by: number; distance: number; days: number }>;
     } | null = null;
     private travelProgress = 0;
 
@@ -1510,7 +1516,8 @@ export class ChinaMapRenderer {
         const to = this.cities.find(c => c.id === toCityId);
         if (!from || !to) { this.travelRoute = null; return; }
         const polyline = this.routeAlongRoads(from, to);
-        this.travelRoute = { from, to, points: polyline };
+        const plan = planTravel(polyline, (x, y) => this.isLand(x, y));
+        this.travelRoute = { from, to, points: polyline, legs: plan.legs };
         this.travelProgress = 0;
     }
 
@@ -1537,6 +1544,17 @@ export class ChinaMapRenderer {
      */
     getTravelRoutePoints(): ReadonlyArray<{ x: number; y: number }> {
         return this.travelRoute?.points ?? [];
+    }
+
+    /**
+     * 현재 경로의 이동 계획 — 육로/해로 구간별 소요 일수.
+     *
+     * 지형 판정은 이 클래스가 이미 갖고 있는 `isLand` 를 쓴다. 순수 계산은
+     * `travel_transport.ts` 가 맡고 여기선 그 결과만 받아 노출한다.
+     */
+    getTravelPlan(): TravelPlan {
+        const pts = this.travelRoute?.points ?? [];
+        return planTravel(pts, (x, y) => this.isLand(x, y));
     }
 
     /**
@@ -1744,33 +1762,62 @@ export class ChinaMapRenderer {
         };
         const head = at(target);
 
+        // [2026-10-04] 육로/해로를 다른 색으로 그린다. 구간 분해는
+        //   travel_transport.splitByTerrain 이, 색 결정은 여기서 한다 —
+        //   순수 계산 모듈이 색(표현)을 몰라야 재사용된다.
+        //   말 = 흙빛 주황, 배 = 물빛 청색.
+        const HORSE_COLOR = 'rgba(255, 206, 120, 0.95)';
+        const HORSE_DIM = 'rgba(220, 160, 70, 0.35)';
+        const BOAT_COLOR = 'rgba(130, 200, 255, 0.95)';
+        const BOAT_DIM = 'rgba(80, 150, 220, 0.35)';
+
         ctx.save();
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
 
-        // 남은 경로 — 점선. 지금까지 간 경로는 실선.
-        const strokeThrough = (upTo: { x: number; y: number }, dash: number[] | null): void => {
-            if (dash) ctx.setLineDash(dash);
+        // 남은 경로(점선)와 간 경로(실선)를 각각 그린다.
+        // 한 번에 그리지 않고 구간별로 색을 바꿔 칠하기 위해 ���분 셈이 필요하다.
+        const legInfo = this.travelRoute!.legs ?? [];
+        const strokeRange = (
+            from: number, to: number, done: boolean,
+        ): void => {
+            if (to <= from) return;
             ctx.beginPath();
-            const start = toPx(pts[0]);
-            ctx.moveTo(start.px, start.py);
-            for (let i = 1; i < pts.length - 1; i++) {
-                if (dash && cum[i] > target) break;
-                const p = toPx(pts[i]);
+            const s0 = toPx(at(from));
+            ctx.moveTo(s0.px, s0.py);
+            for (let i = 1; i <= legInfo.length; i++) {
+                const d = cum[i] ?? total;
+                if (d <= from) continue;
+                if (d >= to) break;
+                const p = toPx(at(d));
                 ctx.lineTo(p.px, p.py);
             }
-            const end = toPx(upTo);
-            ctx.lineTo(end.px, end.py);
+            const e0 = toPx(at(to));
+            ctx.lineTo(e0.px, e0.py);
             ctx.stroke();
+            void done;
         };
 
-        ctx.strokeStyle = 'rgba(240, 200, 96, 0.35)';
+        // 점선(남은 경로) — 각 구간의 수송 색으로.
         ctx.lineWidth = 2.5 * this.zoom;
-        strokeThrough(pts[pts.length - 1], [6 * this.zoom, 6 * this.zoom]);
+        for (let i = 0; i < legInfo.length; i++) {
+            const from = cum[i], to = cum[i + 1] ?? total;
+            if (to <= target) continue;
+            const start = Math.max(from, target);
+            ctx.setLineDash([6 * this.zoom, 6 * this.zoom]);
+            ctx.strokeStyle = legInfo[i].mode === 'BOAT' ? BOAT_DIM : HORSE_DIM;
+            strokeRange(start, to, false);
+        }
 
-        ctx.strokeStyle = 'rgba(255, 226, 130, 0.95)';
+        // 실선(간 경로) — 이미 지난 구간.
+        ctx.setLineDash([]);
         ctx.lineWidth = 3 * this.zoom;
-        strokeThrough(head, null);
+        for (let i = 0; i < legInfo.length; i++) {
+            const from = cum[i], to = cum[i + 1] ?? total;
+            if (from >= target) break;
+            ctx.strokeStyle = legInfo[i].mode === 'BOAT' ? BOAT_COLOR : HORSE_COLOR;
+            strokeRange(from, Math.min(to, target), true);
+        }
 
         // 이동 마커
         ctx.setLineDash([]);
