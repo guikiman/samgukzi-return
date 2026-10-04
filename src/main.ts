@@ -1603,6 +1603,8 @@ function confirmTravelTo(dest: import('./core/types.js').City): void {
     });
     travelReturnCityId = null; // 이동 중에는 원래 도시로 돌아가지 않는다
     renderActiveTravelHint(dest, days);
+    // [2026-10-04] 턴을 기다리지 않고 계속 움직인다 — 실시간 이동 모습.
+    startTravelLoop();
 }
 
 /**
@@ -1626,6 +1628,7 @@ function cancelActiveTravel(): void {
     const store = engine?.['store'];
     const active = store?.getGlobalState().activeTravel;
     if (!store || !active) return;
+    stopTravelLoop();
     store.setGlobalState({ ...store.getGlobalState(), activeTravel: undefined });
     travelRoute = null;
     chinaMap?.clearTravelRoute();
@@ -1664,6 +1667,7 @@ export function advanceActiveTravelOneDay(): string | null {
         return null;
     }
     // 도착 — 상태를 비우고 경로를 지운다.
+    stopTravelLoop();
     store.setGlobalState({ ...store.getGlobalState(), activeTravel: undefined });
     travelRoute = null;
     chinaMap?.clearTravelRoute();
@@ -1690,7 +1694,11 @@ export function advanceActiveTravelOneDay(): string | null {
  */
 function syncTravelProgressToDays(daysTotal: number, daysLeft: number): void {
     if (daysTotal <= 0) return;
-    // 거리 기준 환산은 렌더러가 한다(구간별 일일 거리를 갖고 있으니).
+    // [2026-10-04] 실시간 루프가 떠 있는 동안은 루프가 그린다. 턴 경계에서만
+    //   진행도를 정확히 되감을 뿐( re-align ), 그 사이에 애니메이션을 새로 띄우면
+    //   루프와 부딪혀 두 애니메이션이 같은 값을 놓고 다툰다.
+    if (travelLoopHandle) { realignToTurnProgress(daysTotal, daysLeft); return; }
+    // 루프가 없는 경우(감소 모드)만 부드러운 점프 애니메이션을 쓴다.
     const target = chinaMap?.progressForDays(daysLeft, daysTotal) ?? 0;
     animateTravelProgressTo(target);
 }
@@ -1754,6 +1762,78 @@ function playTravelAnimation(_from: string, _to: string, done: () => void): void
     requestAnimationFrame(step);
 }
 
+
+/**
+ * 실시간 이동 루프 — 턴을 기다리지 않고 계속 앞으로 나아간다. [2026-10-04]
+ *
+ * [왜 필요한가]
+ * 턴마다 한 번씩 420ms짜리 애니메이션은 "이동 중" 을 보여주지만 **멈춰 있다**.
+ * 사용자가 요청한 것은 "실시간으로 이동하는 모습" 이었다. 턴이 몇 달 걸리든
+ * 마커는 화면에서 계속 움직여야 한다. 그래야 "5일 걸린다" 는 숫자가
+ * "지금 이렇게 느리게 간다" 는 인상으로 읽힌다.
+ *
+ * [속도 설계 — 왜 전체를 짧게 순회하는가]
+ * 전체 경로를 N초에 한 번 순회(loop)시킨다. 몇 가지 선택지가 있었다:
+ *   (a) 실제 1개월을 N초에 압축 → 하루가 몇 밀리초라 턴 길이와 무관하게 어긋남
+ *   (b) 남은 구간만 천천히 — 턴마다 리셋돼 출발할 때마다 다시 느려짐
+ *   (c) 전체를 일정한 속도로 순회 — "이동 중" 인 사실이 계속 보인다
+ * (c) 를 택했다. 턴 경계는 진행도를 정확히 되감는 역할만 하고(아래
+ * `realignToTurnProgress`), 루프는 그 위에 계속 얹힌다.
+ *
+ * [빠른 말 / 느린 배 구간]
+ * 루프는 **거리 기준**으로 움직인다. 하루 이동 거리는 말 0.085, 배 0.051 이므로
+ * 배 구간에서 마커가 실제로 느리게 간다 — 이것이 이 애니메이션의 진짜 목적이다.
+ *
+ * [prefers-reduced-motion]
+ * 루프를 아예 띄우지 않는다. 턴마다 한 번 점프하는 방식으로 되돌린다. [461-480]
+ */
+let travelLoopHandle = 0;
+let travelLoopLast = 0;
+
+/** 전체 경로를 한 번 순회하는 데 걸리는 밀리초. */
+const TRAVEL_LOOP_MS = 6000;
+
+/** 실시간 이동 루프를 시작한다 — 턴이 필요한 이동을 시작할 때만 부른다. */
+function startTravelLoop(): void {
+    stopTravelLoop();
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        return; // 감소 모드에서는 루프 대신 턴마다 점프한다.
+    }
+    travelLoopLast = performance.now();
+    const tick = (now: number): void => {
+        const store = engine?.['store'];
+        if (!store || !store.getGlobalState().activeTravel) { travelLoopHandle = 0; return; }
+        const dt = now - travelLoopLast;
+        travelLoopLast = now;
+        // 거리 기준 속도. 순회 시간은 전체 거리 기준이므로 여기서 1/6000 을 더한다.
+        travelProgressCurrent += dt / TRAVEL_LOOP_MS;
+        if (travelProgressCurrent >= 1) travelProgressCurrent -= 1; // 순환
+        chinaMap?.setTravelProgress(travelProgressCurrent);
+        travelLoopHandle = requestAnimationFrame(tick);
+    };
+    travelLoopHandle = requestAnimationFrame(tick);
+}
+
+/** 실시간 이동 루프를 멈춘다 — 도착·취소·이동 중지 시 부른다. */
+function stopTravelLoop(): void {
+    if (travelLoopHandle) cancelAnimationFrame(travelLoopHandle);
+    travelLoopHandle = 0;
+}
+
+/**
+ * 턴 경계에서 진행도를 그 턴의 정확한 위치로 되돌린다.
+ *
+ * [루프와 턴의 관계]
+ * 루프는 화면을 예쁘게 만들기 위한 것이고 **진짜 상태는 아니다**. 턴이 넘어가면
+ * `daysRemaining` 이 줄어들었으므로, 진행도를 그 값에 맞는 위치로 되돌려야
+ * "여기까지 왔다" 는 사실이 화면과 어긋나지 않는다. 되돌린 뒤 루프가 다시
+ * 그 자리에서 계속 움직인다.
+ */
+function realignToTurnProgress(daysTotal: number, daysLeft: number): void {
+    const target = chinaMap?.progressForDays(daysLeft, daysTotal) ?? 0;
+    travelProgressCurrent = target;
+    chinaMap?.setTravelProgress(target);
+}
 
 function endPointerInteraction(e: PointerEvent): void {
     if (activePointerId !== e.pointerId) return;
