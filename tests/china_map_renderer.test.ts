@@ -88,6 +88,44 @@ describe('ChinaMapRenderer', () => {
             // 출발지만 있고 목적지가 없으면 그릴 선이 없으므로 표시하지 않는다.
             expect(r.hasTravelRoute()).toBe(false);
         });
+
+        // [2026-10-04 사용자 지적] "직선 코스 말고 도로길 따라 이동해야 한다"
+        //   같은 세력 도시끼리는 MST 도로가 화면에 그려진다. 경로가 직선(2점)이라면
+        //   화면에 보이는 도로를 무시하는 셈이다. 그래서 점 개수로 검증한다.
+        it('[회귀] 같은 세력 안에서는 도로를 따라 경유한다 (직선이 아니다)', () => {
+            const r = new ChinaMapRenderer(createMockCanvas());
+            // 한 줄로 늘어선 4도시 — MST 가 c1-c2-c3-c4 를 잇는다.
+            r.setCities([
+                city('c1', 0.20, 0.30), city('c2', 0.30, 0.32),
+                city('c3', 0.40, 0.34), city('c4', 0.50, 0.36),
+            ] as never[]);
+            // 같은 세력(같은 ownerColor)이므로 도로가 만들어진다.
+            const roads = (r as unknown as { roads: unknown[] }).roads;
+            expect(roads.length, '도로가 하나도 안 만들어졌다 — MST 가 동작하는지 의심').toBeGreaterThan(0);
+
+            r.setTravelRoute('c1', 'c4');
+            const pts = r.getTravelRoutePoints();
+            expect(pts.length, '직선(2점)이다 — 도로를 따라가지 않았다').toBeGreaterThan(2);
+            // 첫 점은 출발지, 마지막 점은 목적지여야 한다.
+            expect(pts[0].x).toBeCloseTo(0.20, 2);
+            expect(pts[pts.length - 1].x).toBeCloseTo(0.50, 2);
+        });
+
+        it('서로 다른 세력(도로 없음)으로 가면 직선이 아니라 육지 우회를 쓴다', () => {
+            const r = new ChinaMapRenderer(createMockCanvas());
+            r.setCities([
+                { ...city('a', 0.20, 0.30), ownerColor: 'f1' },
+                { ...city('b', 0.50, 0.36), ownerColor: 'f2' },
+            ] as never[]);
+            r.setTravelRoute('a', 'b');
+            // 두 도시가 세력이 다르면 MST 도로가 없으므로 폴백 경로가 나온다.
+            // 폴백은 "무조건 직선"이 아니다 — 지형을 따른다. 이 테스트는
+            // 폴백이 호출되어 경로가 세워졌다는 것만 확인한다(점 개수는 환경 의존).
+            expect(r.hasTravelRoute()).toBe(true);
+            const pts = r.getTravelRoutePoints();
+            expect(pts.length).toBeGreaterThanOrEqual(2);
+            expect(pts[0].x).toBeCloseTo(0.20, 2);
+        });
     });
 
     it('도시 앵커 전부가 4096 비트맵 좌표와 일치한다', () => {

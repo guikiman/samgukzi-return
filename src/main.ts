@@ -6771,6 +6771,13 @@ window.__game = {
     isTravelModeActive: () => travelModeActive,
     getTravelRoute: () => (travelRoute ? { ...travelRoute } : null),
     hasTravelRoute: () => chinaMap?.hasTravelRoute() ?? false,
+    getTravelRoutePoints: () => chinaMap?.getTravelRoutePoints() ?? [],
+    // [2026-10-04] 검증용 — 두 도시 id 사이 경로를 즉시 세운다(UI 를 거치지 않고).
+    setTravelRouteForTest: (fromId: string, toId: string) => {
+        chinaMap?.setTravelRoute(fromId, toId);
+        return chinaMap?.getTravelRoutePoints() ?? [];
+    },
+    getRoadCount: () => (chinaMap as unknown as { roads?: unknown[] } | undefined)?.roads?.length ?? 0,
     getCurrentPanelCityId: () => currentPanelCityId,
     getCityScreenPosition: (cityId: string) => chinaMap?.getCityScreenPosition(cityId) ?? null,
     getEngine: () => engine,

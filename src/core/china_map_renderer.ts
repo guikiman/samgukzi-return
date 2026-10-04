@@ -678,7 +678,12 @@ export class ChinaMapRenderer {
     private cityPos = new Map<string, { x: number; y: number }>();
 
     /** [2026-10-04] 이동 경로 표시(시각 전용) — 군단 위치 모델은 3단계 대상 */
-    private travelRoute: { from: MapCityView; to: MapCityView } | null = null;
+    private travelRoute: {
+        from: MapCityView;
+        to: MapCityView;
+        /** 도로를 따라가는 정규화 좌표 꺾은선. 없으면 직선. */
+        points: Array<{ x: number; y: number }>;
+    } | null = null;
     private travelProgress = 0;
 
     /** 초기 시점을 육지에 맞췄는가 — 한 번만 적용한다 */
@@ -1488,19 +1493,24 @@ export class ChinaMapRenderer {
     // ============================================================
 
     /**
-     * 출발지→목적지 이동 경로를 설정한다.
+     * 이동 경로를 설정한다.
      *
-     * [왜 상태가 아니라 표시인가]
-     * 군단(Army) 위치 모델은 아직 없다. 지금은 선을 그리고 끝에 마커를
-     * 움직이는 **시각 표시**까지만 담당한다. 도착 판정·지속시간·사건은
-     * Army 모델이 들어올 때 이 위에 얹는다 — 그때 이 필드는 경로
-     * 스냅샷으로만 쓰고 진행 상태는 엔진 쪽이 갖는다.
+     * [왜 직선이 아니라 도로를 따르는가 — 2026-10-04 사용자 지적]
+     * "다른 도시 이동시 직선 코스 말고 도로길 따라 이동해야 한다" 고 지적받았다.
+     * 지도는 이미 도로망을 그린다(도로는 도시를 가로지르는 대로 표시다). 그런데
+     * 이동 표시가 직선으로 가면 **화면에서 보이는 도로를 무시하는** 모순이 생긴다.
+     * 지도가 무엇을 말하는지(도로가 있다) 와 게임이 무엇을 하는지(직선으로 간다)가
+     * 어긋나는 셈이다.
+     *
+     * 세기와: 이 메서드는 도시 좌표만으로는 경로를 만들지 않고, **도로 그래프를
+     * 다익스트라로** 돌린다. 3단계에서 군단이 실제로 이 그래프 위를 움직이게 된다.
      */
     setTravelRoute(fromCityId: string, toCityId: string): void {
         const from = this.cities.find(c => c.id === fromCityId);
         const to = this.cities.find(c => c.id === toCityId);
         if (!from || !to) { this.travelRoute = null; return; }
-        this.travelRoute = { from, to };
+        const polyline = this.routeAlongRoads(from, to);
+        this.travelRoute = { from, to, points: polyline };
         this.travelProgress = 0;
     }
 
@@ -1520,45 +1530,254 @@ export class ChinaMapRenderer {
     hasTravelRoute(): boolean { return this.travelRoute !== null; }
 
     /**
+     * 현재 이동 경로의 정규화 좌표 — E2E/디버그 검증용.
+     *
+     * "도로를 따라가는가" 를 확인하려면 점 개수만 보면 된다. 직선이면 2개,
+     * 도로를 거치면 3개 이상이다(우회 지점 via 까지 포함하면 더 늘어난다).
+     */
+    getTravelRoutePoints(): ReadonlyArray<{ x: number; y: number }> {
+        return this.travelRoute?.points ?? [];
+    }
+
+    /**
+     * 두 도시를 잇는 경로를 **도로 그래프 위에서** 찾는다.
+     *
+     * [그래프 구성]
+     * 정점은 도시다. 간선은 `this.roads` 의 한 구간이다. 그런데 도로는 도시끼리
+     * 직접 이어 주지 않는다 — RoadSegment 에는 도시 id 가 없고 좌표만 있다.
+     * 그래서 각 도로 끝점을 "가장 가까운 도시"로 매칭해 그래프를 만든다.
+     *
+     * [도로는 세력별로만 잇는다 — 이 함수의 중요한 한계]
+     * `buildRoadNetwork` 은 MST 로 **같은 세력끼리만** 잇는다. 그래서 중립 도시나
+     * 적 세력 도시로 가는 도로가 화면에 없다. 이때는 (a) 도로가 없는데 직선으로
+     * 가면 "도로를 따라간다" 는 약속이 무너지고, (b) 육지 우회 경로(기존 A*)를
+     * 쓰면 "도로는 없지만 지형은 따른다" 가 된다. (b) 를 택했다. 3단계에서 국경
+     * 개방 규칙이 들어오면 그때 갈선을 정한다.
+     */
+    private routeAlongRoads(from: MapCityView, to: MapCityView): Array<{ x: number; y: number }> {
+        const straight = (): Array<{ x: number; y: number }> => [
+            { x: this.cityNorm(from).x, y: this.cityNorm(from).y },
+            { x: this.cityNorm(to).x, y: this.cityNorm(to).y },
+        ];
+        if (this.roads.length === 0) return straight();
+
+        // 각 도시의 정규화 좌표 — 도로 끝점 매칭에 쓴다.
+        const posOf = new Map<string, { x: number; y: number }>();
+        for (const c of this.cities) {
+            const n = this.cityNorm(c);
+            posOf.set(c.id, { x: n.x, y: n.y });
+        }
+        /** 도로 끝점에서 가장 가까운 도시 — 실측 오차 이내면 그 도시로 본다. */
+        const nearestCity = (x: number, y: number): string | null => {
+            let best: string | null = null;
+            let bestD = Infinity;
+            for (const [id, p] of posOf) {
+                const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+                if (d < bestD) { bestD = d; best = id; }
+            }
+            return best;
+        };
+
+        // 인접 리스트: 도시A - (거리, 도시B)
+        const adj = new Map<string, Array<{ to: string; w: number }>>();
+        for (const road of this.roads) {
+            const ca = nearestCity(road.ax, road.ay);
+            const cb = nearestCity(road.bx, road.by);
+            if (!ca || !cb || ca === cb) continue;
+            // 간선 비용은 **도로가 실제로 휘는 길이** 다. 직선 거리로 재면
+            // 우회한 도로가 오히려 짧아져 다익스트라가 그 도로를 먼저 고른다.
+            const w = this.roadPolylineLength(road);
+            if (!adj.has(ca)) adj.set(ca, []);
+            if (!adj.has(cb)) adj.set(cb, []);
+            adj.get(ca)!.push({ to: cb, w });
+            adj.get(cb)!.push({ to: ca, w });
+        }
+
+        if (!adj.has(from.id) || !adj.has(to.id)) {
+            return this.fallbackLandRoute(from, to, straight);
+        }
+
+        const dist = new Map<string, number>();
+        const prev = new Map<string, string>();
+        dist.set(from.id, 0);
+        // 정점 수 = 도시 수(수백) 이므로 선형 탐색 우선순위 큐로 충분하다.
+        const visited = new Set<string>();
+        for (;;) {
+            let u: string | null = null;
+            let best = Infinity;
+            for (const [id, d] of dist) {
+                if (!visited.has(id) && d < best) { best = d; u = id; }
+            }
+            if (u === null || u === to.id) break;
+            visited.add(u);
+            for (const e of adj.get(u) ?? []) {
+                const nd = best + e.w;
+                if (nd < (dist.get(e.to) ?? Infinity)) {
+                    dist.set(e.to, nd);
+                    prev.set(e.to, u);
+                }
+            }
+        }
+
+        if (!prev.has(to.id) && from.id !== to.id) {
+            return this.fallbackLandRoute(from, to, straight);
+        }
+
+        // 역추적 → 도시 id 사슬
+        const chain: string[] = [to.id];
+        let cur = to.id;
+        while (cur !== from.id) {
+            const p = prev.get(cur);
+            if (!p) return this.fallbackLandRoute(from, to, straight);
+            chain.unshift(p);
+            cur = p;
+        }
+        return this.expandChainToPolyline(chain);
+    }
+
+    /** 도로 한 구간의 실제 길이(정규화) — via 가 있으면 꺾은선을 따라 잰다. */
+    private roadPolylineLength(road: RoadSegment): number {
+        const nodes: Array<{ x: number; y: number }> = road.via && road.via.length > 0
+            ? [{ x: road.ax, y: road.ay }, ...road.via, { x: road.bx, y: road.by }]
+            : [{ x: road.ax, y: road.ay }, { x: road.bx, y: road.by }];
+        let len = 0;
+        for (let i = 1; i < nodes.length; i++) {
+            len += Math.hypot(nodes[i].x - nodes[i - 1].x, nodes[i].y - nodes[i - 1].y);
+        }
+        return len;
+    }
+
+    /**
+     * 도시 id 사슬을 도로를 따라가는 좌표 꺾은선으로 펼친다.
+     *
+     * 사슬의 각 인접 도시 사이에 해당 도시를 잇는 도로가 있다. 그 도로의 via 를
+     * 끼워 넣어야 화면의 도로 모양 그대로 경로가 된다 — 두 도시를 직선으로 이으면
+     * "도로를 따른다" 는 뜻이 깨진다.
+     */
+    private expandChainToPolyline(chain: readonly string[]): Array<{ x: number; y: number }> {
+        const out: Array<{ x: number; y: number }> = [];
+        for (let i = 0; i < chain.length; i++) {
+            const city = this.cities.find(c => c.id === chain[i]);
+            if (city) {
+                const n = this.cityNorm(city);
+                out.push({ x: n.x, y: n.y });
+            }
+            if (i < chain.length - 1) {
+                const road = this.findRoadBetween(chain[i], chain[i + 1]);
+                for (const v of road?.via ?? []) out.push({ x: v.x, y: v.y });
+            }
+        }
+        return out;
+    }
+
+    /** 두 도시를 직접 잇는 도로 구간(없으면 null). */
+    private findRoadBetween(aId: string, bId: string): RoadSegment | null {
+        const match = (id: string, x: number, y: number): boolean => {
+            const c = this.cities.find(item => item.id === id);
+            if (!c) return false;
+            const n = this.cityNorm(c);
+            return Math.hypot(n.x - x, n.y - y) < 0.02;
+        };
+        for (const road of this.roads) {
+            const forward = (match(aId, road.ax, road.ay) && match(bId, road.bx, road.by))
+                || (match(aId, road.bx, road.by) && match(bId, road.ax, road.ay));
+            if (forward) return road;
+        }
+        return null;
+    }
+
+    /** 도로 그래프에 없을 때 — 육지 우회 경로를 쓰고, 그것도 없으면 직선. */
+    private fallbackLandRoute(
+        from: MapCityView,
+        to: MapCityView,
+        straight: () => Array<{ x: number; y: number }>,
+    ): Array<{ x: number; y: number }> {
+        const a = this.cityNorm(from);
+        const b = this.cityNorm(to);
+        if (this.segmentMostlyLand(a.x, a.y, b.x, b.y)) return straight();
+        const via = this.routeRoadOnLand(a.x, a.y, b.x, b.y);
+        return via.length > 0
+            ? [{ x: a.x, y: a.y }, ...via, { x: b.x, y: b.y }]
+            : straight();
+    }
+
+    /**
      * 이동 경로를 그린다.
      *
-     * 도시 아이콘보다 **뒤**에 그린다(순서 중요) — 도시 위에 선이 겹치면 도시를
-     * 가리는 것이고, 도시가 더 중요하기 때문이다.
+     * [꺾은선 처리] points 는 도로를 따라 꺾이는 정규화 좌표 배열이다. 이를 픽셀로
+     * 바꿔 선분별로 이어 그린다. 직선 대신 꺾은선을 쓰는 이유가 이 메서드의 존재
+     * 이유다 — 화면의 도로를 따라가야 한다.
      */
     private drawTravelRoute(ctx: CanvasRenderingContext2D, width: number, height: number): void {
         const route = this.travelRoute;
         if (!route) return;
-        const a = this.cityMapToPixel(route.from, width, height);
-        const b = this.cityMapToPixel(route.to, width, height);
-        const t = this.travelProgress;
+        // 정규화 → 픽셀. 도로(drawRoads)와 같은 변환을 쓴다 — 다른 변환을 쓰면
+        // 이동선이 화면의 도로와 어긋난다.
+        const toPx = (n: { x: number; y: number }): { px: number; py: number } =>
+            this.normToPixel(n.x, n.y, width, height);
 
-        // 두 점을 잇는 직선 위에서 t 만큼 진행한 점.
-        const cx = a.px + (b.px - a.px) * t;
-        const cy = a.py + (b.py - a.py) * t;
+        const pts = route.points.length >= 2
+            ? route.points
+            : [
+                { x: this.cityNorm(route.from).x, y: this.cityNorm(route.from).y },
+                { x: this.cityNorm(route.to).x, y: this.cityNorm(route.to).y },
+            ];
 
-        // 경로선 — 진행한 구간만 밝게, 남은 구간은 흐리게.
+        // 경로의 총 길이(누적) — t 를 거리 비율로 환산하기 위해.
+        const cum: number[] = [0];
+        for (let i = 1; i < pts.length; i++) {
+            cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+        }
+        const total = cum[cum.length - 1] || 1;
+
+        // t 만큼 진행한 점 — 선분을 따라 걸어야 하므로 보간한다.
+        const target = total * this.travelProgress;
+        const at = (dist: number): { x: number; y: number } => {
+            let i = 1;
+            while (i < cum.length - 1 && cum[i] < dist) i++;
+            const seg = cum[i] - cum[i - 1] || 1;
+            const k = (dist - cum[i - 1]) / seg;
+            return {
+                x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * k,
+                y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * k,
+            };
+        };
+        const head = at(target);
+
         ctx.save();
         ctx.lineCap = 'round';
-        ctx.setLineDash([6 * this.zoom, 6 * this.zoom]);
+        ctx.lineJoin = 'round';
+
+        // 남은 경로 — 점선. 지금까지 간 경로는 실선.
+        const strokeThrough = (upTo: { x: number; y: number }, dash: number[] | null): void => {
+            if (dash) ctx.setLineDash(dash);
+            ctx.beginPath();
+            const start = toPx(pts[0]);
+            ctx.moveTo(start.px, start.py);
+            for (let i = 1; i < pts.length - 1; i++) {
+                if (dash && cum[i] > target) break;
+                const p = toPx(pts[i]);
+                ctx.lineTo(p.px, p.py);
+            }
+            const end = toPx(upTo);
+            ctx.lineTo(end.px, end.py);
+            ctx.stroke();
+        };
+
         ctx.strokeStyle = 'rgba(240, 200, 96, 0.35)';
         ctx.lineWidth = 2.5 * this.zoom;
-        ctx.beginPath();
-        ctx.moveTo(a.px, a.py);
-        ctx.lineTo(b.px, b.py);
-        ctx.stroke();
+        strokeThrough(pts[pts.length - 1], [6 * this.zoom, 6 * this.zoom]);
 
-        ctx.setLineDash([]);
         ctx.strokeStyle = 'rgba(255, 226, 130, 0.95)';
         ctx.lineWidth = 3 * this.zoom;
-        ctx.beginPath();
-        ctx.moveTo(a.px, a.py);
-        ctx.lineTo(cx, cy);
-        ctx.stroke();
+        strokeThrough(head, null);
 
-        // 이동 마커 — 작은 원 + 테두리.
+        // 이동 마커
+        ctx.setLineDash([]);
+        const marker = toPx(head);
         ctx.fillStyle = 'rgba(255, 226, 130, 0.95)';
         ctx.beginPath();
-        ctx.arc(cx, cy, 5 * this.zoom, 0, Math.PI * 2);
+        ctx.arc(marker.px, marker.py, 5 * this.zoom, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = 'rgba(60, 40, 10, 0.9)';
         ctx.lineWidth = 1.5 * this.zoom;
