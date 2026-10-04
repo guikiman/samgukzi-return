@@ -11,7 +11,7 @@ import { HexMapCanvasRenderer, HexTile } from './core/hex_map_canvas_renderer.js
 import { ChinaMapRenderer, MapCityView } from './core/china_map_renderer.js';
 import { City3DRenderer, type CityBuilding, dayNightPhase, generateDecorations } from './core/city_3d_renderer.js';
 import { createAmbientTicker, shouldRedrawAmbient, CITY_AMBIENT_INTERVAL_MS, type AmbientTicker } from './core/city_ambient_loop.js';
-import { CITY_SCENE_ART_PATH, anchorFor, mapAnchorToStage, resolveVisibleAnchor, separateOverlaps, toStageInset, isVisibleRect, renderStatBar, type SceneInset } from './core/city_scene_art.js';
+import { CITY_SCENE_ART_PATH, anchorFor, clampAnchorToCover, mapAnchorToStage, resolveVisibleAnchor, separateOverlaps, toStageInset, isVisibleRect, renderStatBar, type SceneInset } from './core/city_scene_art.js';
 import { mergeCityAndFreeOfficers, isFreeOfficer, isFreeOfficerInCity, officerRoleLabel } from './core/city_officer_roster.js';
 import { BattleFrontend, DeployableUnit, BattlePhase } from './core/battle_frontend.js';
 import { TitleScreen } from './core/title_screen.js';
@@ -110,29 +110,11 @@ import { ChronicleManager } from './core/chronicle_system.js';
 import { resolveCityClimateRegion } from './core/monthly_report.js';
 import { computeVagrantStrength } from './core/vagrant_monthly_actions.js';
 import { DIFFICULTY_MULTIPLIERS } from './core/difficulty_balance_system.js';
-import { TutorialSystem } from './core/tutorial_system.js';
-// 온보딩 4-PR 통합 배선 [461-480] — 상태(PR1)/패널(PR2)/카피(PR3)가 여기서 만난다.
-import {
-    ONBOARDING_FACTION_OPTIONS,
-    ONBOARDING_TOTAL_STEPS,
-    completeOnboardingFlow,
-    deferOnboardingFlow,
-    dismissOnboardingFlow,
-    getOnboardingState,
-    setOnboardingStep,
-    shouldShowOnboarding,
-} from './core/onboarding_state.js';
-import {
-    parseOnboardingPanel,
-    renderOnboardingPanel,
-    type OnboardingPanelAction,
-    type OnboardingStepCopy,
-} from './ui/onboarding_panel.js';
-import onboardingCopyJson from './data/onboarding_copy.json' with { type: 'json' };
-
-/** 카피 카탈로그(JSON)를 패널이 쓰는 배열 형태로 펼친다 — 순서 보존이 단계 순서다. */
-const onboardingCopyEntries: readonly OnboardingStepCopy[] =
-    Object.values(onboardingCopyJson as Record<string, OnboardingStepCopy>);
+// [2026-10-03 제거] 튜토리얼·온보딩 안내를 완전 삭제했다(사용자 요청).
+//   없어진 것: 첫 플레이 자동 안내, 「❓ 도움말」버튼(H), 안내 패널, 스포트라이트.
+//   함께 사라진 파일: core/tutorial_system.ts · core/onboarding_state.ts ·
+//   ui/onboarding_panel.ts · data/onboarding_copy.json (+ 테스트 5종).
+//   "설정"(a11y-panel)과 관계망 그래프는 안내가 아니라 기능이라 그대로 남겼다.
 import { RelationshipGraphViewer } from './core/relationship_graph_viewer.js';
 import {
     loadAccessibilitySettings, saveAccessibilitySettings, accessibilityAttributes,
@@ -195,7 +177,6 @@ const btnMapVisibility = document.getElementById('btn-map-visibility') as HTMLBu
 const btnReport = document.getElementById('btn-report') as HTMLButtonElement;
 const btnDiplomacy = document.getElementById('btn-diplomacy') as HTMLButtonElement;
 const btnNextMonth = document.getElementById('btn-next-month') as HTMLButtonElement;
-const btnHelp = document.getElementById('btn-help') as HTMLButtonElement;
 const btnSettings = document.getElementById('btn-settings') as HTMLButtonElement;
 const btnAuth = document.getElementById('btn-auth') as HTMLButtonElement;
 const btnGraph = document.getElementById('btn-graph') as HTMLButtonElement;
@@ -1574,7 +1555,12 @@ const cdpCityName = document.getElementById('cdp-city-name')!;
 const cdpFactionBadge = document.getElementById('cdp-faction-badge')!;
 // 內政 지표 칸은 2026-09-30 에 삭제됐다(사용자 요청). 자리에 없으므로 null 이고 아래 렌더를 건너뛴다.
 const cdpStats = document.getElementById('cdp-stats');
-const cdpOfficers = document.getElementById('cdp-officers')!;
+// [2026-10-03] 좌·우 레일을 그림 위 시트로 옮겼으므로 이 요소는 도시 화면을 열어야 생긴다.
+//   예전엔 상시 존재하는 레일 안에 있어서 여기서 바로 잡을 수 있었다. 지금 시트가 닫혀
+//   있으면 getElementById 가 null 이라 `!` 단언이 곧바로 예외를 던져 앱 부팅이 중단됐다.
+//   그래서 null 을 허용하고, 시트를 열 때 만들어지는 el 을 쓰도록 renderCityOfficerList 가
+//   매번 다시 조회한다(아래 함수 참조).
+const cdpOfficersContainer = document.getElementById('cdp-sheet-body');
 const cdpFacilities = document.getElementById('cdp-facilities')!;
 const citySceneCanvas = document.getElementById('city-scene-canvas') as HTMLCanvasElement | null;
 const citySceneArt = document.getElementById('city-scene-art') as HTMLImageElement | null;
@@ -2548,7 +2534,10 @@ function openOfficerDialogue(officerId: string): void {
 }
 
 // 무장 목록 클릭 → 상세 정보 + 선택형 대화 [24][27]
-cdpOfficers.addEventListener('click', (e) => {
+// [2026-10-03] 대상이 상시 존재하던 #cdp-officers → 살아 있는 상위 #cdp-sheet-body 로 바뀐다.
+//   무장 목록은 시트를 열 때 만들어졌다가 닫을 때 지워진다. 요소에 직접 걸면
+//   두 번째 도시를 열 때 리스너가 옛 DOM 에 남아 조용히 죽는다.
+cdpOfficersContainer?.addEventListener('click', (e) => {
     const row = (e.target as HTMLElement).closest('.cdp-officer-clickable') as HTMLElement | null;
     if (!row) return;
     const officerId = row.dataset.officerId ?? null;
@@ -2597,110 +2586,65 @@ document.getElementById('cdp-close')!.addEventListener('click', () => {
 });
 
 /**
- * [2026-10-03] 좌·우 레일 접기/펼치기.
+ * [2026-10-03] 좌·우 사이드바(레일)를 걷어내고 그림 위 정보 시트로 대체했다.
  *
- * 왜 접는가 — 실측(1001x900): 좌측 레일이 무대의 1.2%~19.2%(180px)를 차지하면서
- * 병영(앵커 12%)과 농지(앵커 13%)을 각각 2% 까지 밀어내 배지 반쪽이 화면 밖으로 잘렸다.
- * 넓은 창(1600px)에서는 레일이 12.4% 에서 끝나 이 문제가 안 드러난다.
- * 우측 레일(세력·무장, 23% 폭)도 같은 이유로 접는다 — 두 레일을 함께 두면
- * 가장 좁은 창에서 그림이 좌우에서 47% 까지 먹혀 배지가 남는 폭을 잃는다.
+ * 왜 — 실측(1001x900)에서 좌측 레일이 무대의 1.2%~19.2%(180px)를 먹으며 병영·농지
+ * 배지를 각각 2% 까지 밀어 배지 반쪽이 화면 밖으로 잘랐다. 우측 레일(23% 폭)까지
+ * 겹치면 가장 좁은 창에서 그림의 47% 가 사라진다. 그래서 1100px 기준 자동 접힘,
+ * 리사이즈마다 접힘 재계산, 접힘 상태 배지 재계산까지 붙었다가 전부 복잡해졌다.
  *
- * 왜 이 방식인가 — measureCitySceneInsets() 는 폭 0 인 레일을 인셋에서 건너뛴다.
- * 그래서 레일 폭을 0 으로 접으면 별도 배선 없이 배지가 원래 그림 좌표로 돌아온다.
- * 토글 버튼은 레일의 *형제* 라 접혀도 사라지지 않는다(자손이면 같이 사라져 못 연다).
- *
- * 좌우를 한 함수로 묶은 이유 — 접힘 판정 기준(창 폭)이 같고, 배지 좌표는 두 인셋을
- * 한 번에 재야 한다. 따로 두면 한쪽을 접을 때마다 배지가 두 번 계산되어 어긋난다.
+ * 지금 — 레일을 DOM 에서 없앴다. 같은 정보(주둔 무장·내정 명령·포로 기록·세력·무장)는
+ * 그림 위 오버레이(#cdp-scene-sheet)에 담고, 건물 배지를 누를 때만 연다. 닫으면
+ * 그림이 온전히 보이고, 리사이즈에 따라 접히거나 재계산할 것도 없어졌다.
  */
-type CityRailSide = 'left' | 'right';
+function openCitySceneSheet(city: import('./core/types.js').City): void {
+    const sheet = document.getElementById('cdp-scene-sheet');
+    const body = document.getElementById('cdp-sheet-body');
+    if (!sheet || !body || !engine) return;
+    const store = engine['store'];
+    const gs = store.getGlobalState();
+    const isPlayerCity = city.ownerId === gs.playerFactionId;
 
-const CITY_RAIL_COLLAPSE_CLASS: Record<CityRailSide, string> = {
-    left: 'cdp-rail-collapsed',
-    right: 'cdp-right-collapsed',
-};
+    // 좌측 레일 내용(성주·명령·史記)과 우측 레일 내용(세력·무장)을 한 흐름으로 담는다.
+    // 렌더 함수는 그대로 재사용한다 — 내용은 그대로 두고 위치만 옮겼다.
+    const commanderSlot = document.createElement('div');
+    commanderSlot.id = 'city-commander';
+    const groupsSlot = document.createElement('div');
+    groupsSlot.id = 'cdp-command-groups';
+    const resultSlot = document.createElement('div');
+    resultSlot.id = 'cdp-action-result';
+    const factionsSlot = document.createElement('div');
+    factionsSlot.id = 'cdp-factions';
+    const officersSlot = document.createElement('div');
+    officersSlot.id = 'cdp-officers';
 
-function applyCityRailCollapsed(side: CityRailSide, collapsed: boolean): void {
-    cityDetailPanel.classList.toggle(CITY_RAIL_COLLAPSE_CLASS[side], collapsed);
-    // 우측은 레일이 오른쪽에 있으므로 화살표 방향이 좌측과 반대다(안으로/바깥으로).
-    const btn = document.getElementById(side === 'left' ? 'cdp-rail-toggle' : 'cdp-rail-toggle-right');
-    if (btn) {
-        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-        if (side === 'left') btn.textContent = collapsed ? '▶' : '◀';
-        else btn.textContent = collapsed ? '◀' : '▶';
-        btn.title = collapsed
-            ? (side === 'left' ? '명령 패널 펼치기' : '세력·무장 패널 펼치기')
-            : (side === 'left' ? '명령 패널 접기' : '세력·무장 패널 접기');
-    }
-    // 접고 펼 때 인셋이 바뀌므로 배지를 다시 확정한다.
-    //
-    // [2026-10-03] 두 프레임 예약이 실제로 필요했다. 이 함수는 도시를 여는 경로에서
-    // 배지를 *그리기 전에* 불린다. 그 시점에 applyCitySceneBadgePositions() 는
-    // "배지 0개" 조기 종료로 아무것도 하지 않는다. 그래서 첫 프레임 예약은 effect 를
-    // 적용하고(선택자 일치), 다음 프레임이 rect 를 읽어 실측 인셋으로 확정한다.
-    // 하나만 예약하면 실측 rect 가 이전 값이라 접힘이 배지에 반영되지 않았다.
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            applyCitySceneBadgePositions();
-            requestAnimationFrame(applyCitySceneBadgePositions);
-        });
-    });
+    body.replaceChildren();
+    body.append(commanderSlot, groupsSlot, resultSlot);
+    body.insertAdjacentHTML('beforeend',
+        '<div class="cdp-section-title">諸侯 — 세력 정보</div>');
+    body.append(factionsSlot);
+    body.insertAdjacentHTML('beforeend',
+        '<div class="cdp-section-title">武將 — 무장 목록 <span id="cdp-officer-count" class="cdp-count"></span></div>');
+    body.append(officersSlot);
+
+    renderCityCommander(city);
+    renderCityCommandGroups(city, isPlayerCity);
+    renderCityFactions(city);
+    renderCityOfficerList(city);
+    sheet.hidden = false;
+    // 시트가 그림을 덮으므로 배지를 다시 확정한다 — 닫았을 때도 같은 이유로 되돌린다.
+    requestAnimationFrame(applyCitySceneBadgePositions);
 }
 
-/** 레일이 접혔는지 — 열 때 상태를 복원하기 위한 헬퍼. */
-function isCityRailCollapsed(side: CityRailSide): boolean {
-    return cityDetailPanel.classList.contains(CITY_RAIL_COLLAPSE_CLASS[side]);
+function closeCitySceneSheet(): void {
+    const sheet = document.getElementById('cdp-scene-sheet');
+    if (!sheet || sheet.hidden) return;
+    sheet.hidden = true;
+    document.getElementById('cdp-sheet-body')?.replaceChildren();
+    requestAnimationFrame(applyCitySceneBadgePositions);
 }
 
-document.getElementById('cdp-rail-toggle')?.addEventListener('click', () => {
-    applyCityRailCollapsed('left', !isCityRailCollapsed('left'));
-});
-
-document.getElementById('cdp-rail-toggle-right')?.addEventListener('click', () => {
-    applyCityRailCollapsed('right', !isCityRailCollapsed('right'));
-});
-
-/**
- * [2026-10-03] 좁은 창 자동 접힘 — 좌·우 레일 동시.
- *
- * 실측 기준: 1001px 창에서만 좌측 레일이 병영·농지 배지를 화면 밖으로 밀었다.
- * 배지 폭이 74px 라 배지가 2% 에 서면 반 이상이 잘린다 — 접기가 가장 싼 해법이다.
- * 넓은 창은 건드리지 않는다(1600px 에서는 레일이 12.4% 에서 끝나 문제가 없다).
- *
- * 사용자가 수동으로 접었다 폈다 하면 그 선택을 존중한다. 자동 접힘은 사용자가
- * 직접 토글한 뒤로는 개입하지 않는다 — 열 때마다 상태를 되짚는 민폐가 된다.
- * 그래서 수동 여부는 좌·우 *따로* 기록한다. 한쪽만 손댄다고 반대쪽까지
- * 고정해 버리면, 사용자가 손대지 않은 레일의 자동 접힘까지 잃는다.
- */
-const cityRailManualOverride: Record<CityRailSide, boolean> = { left: false, right: false };
-const CITY_RAIL_AUTO_COLLAPSE_MAX_WIDTH = 1100;
-function autoCollapseCityRail(): void {
-    const collapsed = window.innerWidth < CITY_RAIL_AUTO_COLLAPSE_MAX_WIDTH;
-    if (!cityRailManualOverride.left) applyCityRailCollapsed('left', collapsed);
-    if (!cityRailManualOverride.right) applyCityRailCollapsed('right', collapsed);
-}
-document.getElementById('cdp-rail-toggle')?.addEventListener('click', () => {
-    cityRailManualOverride.left = true;
-});
-document.getElementById('cdp-rail-toggle-right')?.addEventListener('click', () => {
-    cityRailManualOverride.right = true;
-});
-
-/**
- * [2026-10-03] 리사이즈 시 자동 접힘 재계산.
- *
- * 왜 필요한가 — autoCollapseCityRail() 은 도시를 *여는* 순간에만 불린다. 그 뒤에
- * 창을 줄이면 접힘 판정 기준(1100px)이 깨지는데 아무도 다시 재지 않는다.
- * 실제로 넓은 창에서 도시를 열어 둔 채 창을 좁히면 레일이 계속 그림을 먹었다.
- * "화면이 작아지면 자동으로 접힌다" 가 성립하려면 리사이즈 경로에서도 재평정해야 한다.
- *
- * 수동 토글 여부는 위에서 존중된다 — 사용자가 접었다 폈다 한 선택을 되짚지 않는다.
- */
-function syncCityRailAutoCollapseOnResize(): void {
-    if (!cityDetailPanel.classList.contains('city-entry-mode')) return;
-    // 진입 화면 밖에서는 접을 이유가 없다(패널이 숨어 있다). 배지 위치도 무의미하다.
-    if (cityDetailPanel.style.display === 'none') return;
-    autoCollapseCityRail();
-}
+document.getElementById('cdp-sheet-close')?.addEventListener('click', closeCitySceneSheet);
 
 /** 내정치 바 한 줄 생성 — 값→HTML 변환은 src/core/city_scene_art.ts 의 순수 함수가 한다. */
 function statBar(label: string, value: number, max: number, color: string): string {
@@ -2867,10 +2811,23 @@ function drawCityCanvas(city: import('./core/types.js').City): void {
     const ctx = citySceneCanvas.getContext('2d');
     if (!ctx) return;
 
-    const width = 480;
-    const height = 240;
-    citySceneCanvas.width = width;
-    citySceneCanvas.height = height;
+    // [2026-10-03 실제 결함 수정] 캔버스 backing-store 가 480x240 으로 고정돼 있었다.
+    //   CSS 가 캔버스를 무대 크기(예: 1920x1080)로 늘리므로, 창을 키워도 내부는
+    //   480x240 그대로였다 — 화면이 4배로 확대된 듯 흐리고 배율도 어긋났다.
+    //   사용자가 "도시화면 좌우 리사이징이 안 된다" 고 본 것이 이것이다
+    //   (DOM/이미지 쪽 리사이즈는 정상이고, 캔버스 내부 해상도만 따라가지 않았다).
+    //
+    //   해법: 무대 rect × devicePixelRatio 로 backing-store 를 맞춘다(지도 캔버스와 동일).
+    //   셀렉터는 CSS 에서 쓰는 .city-scene-canvas 그대로 쓴다.
+    const stageEl = citySceneCanvas.closest('.city-scene-stage') ?? citySceneCanvas;
+    const rect = stageEl.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    const width = Math.max(1, Math.round((rect.width || citySceneCanvas.clientWidth || 480) * dpr));
+    const height = Math.max(1, Math.round((rect.height || citySceneCanvas.clientHeight || 240) * dpr));
+    if (citySceneCanvas.width !== width || citySceneCanvas.height !== height) {
+        citySceneCanvas.width = width;
+        citySceneCanvas.height = height;
+    }
     const night = currentNightFactor();
     ctx.clearRect(0, 0, width, height);
 
@@ -2911,18 +2868,27 @@ function drawCityCanvas(city: import('./core/types.js').City): void {
     const gridRadius = Math.ceil(Math.sqrt(Math.max(1, buildings.length)));
     const blossom = season === 'SPRING' ? '#f4a7c3' : season === 'SUMMER' ? '#8fce7a' : season === 'AUTUMN' ? '#e8955a' : '#d8d8e2';
 
+    // [2026-10-03] 캔버스가 창 크기를 따라가므로 타일 크기도 따라가야 한다.
+    //   예전엔 42x21 로 고정이라 창이 커지면 도심이 한쪽에 작게 몰려 있었다.
+    //   기준 높이 240px(예전 고정 높이) 대비 비율로 타일·오프셋·글자를 함께 늘린다.
+    const BASE_H = 240;
+    const scale = Math.max(0.25, height / BASE_H);
+    const tileW = Math.round(42 * scale);
+    const tileH = Math.round(21 * scale);
+    const originYOff = Math.round(28 * scale);
+
     ctx.save();
-    ctx.translate(width / 2, height / 2 + 28);
+    ctx.translate(width / 2, height / 2 + originYOff);
     for (const decor of generateDecorations(city.id, gridRadius)) {
-        citySceneRenderer.renderDecor(ctx, decor, 42, 21, night, blossom);
+        citySceneRenderer.renderDecor(ctx, decor, tileW, tileH, night, blossom);
     }
     for (const building of sorted) {
-        citySceneRenderer.renderBuilding(ctx, building, 42, 21, night);
-        const point = citySceneRenderer.worldToScreen(building.x, building.y, 42, 21);
+        citySceneRenderer.renderBuilding(ctx, building, tileW, tileH, night);
+        const point = citySceneRenderer.worldToScreen(building.x, building.y, tileW, tileH);
         ctx.fillStyle = night > 0.5 ? 'rgba(255, 230, 170, 0.95)' : 'rgba(255, 248, 210, 0.9)';
-        ctx.font = '9px "Malgun Gothic", sans-serif';
+        ctx.font = `${Math.max(9, Math.round(9 * scale))}px "Malgun Gothic", sans-serif`;
         ctx.textAlign = 'center';
-        ctx.fillText(building.label, point.sx, point.sy + 14);
+        ctx.fillText(building.label, point.sx, point.sy + 14 * scale);
     }
     ctx.restore();
     citySceneRenderer.applyNightTint(ctx, width, height, night);
@@ -2958,7 +2924,9 @@ function renderCityScene(city: import('./core/types.js').City): void {
 
     const season = engine?.['store'].getGlobalState().season ?? 'SPRING';
     selectedCitySceneBuilding = null;
-    renderCitySceneBadges(citySceneBuildings, 480, 240);
+    // [2026-10-03] 캔버스가 창 크기를 따라가므로 배지 좌표도 실제 크기로 계산한다.
+    //   예전엔 480x240 고정이라 창이 커지면 배지가 그림 왼쪽 위로 몰렸다.
+    renderCitySceneBadges(citySceneBuildings, citySceneCanvas.width, citySceneCanvas.height);
     renderCityCommander(city);
     renderCitySeason(season);
     renderCityHint(city);
@@ -2994,7 +2962,9 @@ function measureCitySceneInsets(): SceneInset[] {
     // 좌표 변환은 src/core/city_scene_art.ts 의 순수 함수(toStageInset)가 한다.
     // 여기서는 "어느 패널이 보여 주는가" 만 판단한다 — 브라우저 없이 계산 자체를 검증할 수 있게.
     const insets: SceneInset[] = [];
-    for (const selector of ['.cdp-header', '.cdp-stage-hud-left', '.cdp-stage-hud-right', '.cdp-stage-hud-bottom']) {
+    // [2026-10-03] 좌·우 레일이 없어 인셋은 상단 바·하단 시설줄·(열린 시트)만 읽는다.
+//   시트는 기본(hidden)이라 닫혀 있을 때 인셋에 들어가지 않고, 배지를 그림 위에 그대로 둔다.
+    for (const selector of ['.cdp-header', '.cdp-scene-sheet:not([hidden])', '.cdp-stage-hud-bottom']) {
         const pane = document.querySelector(selector);
         if (!pane) continue;
         const rect = pane.getBoundingClientRect();
@@ -3034,14 +3004,31 @@ function applyCitySceneBadgePositions(): void {
             ? mapAnchorToStage(anchor, artWidth, artHeight, stageRect.width, stageRect.height)
             : anchor;
 
-    const resolved = buttons.map(btn => resolveVisibleAnchor(onStage({
-        x: Number(btn.dataset.anchorX),
-        y: Number(btn.dataset.anchorY),
-    }), insets));
+    // [2026-10-03 되돌림] 여기에 배지 반폭을 크롭 마진에 섞으면 안 된다.
+    //   좁은 창에서 배지 일부가 잘리는 문제는 *의도된* 처리다. clampAnchorToCover 의
+    //   계약은 "잘린 건물의 배지는 크롭 경계에 붙는다" 이며, E2E(city_art_measure)가
+    //   경계에서 45px 이내를 정상으로 판정한다(EDGE_TOL_PX).
+    //   반폭을 더하니 배지가 안쪽으로 밀려(768x1024 교역소: 경계 1162.6 → 실측
+    //   1143.4 = 19px 안쪽) 그 자리에 있는 다른 건물을 가리키게 됐다.
+    //   배지 반쪽이 보이는 것은 "이 창에서는 저쪽 편" 이라는 사실을 알리는 대가이고,
+    //   엉뚱한 건물을 가리키는 것보다 낫다.
+    //   배지 자체 폭은 아래(겹침 간격 계산)에서 쓰고, 여기선 앵커 % 만 다룬다.
+    const badgeRect = buttons[0].getBoundingClientRect();
+
+    const resolved = buttons.map(btn => {
+        const onStageAnchor = onStage({
+            x: Number(btn.dataset.anchorX),
+            y: Number(btn.dataset.anchorY),
+        });
+        // [2026-10-03] 잘려 나간 앵커를 크롭 경계로 되돌린 **다음에** HUD 회피를 푼다.
+        //   순서가 반대면 clampToStage(2..98) 가 크롭 경계에 배지를 밀착시켜
+        //   다른 건물 위를 가리킨다(실측: 병영 370px → 497.6px, 127.6px 어긋남).
+        const inView = clampAnchorToCover(onStageAnchor);
+        return resolveVisibleAnchor(inView, insets);
+    });
 
     // 겹침을 푸 때의 최소 간격은 배지 실제 크기를 무대 %로 바꿔 쓴다. 34px 를 상수로 박으면
     // CSS 로 배지가 커졌을 때 조용히 겹친다.
-    const badgeRect = buttons[0].getBoundingClientRect();
     const minGapX = stageRect && stageRect.width > 0 ? badgeRect.width / stageRect.width * 100 : 0;
     const minGapY = stageRect && stageRect.height > 0 ? badgeRect.height / stageRect.height * 100 : 0;
 
@@ -3089,10 +3076,16 @@ function renderCitySceneBadges(buildings: CityBuilding[], width: number, height:
     // 붙이고 표시한 *뒤에* 한 번 더 재야 rect 가 실측값이므로 다음 프레임에 다시 잰다.
     requestAnimationFrame(applyCitySceneBadgePositions);
     layer.querySelectorAll<HTMLButtonElement>('.city-badge').forEach(btn => {
+        // [2026-10-03] 좌·우 레일을 걷어냈으므로, 시트를 열기 위한 도시를 기억한다.
+        //   배지 클릭 → 상세 + 이 도시의 정보 시트. 시트는 도시를 열 때마다 닫힌다.
         btn.addEventListener('click', () => {
             const target = citySceneBuildings.find(b => b.id === btn.dataset.buildingId);
             if (!target) return;
             showCitySceneBuildingDetail(target);
+            if (citySceneCityId) {
+                const city = engine?.['store'].getCity(citySceneCityId);
+                if (city) openCitySceneSheet(city);
+            }
             addLog(`도시 건물 선택: ${target.label} (Lv.${target.level})`);
         });
     });
@@ -3457,13 +3450,21 @@ function showCitySceneBuildingDetail(building: CityBuilding | null): void {
         citySceneDetail.textContent = '건물을 클릭하면 상세 정보가 표시됩니다.';
         return;
     }
+    // [2026-10-03] 타입을 그림 이름(서원·교역소·마구간)에 맞췄으므로 분기도 고쳤다.
+    //   마지막 else 는 STABLE 로 흐른다. 이전처럼 나머지를 몰아서 쓰면
+    //   새 이름들이 엉뚱한 역할 설명을 갖게 된다.
     const role = building.type === 'GOVERNMENT' ? '치안·내정 중심'
         : building.type === 'BARRACKS' ? '병력·훈련 중심'
         : building.type === 'MARKET' ? '상업·교역 중심'
         : building.type === 'FARM' ? '농업·식량 중심'
-        : building.type === 'TEMPLE' ? '안정·민심 중심'
+        : building.type === 'SEOUN' ? '교육·유교 중심'
         : building.type === 'WORKSHOP' ? '기술·개발 중심'
-        : building.type === 'WALL' ? '방어·도시 보호 중심' : '주거·인구 중심';
+        : building.type === 'WALL' ? '방어·도시 보호 중심'
+        : building.type === 'TRADING_HOUSE' ? '보관·장부 중심'
+        : building.type === 'PALACE' ? '수도·경호 중심'
+        : building.type === 'ACADEMY' ? '교육·양성 중심'
+        : building.type === 'BLACKSMITH' ? '무기·장비 중심'
+        : '마구간·가축 단지';
     citySceneDetail.innerHTML = `<strong>${building.label}</strong> · Lv.${building.level} · ${role} · ${building.active ? '운영 중' : '휴업'} · 누적 투자 ${building.investment}金 <button id="city-building-invest" class="city-building-invest" type="button">투자</button><button id="city-building-toggle" class="city-building-toggle" type="button">${building.active ? '휴업' : '운영'}</button>`;
 }
 
@@ -3473,11 +3474,15 @@ function selectCitySceneBuilding(clientX: number, clientY: number): void {
     const rect = citySceneCanvas.getBoundingClientRect();
     const x = (clientX - rect.left) * citySceneCanvas.width / rect.width;
     const y = (clientY - rect.top) * citySceneCanvas.height / rect.height;
+    // [2026-10-03] drawCityCanvas 가 타일 크기를 캔버스 높이 기준으로 정하므로
+    //   여기도 같은 값을 써야 한다. 예전 고정값(42/21)을 쓰면 창을 키웠을 때
+    //   클릭 좌표가 렌더링된 건물과 어긋나 엉뚱한 건물이 선택됐다.
+    const scale = Math.max(0.25, citySceneCanvas.height / 240);
     const originX = citySceneCanvas.width / 2;
-    const originY = citySceneCanvas.height / 2 + 28;
+    const originY = citySceneCanvas.height / 2 + Math.round(28 * scale);
     const sorted = [...citySceneBuildings].sort((a, b) => (b.x + b.y) - (a.x + a.y));
     for (const building of sorted) {
-        const point = citySceneRenderer.worldToScreen(building.x, building.y, 42, 21);
+        const point = citySceneRenderer.worldToScreen(building.x, building.y, Math.round(42 * scale), Math.round(21 * scale));
         const sx = originX + point.sx;
         const sy = originY + point.sy;
         if (Math.abs(x - sx) <= building.width / 2 + 4 && y >= sy - building.height * 1.5 && y <= sy + 8) {
@@ -3517,10 +3522,12 @@ function investInSelectedCityBuilding(): void {
         case 'BARRACKS': development = Math.min(garrisonCap(city), development + 600); break;
         case 'MARKET': stats.commerce = Math.min(stats.maxCommerce, stats.commerce + 2); break;
         case 'FARM': stats.farming = Math.min(stats.maxFarming, stats.farming + 2); break;
-        case 'TEMPLE': stats.publicOrder = Math.min(stats.maxPublicOrder, stats.publicOrder + 1); break;
+        // [2026-10-03] TEMPLE → SEOUN, HOUSE → STABLE 로 이름이 바뀌었다(그림에 맞추기 위함).
+        //   인과는 기능 기준이다 — 서원은 민심(+1), 마구간은 인구(+500)로 그대로 옮긴다.
+        case 'SEOUN': stats.publicOrder = Math.min(stats.maxPublicOrder, stats.publicOrder + 1); break;
         case 'WORKSHOP': stats.technology = Math.min(stats.maxTechnology, stats.technology + 2); break;
         case 'WALL': defense = Math.min(city.maxDefense, defense + 5); break;
-        case 'HOUSE': population += 500; break;
+        case 'STABLE': population += 500; break;
     }
     store.updateCity(city.id, { funds: city.funds - cost, developmentStats: stats, development, defense, population });
     const nextBuilding = building.level < 5
@@ -3566,6 +3573,53 @@ function toggleSelectedCityBuilding(): void {
     selectedCitySceneBuilding = next;
     showCitySceneBuildingDetail(next);
     addLog(`${next.label} ${next.active ? '운영 시작' : '휴업 전환'}`);
+}
+
+/**
+ * 무장 목록 렌더 — 도시 소속 + 재야(FREE) + 수용 중인 포로.
+ *
+ * [2026-10-03] 좌·우 레일을 걷어내면서 그림 위 시트로 옮겼는데, 이 렌더가
+ * renderCityDetailPanel 안에 인라인으로 박혀 있으면 시트가 같은 내용을 다시 만들어야 한다.
+ * 한 곳에 모아 두어야 도시 열 때와 배지 눌렀을 때의 목록이 어긋나지 않는다.
+ */
+function renderCityOfficerList(city: import('./core/types.js').City): void {
+    // [2026-10-03] 시트가 닫혀 있으면 무장 목록 자리가 없다. 조용히 넘긴다 —
+    //   시트를 열면 그때 만들어져 이 함수가 다시 불린다.
+    const officersEl = document.getElementById('cdp-officers');
+    if (!officersEl) return;
+    const faction = city.ownerId ? engine?.['store'].getFaction(city.ownerId) ?? null : null;
+    const cityOfficers = city.officerIds
+        .map(id => store_getOfficerSafe(id))
+        .filter((o): o is NonNullable<typeof o> => o !== null);
+    const officers = mergeCityAndFreeOfficers(cityOfficers, engine!['store'].getAllOfficers(), city.id)
+        .sort((a, b) => (b.stats.leadership + b.stats.might) - (a.stats.leadership + a.stats.might));
+    const countEl = document.getElementById('cdp-officer-count');
+    if (countEl) countEl.textContent = `(${officers.length})`;
+
+    // 수용 중인 포로 표시 [131-145]
+    const captives = getCaptivesInCity(engine!['store'], city.id);
+
+    officersEl.innerHTML = officers.map(o => {
+        const isLeader = faction?.leaderId === o.id;
+        const isFree = isFreeOfficer(o);
+        const role = officerRoleLabel(o, faction?.leaderId ?? null);
+        return `<div class="cdp-officer-row cdp-officer-clickable${isFree ? ' is-free' : ''}" data-officer-id="${o.id}" title="클릭하여 상세 정보 보기">
+            <div>
+                <div class="cdp-officer-name ${isLeader ? 'is-leader' : ''}">${o.name}</div>
+                <div class="cdp-officer-stats">統率${o.stats.leadership} 武力${o.stats.might} 智力${o.stats.intelligence}</div>
+            </div>
+            <span class="cdp-officer-role">${role}</span>
+        </div>`;
+    }).join('')
+    + (captives.length > 0
+        ? captives.map(c => `<div class="cdp-officer-row cdp-captive-row" data-officer-id="${c.id}">
+            <div>
+                <div class="cdp-officer-name">⛓️ ${c.name}</div>
+                <div class="cdp-officer-stats">포로 — 이번 달에 탈출할 수 있다 (지력 ${store_getOfficerSafe(c.id)?.stats.intelligence ?? '-'})</div>
+            </div>
+            <span class="cdp-officer-role">포로</span>
+        </div>`).join('')
+        : '');
 }
 
 /** 도시 상세 패널 렌더링 (switched: 다른 도시에서 전환 시 콘텐츠 페이드) */
@@ -3622,37 +3676,7 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
     // 무장 목록 — 도시 소속 + 재야(무소속 FREE) 를 함께 둔다.
     // 登用 패널을 지우면서 재야가 화면에서 사라졌는데, 여기 합쳐 두지 않으면
     // "등용할 사람이 없다" 와 "화면에 없다" 를 구분할 수 없다. 규칙은 단위 테스트가 붙는다.
-    const cityOfficers = city.officerIds
-        .map(id => store_getOfficerSafe(id))
-        .filter((o): o is NonNullable<typeof o> => o !== null);
-    const officers = mergeCityAndFreeOfficers(cityOfficers, engine['store'].getAllOfficers(), city.id)
-        .sort((a, b) => (b.stats.leadership + b.stats.might) - (a.stats.leadership + a.stats.might));
-    document.getElementById('cdp-officer-count')!.textContent = `(${officers.length})`;
-
-    // 수용 중인 포로 표시 [131-145]
-    const captives = getCaptivesInCity(engine['store'], city.id);
-
-    cdpOfficers.innerHTML = officers.map(o => {
-        const isLeader = faction?.leaderId === o.id;
-        const isFree = isFreeOfficer(o);
-        const role = officerRoleLabel(o, faction?.leaderId ?? null);
-        return `<div class="cdp-officer-row cdp-officer-clickable${isFree ? ' is-free' : ''}" data-officer-id="${o.id}" title="클릭하여 상세 정보 보기">
-            <div>
-                <div class="cdp-officer-name ${isLeader ? 'is-leader' : ''}">${o.name}</div>
-                <div class="cdp-officer-stats">統率${o.stats.leadership} 武力${o.stats.might} 智力${o.stats.intelligence}</div>
-            </div>
-            <span class="cdp-officer-role">${role}</span>
-        </div>`;
-    }).join('')
-    + (captives.length > 0
-        ? captives.map(c => `<div class="cdp-officer-row cdp-captive-row" data-officer-id="${c.id}">
-            <div>
-                <div class="cdp-officer-name">⛓️ ${c.name}</div>
-                <div class="cdp-officer-stats">포로 — 이번 달에 탈출할 수 있다 (지력 ${store_getOfficerSafe(c.id)?.stats.intelligence ?? '-'})</div>
-            </div>
-            <span class="cdp-officer-role">포로</span>
-        </div>`).join('')
-        : '');
+    renderCityOfficerList(city);
 
     const captiveHistory = engine.chronicle.list()
         .filter(entry => entry.kind === 'CAPTURE' && entry.cityId === city.id)
@@ -3687,18 +3711,15 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
     }
 
     // 진입 화면은 한 가지 구성뿐이다 (2026-09-30 개편): 16:9 배경 그림 위에
-    // 상단 바와 좌·우 레일·하단 시설줄이 반투명으로 얹힌다. 모드 전환이 없으므로
+    // 상단 바와 하단 시설줄이 반투명으로 얹힌다(좌·우 레일은 2026-10-03 에 걷어냈고,
+    // 같은 정보는 그림 위 시트로 옮겼다). 모드 전환이 없으므로
     // 돌아오기 버튼(🏛 도시 관리)도 필요 없다 — 닫기는 ✕ 하나로 충분하다.
     cityDetailPanel.classList.add('city-entry-mode');
     // 인라인 display 를 지워 CSS(.city-entry-mode 의 grid) 가 레이아웃을 결정하게 한다.
     cityDetailPanel.style.display = '';
-    // [2026-10-03] 좁은 창이면 좌측 레일을 접는다 — 배지가 화면 밖으로 밀리는 것을 막는다.
-    //   city-entry-mode 가 붙은 *뒤에* 불러야 창 폭을 잴 때 접힌 레이아웃이 반영된다.
-    autoCollapseCityRail();
-    // 배지가 그려진 뒤에도 한 번 더 접힘을 적용한다. 위 호출은 배지 렌더보다 먼저 돌아
-    // 인셋이 옛 값(레일 180px)인 채 측정될 수 있다. 여기서는 레일이 이미 접혀 있으니
-    // 인셋에서 빠져나가 배지가 원래 그림 좌표로 돌아온다.
-    requestAnimationFrame(() => requestAnimationFrame(autoCollapseCityRail));
+    // [2026-10-03] 레일을 걷어냈으므로 접힘 재계산은 없다. 대신 시트를 닫는다 —
+    //   도시를 바꿀 때 이전 도시의 정보가 남아 있으면 어느 도시 것인지 헷갈린다.
+    closeCitySceneSheet();
 }
 
 /**
@@ -3849,15 +3870,21 @@ function runCityAction(cityId: string, action: string, times = 1): void {
         }
     }
 
-    const actionResult = document.getElementById('cdp-action-result')!;
-    actionResult.textContent = resultMsg;
+    // [2026-10-03] 레일이 없어 이 요소는 시트가 열려 있을 때만 존재한다(동적으로 만든다).
+    //   닫혀 있으면 참조가 null 이라 조용히 넘어간다 — 결과는 로그로도 남는다.
+    const actionResult = document.getElementById('cdp-action-result');
+    if (actionResult) actionResult.textContent = resultMsg;
 
     // 패널 + 사이드바 + 전도 갱신
     const refreshed = store.getCity(cityId);
     if (refreshed) {
         const fac2 = refreshed.ownerId ? store.getFaction(refreshed.ownerId) : null;
         renderCityDetailPanel(refreshed, fac2, false);
-        actionResult.textContent = resultMsg; // 렌더 후 다시 세팅 (innerHTML 리셋 방지)
+        // [2026-10-03] 명령은 시트 안에서 누른다. renderCityDetailPanel 가 시트를 닫지
+        //   않도록(닫으면 누르던 손이 사라진다) 여기서 시트를 다시 채운다.
+        if (!document.getElementById('cdp-scene-sheet')?.hidden) openCitySceneSheet(refreshed);
+        const el2 = document.getElementById('cdp-action-result');
+        if (el2) el2.textContent = resultMsg; // 렌더 후 다시 세팅 (innerHTML 리셋 방지)
         factionDetail.textContent = fac2
             ? `${fac2.name} — 병력 ${refreshed.development} · 충성 ${refreshed.loyalty}`
             : '무주공산';
@@ -3866,7 +3893,12 @@ function runCityAction(cityId: string, action: string, times = 1): void {
 }
 
 // 내정 명령 버튼 이벤트 위임
-document.getElementById('cdp-command-groups')!.addEventListener('click', (e) => {
+// [2026-10-03] 대상이 #cdp-command-groups → #cdp-sheet-body 로 바뀌었다(레일 제거).
+//   레일은 도시를 열 때마다 새로 만들어지고 시트는 매번 지워졌다가 다시 차므로,
+//   요소에 직접 걸면 두 번째 도시를 열 때 죽는다(리스너가 옛 DOM 에 남는다).
+//   그래서 살아 있는 상위(#cdp-sheet-body)에 위임한다 — 안쪽이 바뀌어도 그대로 듣는다.
+//   왼쪽에 #cdp-sheet-body 가 없으면 도시 화면이 아니라 다른 흐름이므로 아무것도 하지 않는다.
+document.getElementById('cdp-sheet-body')?.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('.cdp-action-btn') as HTMLElement | null;
     if (!btn) return;
     const action = btn.dataset.action;
@@ -3931,19 +3963,38 @@ function resizeCanvas(): void {
 }
 
 const mapResizeObserver = typeof ResizeObserver !== 'undefined'
-    ? new ResizeObserver(() => { resizeCanvas(); syncSidebarTopOffset(); syncCityRailAutoCollapseOnResize(); })
+    // [2026-10-03] 레일 접힘 재계산 삭제 — 아래 resize 리스너가 시트 열림 상태를 본다.
+    //   도시 캔버스 재생성도 여기로 모았다(캔버스가 창 크기를 따라가야 하므로).
+    ? new ResizeObserver(() => { resizeCanvas(); syncSidebarTopOffset(); redrawCitySceneCanvas(); })
     : null;
 if (mapResizeObserver && canvas.parentElement) mapResizeObserver.observe(canvas.parentElement);
+// [2026-10-03] 창 크기가 바뀌면 도시 캔버스도 다시 그린다. backing-store 를 재설정하면
+//   이전 그림이 지워지므로 크기를 바꾼 뒤 다시 칠해야 한다. (이게 없으면 캔버스가 이전
+//   창 크기로 남아 "좌우 리사이징이 안 된다" 고 보인다.) 배지 좌표도 함께 다시 계산한다.
 window.addEventListener('resize', () => {
     resizeCanvas();
     syncSidebarTopOffset();
-    // [2026-10-03] 창이 좁아지면 좌·우 레일을 자동으로 접는다. 열 때만 재평정하면
-    // 도시를 열어 둔 채 창을 줄일 때 접힘이 옛 폭(1100px) 기준으로 남아 있다.
-    syncCityRailAutoCollapseOnResize();
-    // 진입 화면 무대는 이제 창 크기 그대로다. 창이 바뀌면 cover 사각형이 바뀌므로
-    // 배지 좌표를 다시 계산한다 — 안 하면 리사이즈 뒤에 라벨이 엉뚱한 곳을 가리킨다.
+    redrawCitySceneCanvas();
     applyCitySceneBadgePositions();
 }, { passive: true });
+
+/**
+ * 도시 씬 캔버스를 현재 창 크기로 다시 그린다.
+ *
+ * 도시가 열려 있고 씬이 활성화된 경우에만 동작한다 — 닫힌 화면에서 불필요한
+ * 작업을 하지 않도록. `drawCityCanvas` 가 backing-store 를 크기에 맞춘 뒤
+ * 지우고 다시 칠하므로, 리사이즈가 눈에 보이게 반영된다.
+ */
+function redrawCitySceneCanvas(): void {
+    if (!citySceneCanvas || !citySceneCityId) return;
+    if (!citySceneCanvas.classList.contains('is-active')) return;
+    const city = engine?.['store'].getCity(citySceneCityId);
+    if (!city) return;
+    drawCityCanvas(city);
+    // 배지·초상은 CSS % 좌표라 자동 따라가지만, 툴팁 라벨 등은 캔버스 좌표에
+    // 얹히므로 씬을 통째로 다시 그려 앵커를 맞춘다.
+    applyCitySceneBadgePositions();
+}
 
 // ============================================================
 // Render Frame
@@ -4094,17 +4145,9 @@ async function startGame(world: BuiltWorld | null = null, selectedOfficerId: str
     prevSettlement = computeSettlement(engine['store']);
     latestSettlement = prevSettlement;
 
-    // 첫 플레이 자동 튜토리얼 [461-480] — 신규 시작에서만 표시.
-    // 온보딩이 활성 상태면 그 패널이 우선한다(안내 범위가 더 넓고 취향 선택까지 한다).
-    if (world && (isOnboardingActive() || tutorial.shouldShowOnStart())) {
-        if (isOnboardingActive()) {
-            renderGuidedStep();
-            tutorialPanel.style.display = 'block';
-            addLog('첫 플레이군요 — 온보딩을 시작합니다. 「❓ 도움말」로 언제든 다시 볼 수 있습니다.');
-        } else {
-            openTutorial(true);
-        }
-    }
+    // [2026-10-03 제거] 첫 플레이 자동 튜토리얼 — 안내를 통째로 뺐다(사용자 요청).
+    //   시작하자마자 안내 창이 뜨던 동작이 사라졌다. 별도 로그도 내지 않는다 —
+    //   뺀 기능을 다시 조용히 안내하지 않는다.
 
     isRunning = true;
     isPaused = false;
@@ -4536,7 +4579,6 @@ const shortcutButtons: Record<string, HTMLButtonElement> = {
     n: btnNextMonth,
     s: btnSave,
     g: btnGraph,
-    h: btnHelp,
     d: btnDiplomacy,
     r: btnReport,
     p: btnPause,
@@ -4547,10 +4589,12 @@ const dialogueSurface = dialogueScene.surface();
 function closeTopOverlay(): boolean {
     const overlays: Array<[string, HTMLElement, HTMLElement]> = [
         ['dialogue-modal', dialogueSurface.panel, dialogueSurface.closeButton],
-        ['roaming-modal', document.getElementById('roaming-modal')!, btnHelp],
+        // [2026-10-03] btnHelp(도움말) 삭제로 roaming-modal 의 트리거가 비었다.
+        //   돌아갈 포커스 대상이 없어 btnSettings(설정)로 대체한다 — 방랑군 창을 닫은 뒤
+        //   포커스를 받을 수 있는 실제 버튼이어야 한다.
+        ['roaming-modal', document.getElementById('roaming-modal')!, btnSettings],
         ['replay-panel', document.getElementById('replay-panel')!, btnBattleReplay],
         ['vengeance-modal', document.getElementById('vengeance-modal')!, btnBattle],
-        ['tutorial-panel', tutorialPanel, btnHelp],
         ['a11y-panel', a11yPanel, btnSettings],
         ['graph-panel', graphPanel, btnGraph],
         ['trace-panel', tracePanel, btnTrace],
@@ -4564,7 +4608,6 @@ function closeTopOverlay(): boolean {
         if (panel.style.display !== 'none' && panel.style.display !== '') {
             if (id === 'roaming-modal' && !rmState?.resolved) return true;
             if (id === 'dialogue-modal') closeDialogue();
-            else if (id === 'tutorial-panel') closeTutorial(false);
             else if (id === 'roaming-modal') document.getElementById('rm-close')?.click();
             else if (id === 'replay-panel') document.getElementById('rp-close')?.dispatchEvent(new Event('click'));
             else if (id === 'vengeance-modal') document.getElementById('vm-close')?.click();
@@ -4621,9 +4664,9 @@ function saveToSlot(slot: SlotId): void {
         const compressed = engine.saveCompressed();
         const gs = engine['store'].getGlobalState();
         const faction = gs.playerFactionId ? engine['store'].getFaction(gs.playerFactionId) : null;
-        // [461-480] UI 설정 스냅샷 — 접근성·색약 모드·튜토리얼 상태 동반 저장
-        let tutorialDone = false;
-        try { tutorialDone = localStorage.getItem('samgukzi_return_tutorial_done') !== null; } catch { /* 무시 */ }
+        // [461-480] UI 설정 스냅샷 — 접근성·색약 모드 동반 저장
+        // [2026-10-03] tutorialDone 항목 제거 — 안내를 통째로 뺐다. 저장 스키마는
+        //   읽는 쪽이 없는 필드를 그냥 무시하므로 구형 세이브를 못 읽게 하진 않는다.
         const ok = slotManager.save(slot, compressed, {
             year: gs.time.year,
             month: gs.time.month,
@@ -4636,7 +4679,6 @@ function saveToSlot(slot: SlotId): void {
                 showStatNumbers: a11ySettings.showStatNumbers,
                 colorblindMode,
                 colorPattern,
-                tutorialDone,
             },
         });
         addLog(ok
@@ -4794,183 +4836,6 @@ saveSlotList.addEventListener('click', (e) => {
     const slotEl = (e.target as HTMLElement).closest('.ss-slot') as HTMLElement | null;
     if (slotEl) saveToSlot(slotEl.dataset.slot as SlotId);
 });
-
-// ============================================================
-// 튜토리얼 패널 [461-480] — 첫 플레이 자동 표시 + 도움말 버튼 재오픈
-// ============================================================
-const tutorialPanel = document.getElementById('tutorial-panel')!;
-const tutorial = new TutorialSystem();
-
-function renderTutorialStep(): void {
-    const r = tutorial.renderStep();
-    document.getElementById('tut-step-content')!.innerHTML = r.html;
-    (document.getElementById('tut-prev') as HTMLButtonElement).disabled = r.isFirst;
-    document.getElementById('tut-next')!.style.display = r.isLast ? 'none' : '';
-    document.getElementById('tut-skip')!.style.display = r.isLast ? 'none' : '';
-    document.getElementById('tut-finish')!.style.display = r.isLast ? '' : 'none';
-    applyTutorialSpotlight();
-}
-
-// 스포트라이트 대상 추적 — 단계 이동/종료 시 정리
-let tutSpotlightEl: HTMLElement | null = null;
-
-function applyTutorialSpotlight(): void {
-    if (tutSpotlightEl) {
-        tutSpotlightEl.classList.remove('tut-spotlight');
-        tutSpotlightEl = null;
-    }
-    const sel = tutorial.currentSpotlightSelector();
-    const el = sel ? document.querySelector<HTMLElement>(sel) : null;
-    if (el) {
-        el.classList.add('tut-spotlight');
-        tutSpotlightEl = el;
-        try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { /* 구형 브라우저 무시 */ }
-    }
-    // 대상을 못 찾으면 위치 설명으로 대체 안내 [461-480]
-    const note = document.getElementById('tut-spotlight-note');
-    if (note) {
-        const fb = tutorial.currentSpotlightFallback();
-        note.textContent = !el && fb ? `▸ ${fb}을(를) 찾아보세요` : '';
-    }
-}
-
-function clearTutorialSpotlight(): void {
-    if (tutSpotlightEl) {
-        tutSpotlightEl.classList.remove('tut-spotlight');
-        tutSpotlightEl = null;
-    }
-}
-
-function openTutorial(auto = false): void {
-    tutorial.start();
-    renderTutorialStep();
-    tutorialPanel.style.display = 'block';
-    if (auto) addLog('첫 플레이군요 — 게임 안내를 표시합니다. 「❓ 도움말」로 언제든 다시 볼 수 있습니다.');
-}
-
-function closeTutorial(markDone: boolean): void {
-    tutorialPanel.style.display = 'none';
-    clearTutorialSpotlight();
-    if (markDone) tutorial.complete();
-}
-
-btnHelp.addEventListener('click', () => {
-    if (!tutorialPanel.style.display || tutorialPanel.style.display === 'none') openGuidedPanel();
-    else closeTutorial(false);
-});
-document.getElementById('tut-prev')!.addEventListener('click', () => { tutorial.prev(); renderTutorialStep(); });
-document.getElementById('tut-next')!.addEventListener('click', () => { tutorial.next(); renderTutorialStep(); });
-document.getElementById('tut-skip')!.addEventListener('click', () => closeTutorial(true));
-document.getElementById('tut-finish')!.addEventListener('click', () => {
-    closeTutorial(true);
-    addLog('게임 안내 완료 — 중원 통일을 향해 나아가세요!');
-});
-document.getElementById('tut-close')!.addEventListener('click', () => closeTutorial(false));
-
-// ============================================================
-// 온보딩 상태 ↔ 튜토리얼 패널 배선 [461-480]
-// ============================================================
-// 4-PR 분할의 통합 지점. 이 블록이 없으면 상태·패널·카피가 서로 모른다.
-//
-// 설계:
-// - 상태는 src/core/onboarding_state.ts 가 단독 소유. 여기서 로컬 복제하지 않는다.
-// - 렌더는 src/ui/onboarding_panel.ts 가 단독 소유. DOM에 손대지 않는다.
-// - 이 블록은 그 둘을 잇는 배선만 한다: innerHTML 주입, 클릭 바인딩, 스포트라이트.
-// - 온보딩은 기본적으로 비활성이다. 온보딩 상태가 존재할 때만 기존 튜토리얼을 대체한다.
-
-const ONBOARDING_COPY: readonly OnboardingStepCopy[] = onboardingCopyEntries;
-
-/** 온보딩을 실제로 보여줄지. 완료·철회하면 영구적으로 false. */
-function isOnboardingActive(): boolean {
-    return shouldShowOnboarding(getOnboardingState());
-}
-
-/**
- * 튜토리얼 패널을 온보딩 모드로 렌더한다.
- * 온보딩이 비활성이면 기존 TutorialSystem 경로로 되돌린다.
- */
-function renderGuidedStep(): void {
-    if (!isOnboardingActive()) {
-        renderTutorialStep();
-        return;
-    }
-    const state = getOnboardingState();
-    const html = renderOnboardingPanel(state, {
-        steps: ONBOARDING_COPY,
-        totalSteps: ONBOARDING_TOTAL_STEPS,
-        factionNames: Object.fromEntries(
-            ONBOARDING_FACTION_OPTIONS.map((f) => [f.id, `${f.name} ${f.leader}`]),
-        ),
-    });
-    document.getElementById('tut-step-content')!.innerHTML = html;
-
-    // 버튼 표시 제어 — 패널이 계산한 바인딩을 그대로 따른다.
-    const bindings = parseOnboardingPanel(html);
-    if (!bindings) return;
-    (document.getElementById('tut-prev') as HTMLButtonElement).disabled = bindings.isFirst;
-    document.getElementById('tut-next')!.style.display = bindings.isLast ? 'none' : '';
-    document.getElementById('tut-skip')!.style.display = bindings.isLast ? 'none' : '';
-    document.getElementById('tut-finish')!.style.display = bindings.isLast ? '' : 'none';
-
-    // 클릭 바인딩 — 패널이 낸 data-onboarding-action 을 상태 전이로 잇는다.
-    for (const el of Array.from(
-        document.querySelectorAll<HTMLElement>('[data-onboarding-action]'),
-    )) {
-        const action = el.dataset.onboardingAction as OnboardingPanelAction | undefined;
-        if (!action) continue;
-        el.addEventListener('click', () => {
-            const s = getOnboardingState();
-            if (action === 'prev') setOnboardingStep(s.stepIndex - 1);
-            else if (action === 'next') setOnboardingStep(s.stepIndex + 1);
-            else if (action === 'skip') { dismissOnboardingFlow(); closeTutorial(true); return; }
-            else if (action === 'defer') { deferOnboardingFlow(); closeTutorial(false); return; }
-            else if (action === 'finish') {
-                completeOnboardingFlow();
-                closeTutorial(true);
-                addLog('온보딩 완료 — 선택하신 설정으로 시작합니다.');
-                return;
-            }
-            renderGuidedStep();
-        });
-    }
-
-    // 폴백 문구는 단계 카피의 제목 — spotlight 을 못 찾았을 때 무엇을 찾는지 알려준다.
-    const stepCopy = ONBOARDING_COPY[state.stepIndex];
-    applyOnboardingSpotlight(bindings.spotlight, stepCopy?.title ?? '');
-}
-
-/** 온보딩 스포트라이트 — 기존 튜토리얼과 같은 클래스와 폴백 문구를 쓴다. */
-let obSpotlightEl: HTMLElement | null = null;
-
-function applyOnboardingSpotlight(selector: string | null, fallbackNote: string): void {
-    clearOnboardingSpotlight();
-    const el = selector ? document.querySelector<HTMLElement>(selector) : null;
-    if (el) {
-        el.classList.add('tut-spotlight');
-        obSpotlightEl = el;
-        try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { /* 구형 브라우저 무시 */ }
-    }
-    // 대상을 못 찾으면 위치 설명으로 대체 안내 [461-480] — 기존 튜토리얼과 같은 계약.
-    const note = document.getElementById('tut-spotlight-note');
-    if (note) note.textContent = !el && fallbackNote ? `▸ ${fallbackNote}` : '';
-}
-
-function clearOnboardingSpotlight(): void {
-    if (obSpotlightEl) {
-        obSpotlightEl.classList.remove('tut-spotlight');
-        obSpotlightEl = null;
-    }
-}
-
-/** 온보딩이 있으면 그것을, 없으면 기존 튜토리얼을 연다. */
-function openGuidedPanel(): void {
-    if (isOnboardingActive()) {
-        renderGuidedStep();
-    } else {
-        openTutorial(false);
-    }
-    tutorialPanel.style.display = 'block';
-}
 
 // ============================================================
 // 접근성 설정 패널 [461-480] — 글꼴 전환·글자 크기·화면 흔들림

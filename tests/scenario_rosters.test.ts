@@ -87,12 +87,12 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
         expect(getKnownOfficerName('guo_si_esc')).toBe('곽사');
     });
 
-    it('05 삼분천하는 확충된 명단(34명)·30도시·4세력과 초기 인맥 8건을 제공한다', () => {
+    it('05 삼분천하는 확충된 명단(34명)·45도시·4세력과 초기 인맥 8건을 제공한다', () => {
         const scenario = (scenarioIndex as ScenarioData[]).find(s => s.id === '05')!;
         const world = buildWorld(scenario, 0);
-        // 로스터 27명(10+9+5+3) + 재야 7명, 수도 4 + 2차도시 26
+        // 로스터 27명(10+9+5+3) + 재야 7명, 수도 4 + 2차도시 41
         expect(world.officers).toHaveLength(34);
-        expect(world.cities).toHaveLength(30);
+        expect(world.cities).toHaveLength(45);
         expect(world.factions).toHaveLength(4);
         const ids = world.officers.map(o => o.id);
         expect(new Set(ids).size).toBe(ids.length);
@@ -114,12 +114,14 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
 
     it('전 시나리오는 최대 도시 배치·고유 무장·한글 이름을 만족한다', () => {
         const expected: Record<string, { cities: number; factions: number }> = {
-            '01': { cities: 31, factions: 2 },
-            '02': { cities: 32, factions: 4 },
-            '03': { cities: 31, factions: 5 },
-            '04': { cities: 30, factions: 4 },
-            '05': { cities: 30, factions: 4 },
-            '06': { cities: 31, factions: 3 },
+            '01': { cities: 46, factions: 2 },
+            '02': { cities: 47, factions: 4 },
+            '03': { cities: 46, factions: 5 },
+            '04': { cities: 45, factions: 4 },
+            '05': { cities: 45, factions: 4 },
+            '06': { cities: 46, factions: 3 },
+            // [08] 전장태세 — 지도 57개 도시 전부(9 수도 + 48 이차), 세력 9개.
+            '08': { cities: 57, factions: 9 },
         };
         for (const scenario of scenarioIndex as ScenarioData[]) {
             if (scenario.id === '07') continue;
@@ -166,13 +168,13 @@ describe('SCENARIO_ROSTERS 기반 월드 빌드', () => {
     it('07 삼국鼎峙 시나리오는 새 도시·무장·초기 인맥을 제공한다', () => {
         const scenario = (scenarioIndex as ScenarioData[]).find(s => s.id === '07')!;
         const world = buildWorld(scenario, 1);
-        // 수도 3개(洛陽/成都/建業) + 2차도시 6개
+        // 수도 3개(洛陽/成都/建業) + 2차도시 21개
         // [결함 수정] 이전엔 세력당 2도시였고 세력 간 접경이 0쌍이라
-        // AI가 24개월 내내 공격하지 못했다. 이제 위(4) 촉(3) 오(3) 다 2도시 이상.
-        expect(world.cities.map(c => c.name)).toEqual([
+        // AI가 24개월 내내 공격하지 못했다. 이제 위(12) 촉(7) 오(5) 다 2도시 이상.
+        expect(world.cities.map(c => c.name).slice(0, 9)).toEqual([
             '낙양', '청두', '부경', '서주', '진류', '강릉', '한중', '동정', '진주',
         ]);
-        expect(world.factions.map(f => f.cities.length)).toEqual([3, 3, 3]);
+        expect(world.factions.map(f => f.cities.length)).toEqual([12, 7, 5]);
         expect(CITY_MAP_COORDS['청두']).toEqual({ x: 0.30, y: 0.57 });
         expect(CITY_MAP_COORDS['부경']).toEqual({ x: 0.77, y: 0.62 });
         expect(world.officers.map(o => o.name)).toEqual(expect.arrayContaining(['사오필', '유찬', '손호', '제갈격']));

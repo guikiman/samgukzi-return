@@ -107,9 +107,14 @@ export class DeltaEngine {
             factions: {},
             cities: {},
             armies: {},
+            mapFeatures: {},
+            sieges: {},
+            migrationTribes: {},
+            invasionDemands: {},
+            imperialCourt: null,
             relationships: {},
-            byFaction: { officers: {}, cities: {}, armies: {} },
-            byCity: { officers: {} },
+            byFaction: { officers: {}, cities: {}, armies: {}, mapFeatures: {} },
+            byCity: { officers: {}, tribes: {} },
             byOfficer: { relationships: {} },
         };
     }

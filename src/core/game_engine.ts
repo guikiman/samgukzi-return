@@ -9,7 +9,7 @@
 
 import {
     GamePhase, PhaseTransition, GlobalState, NormalizedState,
-    Officer, Faction, City, Army, OfficerID, CityID, FactionID,
+    Officer, Faction, City, Army, OfficerID, CityID, FactionID, MapFeature,
     ICommand, CommandResult, CommandContext, SerializedCommand,
     AIDecision, SchedulerProgress,
     GameEvent, EventListener, WorkerRequest, WorkerResponse,
@@ -34,6 +34,11 @@ import { processMonthlyRoamingEvents } from './roaming_event_system.js';
 import { processMonthlyFreeOfficerVisits } from './free_officer_visit_system.js';
 import { processMonthlySwornBrotherRescues } from './sworn_brother_rescue_system.js';
 import { processMonthlySwornBrotherPacts } from './sworn_brother_pact_system.js';
+import { planMonthlyTribeAffairs, demandsAbandonedBy, activeDemands } from './migration_tribe_system.js';
+import {
+    monthlyProgress, advanceMission, checkMissionExpiry, computeAudienceReward,
+} from './imperial_audience_system.js';
+import { advanceSiege } from './map_feature_siege_system.js';
 // Python 시스템 모듈 TS 포팅 통합 [76-85][213-214][321-340][341-360][421-438][431-432][441-460]
 import { StrategicCommandManager, StrategicPolicy, type IPolicyBridge } from './strategic_command_system.js';
 import { DomesticScheduler } from './domestic_scheduler.js';
@@ -800,6 +805,51 @@ export class GameEngine {
             visitStep.end(visitReport.length > 0
                 ? `방문 ${visitReport.length}건`
                 : '방문 없음');
+            const tribeStep = this.turnTrace.step('이민족 월간 affairs', 'tribe');
+            const tribeUpdates = planMonthlyTribeAffairs(
+                this.store.getAllMigrationTribes(),
+                this.store.getAllInvasionDemands(),
+            );
+            for (const u of tribeUpdates) {
+                const tribe = this.store.getMigrationTribe(u.id);
+                if (!tribe) continue;
+                const abandoned = demandsAbandonedBy(u, tribe, this.store.getAllInvasionDemands());
+                for (const demandId of abandoned) {
+                    this.store.updateInvasionDemand(demandId, { withdrawn: true });
+                }
+                // 남은 요구의 기한을 한 달 줄인다. 기한이 0 이 되면 demandRetraction 이
+                // '이미 철회된 요구' 로 보므로, 남은 기간이 에러 없이 소진된다.
+                for (const demand of activeDemands(this.store.getAllInvasionDemands())) {
+                    this.store.updateInvasionDemand(demand.id, {
+                        monthsRemaining: Math.max(0, demand.monthsRemaining - 1),
+                    });
+                }
+                this.store.updateMigrationTribe(u.id, {
+                    negotiatedThisMonth: u.negotiatedThisMonth,
+                    affinity: u.affinity,
+                    settlement: u.settlement,
+                });
+                if (!u.message) continue;
+                this.turnTrace.note(tribe.name, u.message, 'tribe-action');
+                console.log(`[Engine] ${u.message}`);
+                this.emitEvent({
+                    id: `tribe_departed_${u.id}_${this.store.getGlobalState().turnCount}`,
+                    type: 'TRIBE_DEPARTED',
+                    payload: {
+                        tribeId: u.id, tribeName: tribe.name,
+                        affinity: u.affinity, abandonedDemandIds: abandoned,
+                        message: u.message,
+                    },
+                    timestamp: Date.now(),
+                    turn: this.store.getGlobalState().turnCount,
+                });
+            }
+            const departedCount = tribeUpdates.filter(u => u.departed).length;
+            tribeStep.end(departedCount > 0
+                ? `이탈 ${departedCount}부족`
+                : `교섭 잠금 해제 ${tribeUpdates.length}부족`);
+            this.processMonthlyImperialAudience();
+            this.processMonthlySieges();
             // 세력 운명 판정 — 멸망/통일/방랑군 재기 [83][213]
             // 무장이 남은 세력은 제거 대신 방랑군으로 전환 — playerFactionId 유효성 보장
             const fateStep = this.turnTrace.step('세력 운명 판정', 'fate');
@@ -1194,6 +1244,99 @@ export class GameEngine {
      * 실제로 발동시키기 위한 지출선. 수입만 있고 이 지출이 없으면 굶주림이
      * 영영 불가능해진다. 상수를 임의 튜닝값으로 보고 지우면 그 버그가 되살아난다.
      */
+    /** 요충지 포위 월간 진행 — 개월 감소, 수비군 감소, 성공/파산 판정. */
+    private processMonthlySieges(): void {
+        const sieges = this.store.getAllSieges();
+        if (sieges.length === 0) return;
+        const step = this.turnTrace.step('요충지 포위 진행', 'siege');
+        const turn = this.store.getGlobalState().turnCount;
+        for (const operation of sieges) {
+            const feature = this.store.getMapFeature(operation.featureId);
+            if (!feature) {
+                this.store.clearSiege(operation.factionId);
+                continue;
+            }
+            const before = feature.ownerId;
+            const result = advanceSiege(operation, feature, turn);
+            this.store.updateMapFeature(feature.id, result.feature);
+            if (result.status === 'ACTIVE') {
+                this.store.setSiege(result.operation);
+            } else {
+                this.store.clearSiege(operation.factionId);
+            }
+            this.turnTrace.note(feature.name, result.message, 'siege-action');
+            console.log(`[Engine] ${result.message}`);
+            this.emitEvent({
+                id: `feature_siege_${feature.id}_${turn}`,
+                type: 'MAP_FEATURE_SIEGE',
+                payload: {
+                    featureId: feature.id, featureName: feature.name,
+                    factionId: operation.factionId, status: result.status,
+                    previousOwnerId: before, newOwnerId: result.feature.ownerId,
+                    message: result.message,
+                },
+                timestamp: Date.now(),
+                turn,
+            });
+        }
+        step.end(`포위 ${sieges.length}건 진행`);
+    }
+
+    private processMonthlyImperialAudience(): void {
+        const step = this.turnTrace.step('황제 임무 월간', 'audience');
+        const court = this.store.getImperialCourt();
+        const turn = this.store.getGlobalState().turnCount;
+        const activeId = court?.activeMissionId ?? null;
+        const active = activeId ? court?.missions[activeId] : null;
+        if (!active || active.status !== 'ACTIVE') {
+            step.end(court ? '진행 중인 임무 없음' : '황제 미설정');
+            return;
+        }
+
+        const officer = this.store.getOfficer(active.officerId);
+        if (!officer || !officer.runtime.isAlive) {
+            this.store.updateAudienceMission(active.id, { status: 'FAILED' });
+            this.store.updateImperialCourt({ activeMissionId: null, lastAudienceTurn: turn });
+            step.end('담당 무장 사망으로 실패');
+            return;
+        }
+
+        const expiry = checkMissionExpiry(active, turn);
+        const advanced = advanceMission(expiry.mission, monthlyProgress(officer, active.kind));
+        this.store.updateAudienceMission(active.id, advanced.mission);
+
+        if (advanced.succeeded) {
+            const reward = computeAudienceReward(officer, advanced.mission);
+            this.store.updateOfficer(officer.id, { rank: reward.rank });
+            const faction = officer.factionId ? this.store.getFaction(officer.factionId) : null;
+            if (faction) this.store.updateFaction(faction.id, { gold: faction.gold + reward.gold });
+            this.store.updateImperialCourt({ activeMissionId: null, lastAudienceTurn: turn });
+            console.log(`[Engine] ${reward.message}`);
+            this.emitEvent({
+                id: `imperial_mission_succeeded_${active.id}_${turn}`,
+                type: 'IMPERIAL_MISSION_SUCCEEDED',
+                payload: {
+                    officerId: officer.id, officerName: officer.name,
+                    kind: active.kind, rank: reward.rank, promoted: reward.promoted,
+                    gold: reward.gold, message: reward.message,
+                },
+                timestamp: Date.now(),
+                turn,
+            });
+            step.end(`성공 · ${officer.name} 관직 ${reward.rank} · ${reward.gold}金`);
+            return;
+        }
+
+        if (expiry.expired) {
+            this.store.updateImperialCourt({ activeMissionId: null, lastAudienceTurn: turn });
+            console.log(`[Engine] ${expiry.message} (${officer.name})`);
+            step.end(`기한 만료 · ${officer.name}`);
+            return;
+        }
+
+        step.end(`${officer.name} 진척 ${advanced.mission.progress}/${advanced.mission.targetAmount}`);
+    }
+
     private processMonthlyUpkeep(): void {
         const factions = this.store.getAllFactions();
         for (const faction of factions) {
@@ -1868,8 +2011,15 @@ export class GameEngine {
         console.log('[Engine] Save loaded');
     }
 
-    initWorld(officers: Officer[], factions: Faction[], cities: City[], armies: Army[], scenarioId?: string): void {
-        this.store.initWorld(officers, factions, cities, armies);
+    initWorld(
+        officers: Officer[],
+        factions: Faction[],
+        cities: City[],
+        armies: Army[],
+        scenarioId?: string,
+        mapFeatures: MapFeature[] = [],
+    ): void {
+        this.store.initWorld(officers, factions, cities, armies, mapFeatures);
         // 시나리오의 세력 treaty를 관계 엔진에 적재해 초기 상태부터 단일 원자를 유지한다. [341-360]
         this.diplomacy.restore([]);
         for (const faction of factions) {

@@ -12,7 +12,27 @@ import type { Season, CityID } from './types';
 
 export type CityBuildingType =
     | 'GOVERNMENT' | 'BARRACKS' | 'MARKET' | 'FARM'
-    | 'TEMPLE' | 'WORKSHOP' | 'WALL' | 'HOUSE';
+    | 'WORKSHOP' | 'WALL'
+    // [2026-10-03] 배경 그림 12개에 이름을 정확히 대응시켰다.
+    //
+    //   이전에는 그림에 없는 '사원'·'주막'·'주택' 이 서원·교역소·마구간 자리를
+    //   빌려 쓰고 있었다. 좌표는 맞는데 배지 이름이 다른 건물을 말하므로,
+    //   플레이어가 "교역소 위에 주막이라고 써 있는데" 라고 읽게 됐다.
+    //   이제 그림 이름 자체를 타입으로 둔다.
+    //
+    //   · SEOUN         서원      px(1008,335) — 이전 TEMPLE(사원)의 자리
+    //   · TRADING_HOUSE 교역소    px(1260,590) — 이전 TAVERN(주막)의 자리
+    //   · STABLE        마구간    px(540,650)  — 이전 HOUSE(주택)의 자리
+    //
+    // [타입 수가 12로 유지되는 이유]
+    // 그림에 12개의 건물이 있다. 그림 자리는 12칸이므로 타입도 12개여야 한다.
+    // 15종으로 늘리면 남는 3종은 앵커가 없어 타원 링(화면 중앙 둘레)에 박히거나,
+    // 이미 다른 이름이 배정된 자리에 겹친다 — 어느 쪽이든 배지가 거짓말이다.
+    // 그러므로 그림 12개 ↔ 타입 12개 1:1 을 지킨다.
+    | 'SEOUN' | 'TRADING_HOUSE' | 'STABLE'
+    // [2026-10-03] 그림에만 있고 코드에 없던 3채를 추가 — 좌표표 01·03·04 행.
+    //   PALACE·BLACKSMITH 는 FacilityType 과 같은 이름이라 시설줄과 어긋나지 않는다.
+    | 'PALACE' | 'ACADEMY' | 'BLACKSMITH';
 
 export interface CityBuilding {
     /** 도시 내 배치 슬롯 ID — 도시 화면과 저장 상태의 연결 키 */
@@ -34,11 +54,30 @@ const BUILDING_DEFS: Record<CityBuildingType, { label: string; baseWidth: number
     GOVERNMENT: { label: '관청', baseWidth: 60, baseHeight: 50 },
     BARRACKS: { label: '병영', baseWidth: 50, baseHeight: 40 },
     MARKET: { label: '시장', baseWidth: 40, baseHeight: 35 },
-    FARM: { label: '농지', baseWidth: 50, baseHeight: 30 },
-    TEMPLE: { label: '사원', baseWidth: 35, baseHeight: 45 },
+    // 그림 위 건물 이름은 "농장" 다. [2026-10-03] 한때 '농지' 로 바꿨다가 되돌렸다 —
+    //   같은 밭을 가리키는 말이지만 게임 안에서는 '농장' 이 표준 용어다(재배·수확).
+    FARM: { label: '농장', baseWidth: 50, baseHeight: 30 },
+    // [2026-10-03] 아래 3종은 그림 이름 그대로다. 이전의 '사원'·'주막'·'주택' 은
+    //   그림에 없는 이름이라 같은 자리에 붙여 쓰고 있었고, 배지가 다른 건물을
+    //   가리키는 것처럼 보였다. 이제 좌표표 05·08·11 행의 이름을 쓴다.
+    SEOUN: { label: '서원', baseWidth: 35, baseHeight: 45 },
+    TRADING_HOUSE: { label: '교역소', baseWidth: 38, baseHeight: 30 },
+    STABLE: { label: '마구간', baseWidth: 30, baseHeight: 25 },
     WORKSHOP: { label: '공방', baseWidth: 40, baseHeight: 35 },
-    WALL: { label: '성벽', baseWidth: 80, baseHeight: 15 },
-    HOUSE: { label: '주택', baseWidth: 30, baseHeight: 25 },
+    // [2026-10-03] 라벨을 '성벽' → '성문' 으로 고쳤다. 사용자 지적: 이 앵커가 가리키는
+    //   그림의 건물은 하단 중앙 **아치 정문**이고, 성벽 상단이 아니다. 라벨이
+    //   '성벽' 이면 배지가 성벽을 가리키는 것처럼 보여 라벨과 그림이 어긋난다.
+    //   FacilityType.WALL(시설줄)은 '성벽' 이나 그것과 같은 이름이 아니라 구분된다.
+    WALL: { label: '성문', baseWidth: 80, baseHeight: 15 },
+    // ── 그림에 자리했던 3채 — 좌표표 01·03·04 행 ──────────────────────
+    // 배경 그림에만 있고 코드에 없던 건물이라 좌표가 필요했다.
+    // 크기는 그림에서의 비중을 따른다 — 궁전이 가장 크고 대장간이 가장 작다.
+    PALACE: { label: '궁전', baseWidth: 70, baseHeight: 55 },
+    // '태학' 은 한자 태학(太學)의 국어 표기다. FacilityType 에 대응 항목이 없어
+    //   새 이름을 붙였다. 화면 다른 곳에는 이 이름이 나오지 않는다.
+    ACADEMY: { label: '태학', baseWidth: 45, baseHeight: 38 },
+    // 대장간은 FacilityType.BLACKSMITH 와 같은 이름이라 시설줄과 어긋나지 않는다.
+    BLACKSMITH: { label: '대장간', baseWidth: 42, baseHeight: 32 },
 };
 
 /**
@@ -131,13 +170,30 @@ export class City3DRenderer {
     ): CityBuilding[] {
         const buildings: CityBuilding[] = [];
         const colors = SEASON_COLORS[season];
-        const buildingCount = Math.max(5, Math.floor(developmentLevel * 2));
 
         // 건물 타입 가중치
         const typePool: CityBuildingType[] = [];
-        for (const t of ['GOVERNMENT', 'BARRACKS', 'MARKET', 'FARM', 'TEMPLE', 'WORKSHOP', 'WALL', 'HOUSE', 'HOUSE', 'HOUSE', 'HOUSE'] as CityBuildingType[]) {
+        // [2026-10-03] 타입을 늘릴 때 빠뜨리기 쉬운 게 이 풀이다. 타입과 앵커만 늘리고
+        //   여기를 안 고치면 그 건물은 배지가 영영 안 뜬다.
+        // [저장 호환] 앞 8칸은 인덱스별로 자리를 지킨다. 저장 키가 `cityId:i` 이므로
+        //   순서를 바꾸면 기존 저장이 엉뚱한 건물로 전이된다(예: 투자 500金 이 옮겨감).
+        //   이번에는 이름만 바뀌고 인덱스는 그대로다 — 4번은 예전 사원 자리(서원),
+        //   7번은 예전 주막 자리(교역소), 11번은 예전 주택 자리(마구간).
+        for (const t of ['GOVERNMENT', 'BARRACKS', 'MARKET', 'FARM', 'SEOUN', 'WORKSHOP', 'WALL', 'TRADING_HOUSE', 'PALACE', 'ACADEMY', 'BLACKSMITH', 'STABLE', 'STABLE', 'STABLE', 'STABLE'] as CityBuildingType[]) {
             typePool.push(t);
         }
+
+        // [2026-10-03] 건물 수를 늘렸다. 이유: 위 풀은 15칸인데 도시는 최대 10채
+        //   (Math.floor(5*2)) 였다. 그러면 인덱스 10 이후 — 대장간과 주택 넷이 —
+        //   **영영 배치되지 않았다.** 즉 대장간은 타입도 앵커도 있는데 안 보였다.
+        //   도시가 넓을수록 건물이 늘어아야 하므로 유형 수에 맞춰 상한을 올린다.
+        //   하한 5 는 그대로 둔다 — 작은 마을이 12채로 불어나면 도시가 아니다.
+        // 상한은 typePool.length 가 아니라 **고유 유형 수**다. 풀에 주택이 4번
+        //   들어 있어 15칸이라, 이걸 상한으로 쓰면 13채째부터 유형이 반복된다
+        //   (i % 15 가 0 으로 돌아와 관청이 두 번 나온다). 한 도시에 같은 건물이
+        //   두 채는 이상하므로 고유 수가 기준이다.
+        const distinctTypes = new Set(typePool).size;
+        const buildingCount = Math.max(5, Math.min(distinctTypes, Math.floor(developmentLevel * 2.5)));
 
         // 타일 배치 (등각투영 그리드)
         const gridSize = Math.ceil(Math.sqrt(buildingCount));
@@ -182,9 +238,20 @@ export class City3DRenderer {
         switch (buildingType) {
             case 'GOVERNMENT': roofColor = this.adjustBrightness('#8B0000', levelBrightness); break;
             case 'BARRACKS': roofColor = this.adjustBrightness('#4A4A4A', levelBrightness); break;
-            case 'TEMPLE': roofColor = this.adjustBrightness('#DAA520', levelBrightness); break;
+            // [2026-10-03] 서원 — 학문과 유교 서적을 다루므로 관청보다 차분한 황토색.
+            case 'SEOUN': roofColor = this.adjustBrightness('#C08B2E', levelBrightness); break;
+            // 교역소 — 창고와 장부 건물이니 회청기와 처마를 쓴다.
+            case 'TRADING_HOUSE': roofColor = this.adjustBrightness('#6E7B8B', levelBrightness); break;
+            // 마구간 — 짐승을 가두는 마당이라 목재 처마가 자연스럽다.
+            case 'STABLE': roofColor = this.adjustBrightness('#7B6142', levelBrightness); break;
             case 'MARKET': roofColor = this.adjustBrightness('#CD853F', levelBrightness); break;
             case 'WALL': roofColor = this.adjustBrightness('#8B8378', levelBrightness); break;
+            // [2026-10-03] 궁전 — 관청보다 한 단계 밝은 황琉璃瓦.
+            case 'PALACE': roofColor = this.adjustBrightness('#B8860B', levelBrightness); break;
+            // 태학 — 서서를 서고 읽는 집이므로 학塾의 청록색 처마를 쓴다.
+            case 'ACADEMY': roofColor = this.adjustBrightness('#4A7C59', levelBrightness); break;
+            // 대장간 — 불을 쓰는 곳이라 검붉은 부싯돌.
+            case 'BLACKSMITH': roofColor = this.adjustBrightness('#6E3B2A', levelBrightness); break;
             default: roofColor = colors.roof;
         }
 
@@ -242,7 +309,8 @@ export class City3DRenderer {
             case 'GOVERNMENT':
                 this.drawPagoda(ctx, sx, sy, w, h, building, night, 2);
                 break;
-            case 'TEMPLE':
+            // [2026-10-03] TEMPLE → SEOUN(서원). 같은 자리라 그리기도 그대로 쓴다.
+            case 'SEOUN':
                 this.drawPagoda(ctx, sx, sy, w, h, building, night, 2, true);
                 break;
             case 'FARM':
@@ -415,7 +483,8 @@ export class City3DRenderer {
                 }
                 break;
             }
-            case 'TEMPLE': {
+            case 'SEOUN': {
+                // [2026-10-03] TEMPLE → SEOUN. 학원이라 등롱을 매다는 형상은 유지한다.
                 this.drawLantern(ctx, sx - w / 2 - 8, sy, 1, night);
                 this.drawLantern(ctx, sx + w / 2 + 8, sy, 1, night);
                 break;

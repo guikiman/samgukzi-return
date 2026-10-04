@@ -410,19 +410,169 @@ export interface AIDecision {
 // 정규화 상태 트리 (Normalized State Tree)
 // ============================================================
 
+/**
+ * 전략 요충지 — 관·요새·전장·항구. 도시가 아니라 "지형"이라 소유권이 도시와 별개다.
+ *
+ * [왜 별도 엔티티인가]
+ * 예전엔 MAP_FEATURE_ANCHORS 정적 표(좌표만)로 지도에 아이콘만 그렸다. 소유권이 없어
+ * 점령도, 보급도, 방어도 없었다. 역사적 근거 — 삼국지에서 관·요새는 인접 도시의
+ * 포위 수성을 3개월까지 버티게 하는 보급 거점이었다(요충지 없으면 1개월).
+ *
+ * 순수 데이터 — 전투/포위 판정은 이 값을 읽는 별도 시스템이 담당한다.
+ *   - 전투 수치 계산이 필요 없다(computeCombatPower 는 병력/사기만 본다)
+ *   - 그래서 ownerId 하나만 바꾸면 점령이 성립한다(보상·후처리는 전투 시스템 몫)
+ */
+export interface MapFeature {
+    id: string;
+    name: string;
+    kind: 'PASS' | 'FORTRESS' | 'BATTLEFIELD' | 'PORT';
+    /** 규칙 좌표(헥스). 도시가 아니라 지형이므로 도시와 다른 격자에 놓일 수 있다. */
+    hexCoord: HexCoord;
+    /** 정규화 지도 좌표 — 아이콘과 반경 판정용 */
+    mapX: number;
+    mapY: number;
+    ownerId: FactionID | null;
+    /** 수비 병력(명). 점령 전투의 방어측 전력이 된다. */
+    garrison: number;
+    maxGarrison: number;
+    /** 정규화 지도 좌표상 보급이 닿는 반경. */
+    supplyRadius: number;
+    /** 이 요충지를 포위 중이면 남은 개월. 0 이면 포위 중이 아니다. */
+    siegeMonthsRemaining: number;
+    /** 포위 중인 세력. 해제/점령 때 비교 대상이 된다. */
+    besiegedByFactionId: FactionID | null;
+    /** 이 요충지에 포위 중인 세력을 [도시 id] 목록. */
+    besiegedCityIds: CityID[];
+}
+
+/** 요충지 출진 중(미집계) — 도시 병력을 잠시 묶어 둔다. */
+export interface FeatureExpedition {
+    id: string;
+    factionId: FactionID;
+    featureId: string;
+    cityId: CityID;
+    troops: number;
+    startTurn: number;
+}
+
+/** 도시를 포위하는 병단 — 요충지 점령 판정의 주체. */
+export interface SiegeOperation {
+    id: string;
+    /** 출진 세력 */
+    factionId: FactionID;
+    /** 목표 요충지 */
+    featureId: string;
+    /** 출진 병력 — 수성 중이므로 매달 자연 감소한다. */
+    troops: number;
+    /** 시작 회차. */
+    startTurn: number;
+    /** 목표 포위 개월. 끝까지 못 넘기면 자동 함락. */
+    durationTurns: number;
+    status: 'ACTIVE' | 'SUCCEEDED' | 'FAILED' | 'BROKEN';
+}
+
+/** 이민족(邊境部族)이 머무는 위치 — 도시 근처이거나, 넓은 지역에 흩어져 있다. */
+export type TribeSettlement =
+    | { kind: 'CITY'; cityId: CityID }
+    | { kind: 'REGION'; region: string };
+
+/**
+ * 침략 요구 — 부족이 대신 철회시킬 수 있는 대상.
+ *
+ * [왜 종류를 나눴는가]
+ * 세력 전체를 철회시키는 것과 도시 하나를 철회시키는 것은 비용이 다르다. 요구의
+ * 무게(weight)가 클수록 교섭 난이도가 오른다.
+ */
+export interface InvasionDemand {
+    id: string;
+    /** 요구를 세운 세력 */
+    issuerFactionId: FactionID;
+    /** 침략 대상 도시 (도시 단위 요구면 존재) */
+    targetCityId: CityID | null;
+    /** 세력 전체 요구면 true */
+    targetsWholeFaction: boolean;
+    /** 남은 개월. 0 이하면 철회된 것으로 본다. */
+    monthsRemaining: number;
+    withdrawn: boolean;
+}
+
+/** 부족 하나의 상태. */
+export interface TribeState {
+    id: string;
+    name: string;
+    settlement: TribeSettlement;
+    /** 현재 병력 규모. */
+    strength: number;
+    /** 우호도 -100(적대) ~ 100(친밀). 거래 호가와 지원 확률이 이 값에서 나온다. */
+    affinity: number;
+    /** 지원 가능한 糧 총량. */
+    grainStock: number;
+    /** 지원 가능한 병력 총량. */
+    troopStock: number;
+    /** 철회시킬 수 있는 침략 요구 id 목록 */
+    backingDemandIds: string[];
+    /** 이번 달에 이미 교섭했는지 — 중복 수령 방지. */
+    negotiatedThisMonth: boolean;
+}
+
+export interface ImperialCourt {
+    emperorName: string;
+    /** 황제가 머무는 도시. 알현은 이 도시에서만 가능하다. */
+    cityId: CityID;
+    /** 현재 진행 중인 황제 임무 (최대 1개). */
+    activeMissionId: string | null;
+    /** 마지막으로 알현을 열었던 회차. 쿨다운 판정에 쓴다. */
+    lastAudienceTurn: number | null;
+    missions: Record<string, ImperialMission>;
+}
+
+/** 황제 임무 종류 — 난이도·기한·보상이 다르다. */
+export type ImperialMissionKind = 'SUBDUE_BANDITS' | 'RECOVER_TRIBUTE' | 'SECURE_BORDER';
+
+export interface ImperialMission {
+    id: string;
+    kind: ImperialMissionKind;
+    officerId: OfficerID;
+    cityId: CityID;
+    /** 시작 회차 (GameTime 를 턴 단위로 환산) */
+    startTurn: number;
+    /** 만료 회차. 이 회차까지 목표를 못 채우면 실패한다. */
+    deadlineTurn: number;
+    /** 목표 수치 — 토벌 세력·회수 세금처럼 임무 종류마다 단위가 다르다. */
+    targetAmount: number;
+    progress: number;
+    accepted: boolean;
+    status: 'PENDING' | 'ACTIVE' | 'SUCCEEDED' | 'FAILED' | 'DECLINED';
+    rewardRank: OfficerRank;
+    rewardGold: number;
+}
+
 export interface NormalizedState {
     officers: Record<OfficerID, Officer>;
     factions: Record<FactionID, Faction>;
     cities: Record<CityID, City>;
     armies: Record<ArmyID, Army>;
+    /** 전략 요충지 — 점령 가능한 지형 엔티티 */
+    mapFeatures: Record<string, MapFeature>;
+    /** 진행 중인 요충지 포위 — 세력별로 최대 1건. */
+    sieges: Record<FactionID, SiegeOperation>;
+    /** 이민족 — 주변 지역에 이주해 온 부족. 세력이 아니라 별개 주체다. */
+    migrationTribes: Record<string, TribeState>;
+    /** 이민족이 세운 침략 요구 — 부족이 대신 철회시킬 수 있다. */
+    invasionDemands: Record<string, InvasionDemand>;
+    /** 황제와 알현 임무. 황제가 머무는 도시에서만 알현이 열린다. */
+    imperialCourt: ImperialCourt | null;
     relationships: Record<string, RelationshipEdge>;
     byFaction: {
         officers: Record<FactionID, OfficerID[]>;
         cities: Record<FactionID, CityID[]>;
         armies: Record<FactionID, ArmyID[]>;
+        mapFeatures: Record<FactionID, string[]>;
     };
     byCity: {
         officers: Record<CityID, OfficerID[]>;
+        /** 그 도시에 머무르는 이민족 */
+        tribes: Record<CityID, string[]>;
     };
     byOfficer: {
         relationships: Record<OfficerID, RelationshipEdge[]>;
@@ -478,6 +628,34 @@ export interface IGameStore {
     /** 도시 추가 — 모딩 핫 인젝션 [309] 및 런타임 도시 생성용 */
     addCity(city: City): void;
     addRelationship(edge: RelationshipEdge): void;
+    /** 전략 요충지 — 점령 가능한 지형 엔티티 */
+    getMapFeature(id: string): MapFeature | null;
+    getAllMapFeatures(): MapFeature[];
+    getMapFeaturesByFaction(factionId: FactionID): MapFeature[];
+    addMapFeature(feature: MapFeature): void;
+    updateMapFeature(id: string, updates: Partial<MapFeature>): void;
+    setMapFeatures(features: MapFeature[]): void;
+    /** 진행 중인 요충지 포위 — 세력별로 최대 1건이므로 세력 id 로 키를 잡는다. */
+    getSiege(factionId: FactionID): SiegeOperation | null;
+    getAllSieges(): SiegeOperation[];
+    setSiege(operation: SiegeOperation): void;
+    clearSiege(factionId: FactionID): void;
+    /** 이민족 — 세력이 아닌 별개 교섭 주체 */
+    getMigrationTribe(id: string): TribeState | null;
+    getAllMigrationTribes(): TribeState[];
+    getTribesByCity(cityId: CityID): TribeState[];
+    setMigrationTribes(tribes: TribeState[]): void;
+    updateMigrationTribe(id: string, updates: Partial<TribeState>): void;
+    getInvasionDemand(id: string): InvasionDemand | null;
+    getAllInvasionDemands(): InvasionDemand[];
+    updateInvasionDemand(id: string, updates: Partial<InvasionDemand>): void;
+    /** 황제 알현 — 황제가 머무는 도시에서만 열리는 임무 */
+    getImperialCourt(): ImperialCourt | null;
+    setImperialCourt(court: ImperialCourt | null): void;
+    updateImperialCourt(updates: Partial<ImperialCourt>): void;
+    getAudienceMission(id: string): ImperialMission | null;
+    putAudienceMission(mission: ImperialMission): void;
+    updateAudienceMission(id: string, updates: Partial<ImperialMission>): void;
     setGlobalState(updates: Partial<GlobalState>): void;
     createSnapshot(): NormalizedState;
     restoreSnapshot(snapshot: NormalizedState): void;

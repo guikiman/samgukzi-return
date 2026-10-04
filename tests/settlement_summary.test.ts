@@ -21,10 +21,11 @@ describe('월말 정산 요약 [E1-361][461-480]', () => {
             expect(f.officerCount).toBeGreaterThan(0);
             expect(f.avgMorale).toBeGreaterThanOrEqual(0);
         }
-        // 조조(fac_0) — 허창 + 진류·연주·하비·업·낙양·장안·서주·진양·여강 = 10도시, 군주 포함
+        // 조조(fac_0) — 허창 + 진류·연주·하비·업·낙양·장안·서주·진양·여강 = 10도시,
+        // 그리고 서부 9도시(무위·천수·홍농·소패·상당·남피·평원·청주·제남) = 19도시, 군주 포함
         const caocao = report.factions.find(f => f.factionId === 'fac_0');
         expect(caocao?.factionName).toBe('조조');
-        expect(caocao?.cityCount).toBe(10);
+        expect(caocao?.cityCount).toBe(19);
     });
 
     it('국고·병량이 스냅샷에 정확히 반영된다', () => {

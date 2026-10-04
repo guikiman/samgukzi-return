@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import {
     computeCoverPlacement,
     mapAnchorToStage,
+    clampAnchorToCover,
     anchorFor,
     resolveVisibleAnchor,
     separateOverlaps,
@@ -19,7 +20,7 @@ import {
     statBarPercent,
     type SceneInset,
 } from '../src/core/city_scene_art';
-import { CITY_BUILDING_TYPES } from '../src/core/city_3d_renderer';
+import { CITY_BUILDING_TYPES, City3DRenderer } from '../src/core/city_3d_renderer';
 
 const REPO_ROOT = resolve(__dirname, '..');
 
@@ -49,13 +50,266 @@ describe('배경 그림 파일', () => {
     });
 });
 
+// ================================================================
+// [2026-10-03] 앵커 값 자체를 고정한다 — 새 배경 그림 판독 결과.
+//
+// 왜 이 블록이 필요한가
+// 앞의 테스트들은 전부 "형태"만 본다(9종 존재, 0~100 범위, 서로 8% 이상 떨어짐).
+// 앵커가 *엉뚱한 건물* 로 돌아가도 —— 예를 들어 성문이 성벽 망루로 되돌아가도 ——
+// 그 테스트들은 전부 통과한다. 실제로 2026-10-03 이전까지 그랬다.
+// 그러므로 "어느 건물의 몇 픽셀인가" 를 값으로 고정해 둔다.
+//
+// 좌표는 원본 PNG(1672×940 = 게임 자산과 동일 규격) 위에 격자를 겹쳐 판독한 값이다.
+// 규격이 같으므로 변환 계수가 1:1 이고, 아래 px 값에 16.72 / 9.4 로 나누면 % 가 된다.
+// 판독 근거 원본: D:\samkukzi-re_DATA\도시 화면 ChatGPT Image 2026년 10월 3일 오후 12_27_07.png
+// ================================================================
+
+const ART_PX_W = 1672;
+const ART_PX_H = 940;
+
+/** 판독한 픽셀 좌표 → 앵커 표의 % 값과 일치하는지 본다. */
+function expectAnchorMatchesPixels(type: string, px: number, py: number): void {
+    const a = CITY_SCENE_ART_ANCHORS[type as keyof typeof CITY_SCENE_ART_ANCHORS];
+    expect(a, `${type} 앵커가 없다`).toBeDefined();
+    expect(a.x, `${type} x (px ${px} → %)`).toBeCloseTo((px / ART_PX_W) * 100, 1);
+    expect(a.y, `${type} y (py ${py} → %)`).toBeCloseTo((py / ART_PX_H) * 100, 1);
+}
+
+describe('앵커 값 — 새 배경 그림 판독 결과에 고정', () => {
+    it('판독 원본의 규격이 게임 자산 규격과 같다 — 좌표를 그대로 옮길 수 있는 전제', () => {
+        // 이 전제가 깨지면 아래 픽셀 고정값이 전부 틀어진다(1672×940 이 아니면).
+        // ART_W/ART_H 상수는 mapAnchorToStage 테스트가 이미 쓰는 값이므로 여기서 확인한다.
+        expect(ART_PX_W).toBe(ART_W);
+        expect(ART_PX_H).toBe(ART_H);
+    });
+
+    it('이름이 겹치는 9종은 판독 픽셀과 일치한다', () => {
+        expectAnchorMatchesPixels('GOVERNMENT', 536, 250);   // 관청
+        expectAnchorMatchesPixels('BARRACKS', 370, 590);    // 병영
+        expectAnchorMatchesPixels('MARKET', 1040, 590);     // 시장
+        // [2026-10-03 사용자 실측] 아래 둘은 이전 판독이 틀렸다. 그림에서 직접 재서 넘긴
+        //   좌표로 바꾼다 — 공방은 이전 값보다 100px 왼쪽이 실제 위치였다.
+        expectAnchorMatchesPixels('FARM', 1370, 637);       // 농장
+        expectAnchorMatchesPixels('WORKSHOP', 1090, 418);   // 공방
+        expectAnchorMatchesPixels('WALL', 836, 755);        // 성문
+    });
+
+    // [2026-10-03] 9종 → 12종. 아래 3채는 그림에 있고 코드에 없던 건물이므로
+    //   좌표를 새로 박았다 — 좌표표 01·03·04 행이 그대로 대응한다.
+    it('추가한 3종도 판독 픽셀과 일치한다', () => {
+        expectAnchorMatchesPixels('PALACE', 836, 126);      // 궁전 · 최상단 중앙
+        expectAnchorMatchesPixels('ACADEMY', 1153, 259);    // 태학 · 궁전 오른쪽
+        expectAnchorMatchesPixels('BLACKSMITH', 405, 423);  // 대장간 · 좌측 중단
+    });
+
+    // [2026-10-03] 예전엔 '사원'·'주막'·'주택' 이 이 세 자리를 빌려 쓰고 있었다.
+    //   좌표는 정확했으나 배지 이름이 다른 건물을 말해, "교역소 위인데 주막이라
+    //   써 있다" 고 읽혔다. 이제 그림 이름을 그대로 쓴다.
+    it('그림에 동명이었던 3종도 판독 픽셀과 일치한다', () => {
+        expectAnchorMatchesPixels('SEOUN', 958, 275);           // 서원 · 학원 별관
+        expectAnchorMatchesPixels('TRADING_HOUSE', 1331, 407);  // 교역소 · 우측 중단
+        expectAnchorMatchesPixels('STABLE', 540, 650);         // 마구간 · 병영 오른쪽
+    });
+
+    it('12개 앵커가 좌표표 12행과 이름까지 1:1 로 일치한다 — 배지가 다른 건물을 말하지 않는다', () => {
+        // [2026-10-03] 이게 이번 변경의 요지다. 예전엔 좌표는 맞는데 이름이
+        // 달랐다(교역소 자리에 '주막'). 좌표·이름을 한 표로 묶어 1:1 을 강제한다.
+        const ROWS: ReadonlyArray<readonly [string, number, number]> = [
+            ['궁전', 836, 126], ['관청', 536, 250], ['태학', 1153, 259],
+            ['대장간', 405, 423], ['서원', 958, 275], ['공방', 1090, 418],
+            ['시장', 1040, 590], ['교역소', 1331, 407], ['농장', 1370, 637],
+            ['병영', 370, 590], ['마구간', 540, 650], ['성문', 836, 755],
+        ];
+        const buildings = new City3DRenderer().generateCityLayout('city_1', 5, 'SPRING');
+        const usedTypes = new Set<string>();
+        for (const [name, px, py] of ROWS) {
+            // (1) 이 좌표에 있는 배지가 정확히 하나여야 한다.
+            // 비교는 **픽셀** 으로 한다. 앵커는 소수점 1자리 % 로 저장되므로 1672px 폭에서
+            // 반올림 오차만으로 0.06%p(≈1px) 를 넘긴다. % 로 비교하면 정상 좌표가 실패한다.
+            const hitPx = buildings.filter((b) => {
+                const a = CITY_SCENE_ART_ANCHORS[b.type];
+                return Math.abs((a.x / 100) * ART_PX_W - px) <= 1
+                    && Math.abs((a.y / 100) * ART_PX_H - py) <= 1;
+            });
+            expect(hitPx.length, `${name}(px ${px},${py}) 자리에 배지가 ${hitPx.length} 개다 (1이어야 한다)`).toBe(1);
+            // (2) 그 배지의 **이름**이 그림 이름과 같아야 한다.
+            expect(hitPx[0].label, `px(${px},${py}) 의 배지 이름이 그림의 '${name}' 과 다르다`).toBe(name);
+            usedTypes.add(hitPx[0].type);
+        }
+        // (3) 모든 타입이 정확히 한 행씩을 차지 — 숨은 배치가 없어야 한다.
+        expect(usedTypes.size, `${usedTypes.size} 타입만 좌표표에 대응된다`).toBe(ROWS.length);
+    });
+
+it('그림에 없는 이름(사원·주막·주택·농지)이 배지로 남지 않는다', () => {
+        // 회귀 방지. 예전 이름이 살아 있으면 배지가 다른 건물을 가리킨다.
+        const labels = new City3DRenderer().generateCityLayout('city_1', 5, 'SPRING')
+            .map((b) => b.label);
+        for (const gone of ['사원', '주막', '주택', '농지', '성벽']) {
+            expect(labels, `배지에 '${gone}' 이 남아 있다`).not.toContain(gone);
+        }
+    });
+
+    it('추가한 3종은 그림의 빈자리를 채웠다 — 이전 추정치로 되돌아가지 않는다', () => {
+        // [2026-10-03] 이 셋은 이전엔 앵커 자체가 없었다. 타입만 늘리고 좌표를
+        //   옛 추정치(예컨대 관청 자리)로 되돌려도 테스트가 잡아낸다.
+        const palace = CITY_SCENE_ART_ANCHORS.PALACE;
+        expect(palace.y, '궁전이 최상단 중앙이 아니다').toBeLessThan(20);
+        expect(Math.abs(palace.x - 50), '궁전이 좌우 중앙이 아니다').toBeLessThan(3);
+        // 태학은 관청의 정반대편(우측)이다 — 좌우로 뒤집히면 잡힌다.
+        expect(CITY_SCENE_ART_ANCHORS.ACADEMY.x, '태학이 좌측으로 돌아갔다')
+            .toBeGreaterThan(CITY_SCENE_ART_ANCHORS.GOVERNMENT.x);
+        // 대장간은 병영보다 위(중단)다 — 병영 자리에 겹쳐 놓으면 잡힌다.
+        expect(CITY_SCENE_ART_ANCHORS.BLACKSMITH.y, '대장간이 병영 자리로 내려갔다')
+            .toBeLessThan(CITY_SCENE_ART_ANCHORS.BARRACKS.y);
+    });
+
+    it('이전 추정치가 되살아나지 않는다 — 성문은 하단 중앙이다', () => {
+        // 2026-10-03 이전 값. 성벽 위 망루(75,27)를 가리키고 있었다.
+        // 이 테스트가 없으면 "그림 보고 고친다" 는 취지가 조용히 사라진다.
+        const wall = CITY_SCENE_ART_ANCHORS.WALL;
+        expect(wall.x, '성문이 중앙에서 벗어나 있다').toBeLessThan(60);
+        expect(wall.y, '성문이 상단 망루 자리로 돌아갔다').toBeGreaterThan(70);
+    });
+
+    it('농지는 우측이다 — 이전에는 좌측이었다(좌우 반전)', () => {
+        // 2026-10-03 이전 값 (24,75). 실제 그림의 농장은 우측 하단이다.
+        const farm = CITY_SCENE_ART_ANCHORS.FARM;
+        expect(farm.x, '농지가 좌측으로 돌아갔다(실제로는 우측 하단)').toBeGreaterThan(70);
+    });
+
+    it('공방은 하단 중앙이 아니라 우측 중단이다', () => {
+        // 2026-10-03 이전 값 (45,75).
+        const w = CITY_SCENE_ART_ANCHORS.WORKSHOP;
+        expect(w.x, '공방이 좌측으로 돌아갔다(실제로는 우측 중단)').toBeGreaterThan(65);
+        expect(w.y, '공방이 하단으로 돌아갔다(실제로는 중단)').toBeLessThan(55);
+    });
+
+    it('병영은 하단이다 — 이전에는 중단이었다', () => {
+        // 2026-10-03 이전 값 (22,40). x 는 그대로인데 y 가 23% 어긋나 있었다.
+        expect(CITY_SCENE_ART_ANCHORS.BARRACKS.y, '병영이 상단으로 돌아갔다').toBeGreaterThan(55);
+    });
+
+    it('교역소는 시장 옆이 아니라 우측 상단이다 — 사용자 실측을 따른 변경', () => {
+        // [2026-10-03 사용자 실측] 이 테스트는 예전엔 "교역소는 시장 옆" 이라는 요구를
+        // 고정했다. 그런데 사용자가 그림을 직접 재서 넘긴 좌표는 px(1331,407) 이다 —
+        // 시장 px(1040,590) 과는 y 가 183px(19.5%p) 나고, 같은 줄이 아니다.
+        // 그림이 시장 옆 배치를 보여주지 않으므로 테스트가 그림을 따르도록 고친다.
+        // 좌표표가 아니라 **실측**이 기준이다.
+        const m = CITY_SCENE_ART_ANCHORS.MARKET;
+        const t = CITY_SCENE_ART_ANCHORS.TRADING_HOUSE;
+        expect(t.x, '교역소가 시장보다 왼쪽이다 — 실측은 오른쪽이다').toBeGreaterThan(m.x);
+        expect(t.y, '교역소가 시장보다 아래다 — 실측은 위쪽이다').toBeLessThan(m.y);
+        // 공방·교역소가 같은 줄에 있지 않으면, 그 줄의 라벨이 서로를 가리지 않는다.
+        expect(Math.abs(t.x - CITY_SCENE_ART_ANCHORS.WORKSHOP.x),
+            '교역소가 공방과 같은 x 다 — 두 라벨이 겹친다').toBeGreaterThan(8);
+    });
+
+    it('모든 앵커가 HUD 안전영역 안에 있다 — 1672×940 실측', () => {
+        // style.css 기준으로 1672×940 창에서 헤더/좌·우 레일/하단 시설줄이 덮는 영역을
+        // 대략 envelop 으로 잡았다. 좌 16.2% · 우 83.8% · 상 6.5% · 하 93%.
+        // resolveVisibleAnchor 가 밀어내긴 하지만, *원본* 이 그 안에 있으면
+        // 밀어내는 동작 없이 제자리에 선다 — 이게 상태다.
+        const SAFE = { left: 16.2, right: 83.8, top: 6.5, bottom: 93 };
+        for (const [type, a] of Object.entries(CITY_SCENE_ART_ANCHORS)) {
+            expect(a.x, `${type} 이 좌측 HUD 아래에 있다`).toBeGreaterThanOrEqual(SAFE.left);
+            expect(a.x, `${type} 이 우측 HUD 아래에 있다`).toBeLessThanOrEqual(SAFE.right);
+            expect(a.y, `${type} 이 상단 HUD 아래에 있다`).toBeGreaterThanOrEqual(SAFE.top);
+            expect(a.y, `${type} 이 하단 HUD 아래에 있다`).toBeLessThanOrEqual(SAFE.bottom);
+        }
+    });
+});
+
 describe('라벨 앵커', () => {
-    it('건물 9종 모두 앵커가 있다', () => {
+    it('건물 12종 모두 앵커가 있다', () => {
         expect(CITY_BUILDING_TYPES.every(k => CITY_SCENE_ART_ANCHORS[k] !== undefined)).toBe(true);
-        // [2026-10-03] 8 → 9. 주막(TAVERN) 추가.
-        //   원인은 좌표가 아니라 타입 부재였다 — FacilityType.TAVERN 은 있는데
-        //   CityBuildingType 에 없어서 시장 앞 건물에 배지가 나올 수 없었다.
-        expect(CITY_BUILDING_TYPES).toHaveLength(9);
+        // [2026-10-03] 8 → 9 → 12.
+        //   9까지: 주막(TAVERN) 추가. 원인은 좌표가 아니라 타입 부재였다 —
+        //   FacilityType.TAVERN 은 있는데 CityBuildingType 에 없어서
+        //   시장 앞 건물에 배지가 나올 수 없었다.
+        //   12까지: 배경 그림의 12개 건물을 타입으로 모두 표현한다.
+        //   앵커와 BUILDING_DEFS 는 Record<> 라서 타입만 늘리면 컴파일이 깨진다 —
+        //   "빠뜨리지 않게" 를 강제하는 것이 이 표의 존재 이유다.
+        expect(CITY_BUILDING_TYPES).toHaveLength(12);
+    });
+
+    it('추가한 3종이 실제 배치에 나온다 — 앵커만 있어도 배지는 안 뜬다', () => {
+        // [2026-10-03] 회귀 방지. generateCityLayout 의 typePool 에 새 3종을
+        //   넣지 않으면 타입·앵커는 있어도 배지가 영영 안 떠 화면엔 9개만 보인다.
+        // developmentLevel 은 게임에서 Math.min(5, development/20) 로 5 가 상한이다.
+        //   예전 값(2) 을 쓰면 최대로 아무리 커도 10채여서 대장간이 11번에 걸려
+        //   제외됐다 — 그래서 이전에는 lv=12 로 값을 넘겨 통과시켜 보였다.
+        //   **실제 상한 5 로 검사한다.**
+        const renderer = new City3DRenderer();
+        const buildings = renderer.generateCityLayout('city_1', 5, 'SPRING');
+        const drawn = new Set(buildings.map(b => b.type));
+        for (const t of CITY_BUILDING_TYPES) {
+            expect(drawn.has(t), `${t} 이 최대 도시(${buildings.length}채)에 나오지 않는다`).toBe(true);
+        }
+    });
+
+    it('건물 수가 유형 수를 넘지 않는다 — 인덱스가 풀 밖으로 새지 않는다', () => {
+        // [2026-10-03] 15칸 풀에 15채를 뽑으면 i % poolLength 가 0 으로 돌아와
+        //   첫 건물이 두 번 나온다. 유형 수(=12) 상한은 이 중복을 막는 안전장치다.
+        const renderer = new City3DRenderer();
+        for (const lv of [1, 2, 3, 4, 5, 10, 40]) {
+            const buildings = renderer.generateCityLayout('city_1', lv, 'SPRING');
+            expect(new Set(buildings.map(b => b.id)).size, `lv=${lv} 에 id 가 겹친다`).toBe(buildings.length);
+            expect(new Set(buildings.map(b => b.type)).size, `lv=${lv} 에 유형이 반복된다`).toBe(buildings.length);
+        }
+    });
+
+    it('저장 키 cityId:i 의 유형이 이전과 같게 유지된다 — 저장이 건물로 전이되면 안 된다', () => {
+        // [2026-10-03] 유형을 늘릴 때 가장 쉬운 사고. 풀 맨 앞에 새 유형을 끼워 넣으면
+        //   인덱스 8 이후의 저장이 전부 엉뚱한 건물로 옮겨 간다(예: 주택에 투자한
+        //   500金 이 궁전에 붙는다). 앞 8칸은 건드리지 않았다는 것을 고정한다.
+        //   [이름 변경] 4번은 TEMPLE→SEOUN, 7번은 TAVERN→TRADING_HOUSE 로 이름만
+        //   바뀌었다. 좌표(그림 위치)가 그대로라 저장은 같은 자리에 붙는다.
+        const renderer = new City3DRenderer();
+        const types = renderer.generateCityLayout('city_1', 5, 'SPRING').map(b => b.type);
+        expect(types.slice(0, 8)).toEqual([
+            'GOVERNMENT', 'BARRACKS', 'MARKET', 'FARM',
+            'SEOUN', 'WORKSHOP', 'WALL', 'TRADING_HOUSE',
+        ]);
+    });
+
+    it('추가한 3종의 라벨이 그림 이름과 같다', () => {
+        // 라벨이 어긋나면 플레이어는 "태학" 이라는 이름을 화면에서 처음 보게 된다.
+        const byType = (t: string): string | undefined =>
+            new City3DRenderer().generateCityLayout('city_1', 5, 'SPRING')
+                .find(b => b.type === t)?.label;
+        expect(byType('PALACE')).toBe('궁전');
+        expect(byType('ACADEMY')).toBe('태학');
+        expect(byType('BLACKSMITH')).toBe('대장간');
+    });
+
+    // [2026-10-03] 사용자 지적 "성벽은 성문으로 이름을 표시 해줘".
+    it('WALL 배지는 "성벽" 이 아니라 "성문" 이다 — 배지가 가리키는 그림이 정문이다', () => {
+        // 앵커는 하단 중앙 아치 정문(px 836,755) 을 가리킨다. 라벨만 성벽이면
+        // 플레이어는 위쪽 성벽을 가리키는 것으로 읽고 앵커를 의심한다.
+        const renderer = new City3DRenderer();
+        const buildings = renderer.generateCityLayout('city_1', 5, 'SPRING');
+        const wall = buildings.find((b) => b.type === 'WALL');
+        expect(wall, 'WALL 이 배치되지 않았다').toBeTruthy();
+        expect(wall!.label).toBe('성문');
+    });
+
+    it('배지 라벨 12개가 모두 좌표표의 이름과 일치한다', () => {
+        // 라벨이 '성벽' 처럼 그림과 다른 이름이면 앵커(그림 좌표)와 어긋나 보인다.
+        // type → 그 앵커가 가리키는 그림 건물의 이름을 한 표로 고정한다.
+        const EXPECTED: ReadonlyArray<readonly [string, string]> = [
+            ['GOVERNMENT', '관청'], ['BARRACKS', '병영'], ['MARKET', '시장'],
+            ['FARM', '농장'], ['WORKSHOP', '공방'], ['WALL', '성문'],
+            ['PALACE', '궁전'], ['ACADEMY', '태학'], ['BLACKSMITH', '대장간'],
+            ['SEOUN', '서원'], ['TRADING_HOUSE', '교역소'], ['STABLE', '마구간'],
+        ];
+        const byType = new Map(CITY_BUILDING_TYPES.map(t => [
+            t,
+            new City3DRenderer().generateCityLayout('city_1', 5, 'SPRING')
+                .find(b => b.type === t)?.label,
+        ]));
+        for (const [type, label] of EXPECTED) {
+            expect(byType.get(type), `${type} 라벨`).toBe(label);
+        }
     });
 
     it('앵커는 모두 화면 안에 있다', () => {
@@ -87,6 +341,101 @@ describe('라벨 앵커', () => {
     });
 });
 
+describe('clampAnchorToCover — 잘린 그림의 배지가 엉뚱한 건물을 가리키지 않게 한다', () => {
+    // [2026-10-03] 실측으로 발견한 재현.
+    // 900x1200 창에서 cover 는 그림을 가운데 483.5..1188.5px 로 자른다. 병영(370)은
+    // 그 왼쪽이라 화면에 없다. 그런데 clampToStage 는 그것을 2%(≈497.6px)로 당겨
+    // **다른 건물 위**를 가리켰다. 이 테스트는 그 숫자를 그대로 고정한다.
+    it('잘린 앵커를 크롭 경계에 붙인다 — 엉뚱한 건물 위가 아니라', () => {
+        const croppedLeft = mapAnchorToStage({ x: 370 / ART_PX_W * 100, y: 590 / ART_PX_H * 100 },
+            ART_PX_W, ART_PX_H, 900, 1200);
+        expect(croppedLeft.x, '병영이 잘리지 않았다 — 전제 자체가 바뀌었다').toBeLessThan(0);
+        const fixed = clampAnchorToCover(croppedLeft);
+        // 크롭 경계에서 ANCHOR_MARGIN(2.5%) 만큼 안쪽이다. 좌표계는 무대 % 다.
+        expect(fixed.x).toBeCloseTo(2.5, 6);
+        expect(fixed.y, 'y 는 밀리지 않는다').toBeCloseTo(croppedLeft.y, 6);
+    });
+
+    it('오른쪽으로 잘린 앵커도 오른쪽 경계에 붙는다', () => {
+        // 농지(1270) 는 900x1200 에서 오른쪽으로 잘린다.
+        const cropped = mapAnchorToStage({ x: 1270 / ART_PX_W * 100, y: 680 / ART_PX_H * 100 },
+            ART_PX_W, ART_PX_H, 900, 1200);
+        expect(cropped.x).toBeGreaterThan(100);
+        expect(clampAnchorToCover(cropped).x).toBeCloseTo(97.5, 6);
+    });
+
+    it('안 잘린 앵커는 한 치도 안 움직인다 — 16:9 창 회귀 없음', () => {
+        // 가로 창에서는 아무것도 잘리지 않는다. 이 경로를 건드리면 멀쩡한 배치가 깨진다.
+        for (const [type, anchor] of Object.entries(CITY_SCENE_ART_ANCHORS)) {
+            const onStage = mapAnchorToStage(anchor, ART_PX_W, ART_PX_H, 1600, 900);
+            expect(clampAnchorToCover(onStage), `${type} 이 움직였다`).toEqual(onStage);
+        }
+    });
+
+    it('두 경계 밖을 동시에 벗어나면 더 먼 쪽으로 가지 않는다 — 한 창에서 한 점만 나온다', () => {
+        // 극단 창에서 앵커 하나가 좌우로 다 튀어나올 수 없어 방향 판정이 항상 하나로 끝난다.
+        const fixed = clampAnchorToCover({ x: -500, y: 50 });
+        expect(fixed.x).toBeGreaterThanOrEqual(0);
+        expect(fixed.x).toBeLessThanOrEqual(100);
+        expect(clampAnchorToCover({ x: 500, y: 50 }).x).toBeCloseTo(97.5, 6);
+    });
+
+    it('y 만 튀어나온 경우에도 x 를 건드리지 않는다', () => {
+        // 세로 창에서 위아래가 잘리면 y 가 범위를 벗어나는데, x 는 멀쩡하다.
+        // 이때 x 를 경계로 당기면 멀쩡한 좌우 위치가 망가진다.
+        const tall = { x: 50, y: 130 };
+        const fixed = clampAnchorToCover(tall);
+        expect(fixed.x).toBe(50);
+        expect(fixed.y, 'y 는 그대로 둔다 — 세로 크롭은 이 함수 몫이 아니다').toBe(130);
+    });
+
+    it('입력이 이미 화면 안이면 원본과 동일한 객체를 돌려준다 (재계산 비용·참조 보존)', () => {
+        const anchor = { x: 50, y: 40 };
+        expect(clampAnchorToCover(anchor)).toBe(anchor);
+    });
+
+    // [2026-10-03 되돌린 시도] "배지 반폭을 크롭 마진에 더해 배지를 화면 안에 넣자" 는 안 된다.
+    //   배지를 안쪽으로 밀면 그림이 실제로 그만큼 잘렸는데도 배지가 보이는 쪽에 서서
+    //   그 자리의 다른 건물을 가리킨다. 실측 768x1024 창 교역소: 크롭 경계 1162.6,
+    //   밀고 나서 실측 1143.4 = 19px 안쪽 → E2E 의 "경계 45px 이내면 정상" 계약이 깨진다.
+    //   배지 반쪽이 잘리는 것은 "이 창에서는 저쪽 편" 이라는 대가로 치러는 편이 낫다.
+    //   아래는 그 계약이 지켜진다는 것을 고정한다.
+    it('잘린 배지는 크롭 경계에 붙는다 — 다른 건물을 가리키지 않는다', () => {
+        // 오른쪽으로 잘린 앵커는 오른쪽 경계(97.5%)에, 왼쪽은 왼쪽 경계(2.5%)에 붙는다.
+        expect(clampAnchorToCover({ x: 130, y: 50 }).x).toBeCloseTo(97.5, 6);
+        expect(clampAnchorToCover({ x: -30, y: 50 }).x).toBeCloseTo(2.5, 6);
+        // 배지 폭만큼 안쪽으로 밀지 않는다 — 밀면 크롭 경계 뒤의 다른 건물 위가 된다.
+        expect(clampAnchorToCover({ x: 130, y: 50 }).x).toBeGreaterThan(90);
+    });
+});
+
+describe('배지 배선 순서 — 커롭 보정이 HUD 회피보다 먼저다', () => {
+    it('main.ts 가 clampAnchorToCover 를 실제로 호출한다 (죽은 코드 방지)', () => {
+        const src = readFileSync(resolve(REPO_ROOT, 'src', 'main.ts'), 'utf8');
+        expect(src).toMatch(/import \{[^}]*clampAnchorToCover[^}]*\} from '\.\/core\/city_scene_art\.js'/);
+        const body = src.slice(src.indexOf('function applyCitySceneBadgePositions'));
+        expect(body, 'applyCitySceneBadgePositions 를 찾지 못했다').toBeTruthy();
+        const coverAt = body.indexOf('clampAnchorToCover');
+        const hudAt = body.indexOf('resolveVisibleAnchor');
+        expect(coverAt, 'clampAnchorToCover 가 없다').toBeGreaterThan(-1);
+        expect(hudAt, 'resolveVisibleAnchor 가 없다').toBeGreaterThan(-1);
+        expect(coverAt, 'HUD 회피가 커롭 보정보다 먼저다 — 순서를 뒤집으면 배지가 엉뚱한 건물 위를 가리킨다')
+            .toBeLessThan(hudAt);
+    });
+
+    it('크롭 보정에는 배지 반폭을 섞지 않는다 — 잘린 배지는 경계에 붙어야 한다', () => {
+        // [2026-10-03 되돌린 시도] 배지 반폭을 크롭 마진에 더하면 배지가 안쪽으로 밀려
+        // 그림이 실제로 그만큼 잘렸는데도 보이는 쪽에 서서 다른 건물을 가리킨다
+        // (768x1024 교역소: 경계 1162.6 → 실측 1143.4). E2E 의 경계 45px 계약도 깨진다.
+        const src = readFileSync(resolve(REPO_ROOT, 'src', 'main.ts'), 'utf8');
+        const body = src.slice(src.indexOf('function applyCitySceneBadgePositions'));
+        expect(body, 'clampAnchorToCover 에 두 번째 인자를 넘긴다 — 경계 계약을 깨뜨린다')
+            .toMatch(/clampAnchorToCover\(\s*\w+\s*\)/);
+        expect(body, 'separateOverlaps 뒤에 배지를 다시 안쪽으로 당긴다 — 같은 이유로 되돌린다')
+            .not.toMatch(/Math\.max\(\s*halfW\s*,\s*Math\.min\(\s*100\s*-\s*halfW/);
+    });
+});
+
 describe('resolveVisibleAnchor — HUD 가 앵커를 덮지 못하게 한다', () => {
     // 실측값. 1440x900 창에서 우측 통제 열(360px 고정)이 그림의 74.2% 지점부터 시작한다.
     // 1001px 창에선 62.8% 부터라, 이 값을 상수로 박아두면 좁은 창에서 반드시 죽는다.
@@ -104,7 +453,7 @@ describe('resolveVisibleAnchor — HUD 가 앵커를 덮지 못하게 한다', (
         // 성벽(75)·자택(90) 은 원래 우측 통제 열 아래에 있어 눌리지 않았다.
         for (const start of [62.8, 74.2, 80.6]) {
             const insets = rightColumn(start);
-            for (const type of ['WALL', 'HOUSE'] as const) {
+            for (const type of ['WALL', 'STABLE'] as const) {
                 const resolved = resolveVisibleAnchor(CITY_SCENE_ART_ANCHORS[type], insets);
                 expect(resolved.x, `${type} 이 ${start}% 통제 열 아래에 남았다`)
                     .toBeLessThanOrEqual(start);

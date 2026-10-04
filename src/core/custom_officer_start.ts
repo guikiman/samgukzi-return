@@ -10,7 +10,7 @@
  */
 
 import { OfficerBuilder } from './officer_factory.js';
-import { buildWorld } from './scenario_system.js';
+import { buildWorld, CITY_MAX_DEFENSE } from './scenario_system.js';
 import type { BuiltWorld, ScenarioData } from './scenario_system.js';
 import type { City, Faction, Officer, OfficerStats } from './types.js';
 import { OfficerStatus } from './types.js';
@@ -133,7 +133,7 @@ export function buildCustomOfficerWorld(scenario: ScenarioData, input: CustomOff
         mapIconType: 'CAPITAL',
         population: 18000,
         defense: 30,
-        maxDefense: 100,
+        maxDefense: CITY_MAX_DEFENSE,
         goldIncome: 60,
         foodIncome: 180,
         funds: 300,
@@ -181,6 +181,8 @@ export function buildCustomOfficerWorld(scenario: ScenarioData, input: CustomOff
         startMonth: base.startMonth,
         // 신규 장수는 기존 인맥에 없다. 빈 배열이 정상이므로 그대로 둔다.
         relationships: base.relationships,
+        // 요충지는 신규 무장과 무관하므로 기본 월드 값을 그대로 넘긴다.
+        mapFeatures: base.mapFeatures,
     };
 }
 

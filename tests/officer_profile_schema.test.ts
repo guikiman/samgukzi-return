@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     OFFICER_PROFILES,
     OFFICER_RELATION_KINDS,
+    OfficerProfileRegistry,
     hasUsableBioText,
     validateOfficerProfileDataset,
     type OfficerProfileDataset,
@@ -147,8 +148,17 @@ describe('개성 · 전법 인덱스 (차별화 기반)', () => {
     });
 
     it('해결 불가 관계는 추정으로 채우지 않고 gap 으로 남긴다', () => {
+        // 번들 데이터셋에 gap 이 남아 있는지와 무관하게, 레지스트리는 데이터셋의 gap 목록을
+        // 그대로 보존해야 한다. 실제 데이터가 0건이 되어도 계약 자체는 성립한다.
         expect(OFFICER_PROFILES.relationGaps.length).toBeGreaterThan(0);
         expect(OFFICER_PROFILES.relationGaps).toEqual(DATASET.relationGaps);
+
+        // 대조군 — gap 이 있는 합성 데이터셋도 추정으로 메우지 않고 그대로 통과시킨다.
+        const withGap = cloneDataset();
+        withGap.relationGaps = ['off_0001.parents: 없는名字 미해석'];
+        const registry = new OfficerProfileRegistry(withGap);
+        expect(registry.relationGaps).toEqual(['off_0001.parents: 없는名字 미해석']);
+        expect(registry.get('off_0001')?.relations.parents).toEqual([]);
     });
 });
 

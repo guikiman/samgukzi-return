@@ -2,7 +2,9 @@
  * 중국 전도 도시 클릭 좌표 히트 테스트 (모듈 단위)
  */
 import { describe, it, expect } from 'vitest';
-import { ChinaMapRenderer, pointInPolygon } from '../src/core/china_map_renderer';
+import { ChinaMapRenderer, pointInPolygon, resolveCityLabels, buildRoadNetwork, distanceToSegment, cityIconScale, roadBendFactor, FEATURE_ICON_R, MIN_CASTLE_W, MAX_CASTLE_W, MAX_CASTLE_W_DRAWN, CASTLE_W_MIN, CASTLE_W_SPAN, CAPITAL_CASTLE_MUL } from '../src/core/china_map_renderer';
+import { relaxCityPlacement } from '../src/core/city_placement';
+import type { CityLabelInput, CityLabelSlot, LabelRect, RoadNode, RoadSegment } from '../src/core/china_map_renderer';
 import type { MapCityView } from '../src/core/china_map_renderer';
 import { CITY_IMAGE_ANCHORS, MAP_FEATURE_ANCHORS } from '../src/core/scenario_system';
 import mapCoords from '../assets/map-coordinates-4096.json';
@@ -30,6 +32,8 @@ function createMockCanvas(): HTMLCanvasElement {
             createLinearGradient: () => ({ addColorStop: () => {} }),
             createRadialGradient: () => ({ addColorStop: () => {} }),
             setLineDash: () => {},
+            save: () => {},
+            restore: () => {},
         }),
     } as unknown as HTMLCanvasElement;
     return canvas;
@@ -294,5 +298,857 @@ describe('ChinaMapRenderer', () => {
         const after = renderer.screenToNorm(900, 500);
         expect(after.x).toBeCloseTo(before.x, 1);
         expect(after.y).toBeCloseTo(before.y, 1);
+    });
+});
+
+// ============================================================
+// resolveCityLabels — 全国지도 라벨 겹침 완화
+// ============================================================
+
+const CITY_CANVAS = { width: 1920, height: 1920 } as const;
+
+/**
+ * 실제 지도 기하를 그대로 재현한다. china_map_renderer 의 normToPixel 경로:
+ * baseScale = max(w,h)*0.96*zoom, mapImageRect 는 그 정사각형을 캔버스 중앙에 둔다.
+ *
+ * 1920x1920(정사각형 창)를 쓴다. 실제 창 1920x859 에서는 지도 정사각형의 세로가
+ * -492~1351 로 대부분이 화면 밖이라 57개 중 일부만 그려진다 — 그러면 겹치는 도시쌍
+ * 대부분(한산/웅진, 사비/웅진, 무창/강하 등)이 아예 배제돼 테스트가 헛돌게 된다.
+ */
+function buildRealMapInputs(width = CITY_CANVAS.width, height = CITY_CANVAS.height, zoom = 1, badgeAllowed = false) {
+    const baseScale = Math.max(width, height) * 0.96 * zoom;
+    const rectX = width / 2 - baseScale / 2;
+    const rectY = height / 2 - baseScale / 2;
+    const list = (mapCoords as { cities: Array<{ id: string; name: string; x: number; y: number }> }).cities;
+    const nameFontPx = Math.max(5, 6 * zoom);
+    return list.map((c, i) => ({
+        id: c.id,
+        name: c.name,
+        garrisonText: '',
+        // map-coordinates-4096.json 은 4096 기준 픽셀이다. CITY_IMAGE_ANCHORS 와 대조해
+        // 확인했다 — 장안 2142.2/4096 = 0.5230 이 앵커표의 0.5230 과 같다.
+        px: rectX + (c.x / 4096) * baseScale,
+        py: rectY + (c.y / 4096) * baseScale,
+        iconW: 14 * zoom,
+        iconH: 9 * zoom,
+        priority: 5000 + i * 137,
+        nameW: c.name.length * nameFontPx,
+        mustPlace: false,
+        badgeAllowed,
+    }));
+}
+
+function realMapMetrics(zoom = 1) {
+    const nameFontPx = Math.max(5, 6 * zoom);
+    return {
+        nameFontPx,
+        nameGap: 7 * zoom,
+        badgeGap: 2 * zoom,
+        badgeFontPx: 9 * zoom,
+        badgeH: 12 * zoom,
+        nameH: nameFontPx * 1.05,
+        gap: Math.max(3, 3.5 * zoom),
+        leaderMin: 5 * zoom,
+    };
+}
+
+const overlaps = (a: LabelRect, b: LabelRect): boolean =>
+    a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+/** 배치된 슬롯들에서 겹치는 쌍의 수와 그 도시 id 목록 */
+function countCollisions(slots: Map<string, CityLabelSlot>): { n: number; pairs: string[][] } {
+    const entries = [...slots.entries()];
+    const pairs: string[][] = [];
+    for (let i = 0; i < entries.length; i++) {
+        for (let j = i + 1; j < entries.length; j++) {
+            if (overlaps(entries[i][1].rect, entries[j][1].rect)) pairs.push([entries[i][0], entries[j][0]]);
+        }
+    }
+    return { n: pairs.length, pairs };
+}
+
+describe('resolveCityLabels — 실제 57개 도시에서 겹침이 0이 된다', () => {
+    it('57개 도시 전부가 자리를 얻는다', () => {
+        const inputs = buildRealMapInputs();
+        const slots = resolveCityLabels(inputs, realMapMetrics(), CITY_CANVAS);
+        expect(inputs).toHaveLength(57);
+        expect(slots.size).toBe(57);
+    });
+
+    it('배치된 라벨끼리 하나도 겹치지 않는다', () => {
+        const inputs = buildRealMapInputs();
+        const slots = resolveCityLabels(inputs, realMapMetrics(), CITY_CANVAS);
+        const { n, pairs } = countCollisions(slots);
+        expect(n, `겹치는 라벨: ${JSON.stringify(pairs)}`).toBe(0);
+    });
+
+    it('배치 전에는 실제로 겹치고 있었다 — 이 테스트가 빈_tests 가 아니다', () => {
+        // 2026-09-30 글자 크기를 절반으로 줄인 뒤, 여유 창(1920x1920)에서는 겹침이 0 이
+        // 되어 이 검증이 무의미해진다. 그래서 "가장 좁은 창" 기준으로 되살린다.
+        // 아래 사각형은 resolveCityLabels 의 현 배치(badgeAllowed=false) 규격을 그대로 옮긴 것이라,
+        // 레이아웃을 하지 않은 원래 상태를 정직하게 재현한다.
+        const W = 800, H = 600, zoom = 0.6;
+        const m = realMapMetrics(zoom);
+        const bs = Math.max(W, H) * 0.96 * zoom;
+        const rx = W / 2 - bs / 2, ry = H / 2 - bs / 2;
+        const raw = (mapCoords as { cities: Array<{ id: string; name: string; x: number; y: number }> }).cities
+            .map(c => ({
+                x: rx + (c.x / 4096) * bs,
+                y: ry + (c.y / 4096) * bs,
+                w: c.name.length * m.nameFontPx,
+            }));
+        let before = 0;
+        for (let i = 0; i < raw.length; i++) {
+            for (let j = i + 1; j < raw.length; j++) {
+                const a = { x: raw[i].x - raw[i].w / 2, y: raw[i].y - 7 * zoom - m.nameGap - m.nameH, w: raw[i].w, h: m.nameGap + m.nameH };
+                const b = { x: raw[j].x - raw[j].w / 2, y: raw[j].y - 7 * zoom - m.nameGap - m.nameH, w: raw[j].w, h: m.nameGap + m.nameH };
+                if (overlaps(a, b)) before++;
+            }
+        }
+        expect(before, '배치 전 겹침이 0이면 이 테스트는 검증할 게 없다').toBeGreaterThan(0);
+    });
+
+    it('가장 좁은 창(800x600, 저줌)에서도 겹침 0 이고 필요한 만큼만 밀린다', () => {
+        // 여유 창에서는 글자 크기를 줄인 결과 밀림이 0 이 되었다.혼잡이 돌아오는 최악 조건에서
+        // 여전히 0 인지 확인해야 계단이 동작한다고 말할 수 있다.
+        const W = 800, H = 600, zoom = 0.6;
+        const inputs = buildRealMapInputs(W, H, zoom);
+        const slots = resolveCityLabels(inputs, realMapMetrics(zoom), { width: W, height: H });
+        const { n, pairs } = countCollisions(slots);
+        expect(n, `800x600 z=0.6 겹침: ${JSON.stringify(pairs)}`).toBe(0);
+        const moved = inputs.filter(c => slots.get(c.id)!.displaced).length;
+        expect(moved, '최악 조건에서도 밀림이 전혀 없다 — resolveCityLabels 가 작동하는지 의심된다').toBeGreaterThan(0);
+        expect(moved, '너무 많은 라벨이 밀렸다').toBeLessThan(inputs.length);
+    });
+
+    it('줌 0.6(최소) ~ 2.5(최대) 전 구간에서 겹침이 0이다', () => {
+        for (const zoom of [0.6, 1, 1.5, 2, 2.5]) {
+            const inputs = buildRealMapInputs(CITY_CANVAS.width, CITY_CANVAS.height, zoom);
+            const slots = resolveCityLabels(inputs, realMapMetrics(zoom), CITY_CANVAS);
+            const { n, pairs } = countCollisions(slots);
+            expect(n, `zoom ${zoom} 겹침: ${JSON.stringify(pairs)}`).toBe(0);
+        }
+    });
+
+    it('라벨 하나도 캔버스 밖으로 나가지 않는다', () => {
+        const slots = resolveCityLabels(buildRealMapInputs(), realMapMetrics(), CITY_CANVAS);
+        for (const [id, s] of slots) {
+            expect(s.rect.x, `${id} 왼쪽 이탈`).toBeGreaterThanOrEqual(0);
+            expect(s.rect.y, `${id} 위쪽 이탈`).toBeGreaterThanOrEqual(0);
+            expect(s.rect.x + s.rect.w, `${id} 오른쪽 이탈`).toBeLessThanOrEqual(CITY_CANVAS.width);
+            expect(s.rect.y + s.rect.h, `${id} 아래쪽 이탈`).toBeLessThanOrEqual(CITY_CANVAS.height);
+        }
+    });
+    it('아이콘 좌표는 절대 안 움직인다 — 입력 px/py 는 그대로다', () => {
+        const inputs = buildRealMapInputs();
+        const before = inputs.map(c => [c.px, c.py]);
+        resolveCityLabels(inputs, realMapMetrics(), CITY_CANVAS);
+        inputs.forEach((c, i) => {
+            expect([c.px, c.py]).toEqual(before[i]);
+        });
+    });
+});
+
+describe('resolveCityLabels — 실제 창 크기 전수', () => {
+    // 실제 창에서 관측한 크기들. 라벨 폭은 캔버스 크기에 무관하므로 넓을수록 여유롭고,
+    // 좁을수록 밀린다. 800x600 이 최악이다.
+    const SIZES = [[929, 831], [1440, 900], [1920, 1080], [2560, 1440], [800, 600]] as const;
+    const ZOOMS = [0.6, 1, 1.5, 2];
+
+    it('모든 창 크기 × 줌에서 겹침이 0이다', () => {
+        for (const [W, H] of SIZES) {
+            for (const zoom of ZOOMS) {
+                const m = realMapMetrics(zoom);
+                const bs = Math.max(W, H) * 0.96 * zoom;
+                const rx = W / 2 - bs / 2, ry = H / 2 - bs / 2;
+                const margin = 60 * zoom;
+                // production 과 동일하게 화면 밖 도시는 배치 대상에서 뺀다
+                const visible = buildRealMapInputs(W, H, zoom).filter(
+                    c => c.px >= -margin && c.px <= W + margin && c.py >= -margin && c.py <= H + margin,
+                );
+                const slots = resolveCityLabels(visible, m, { width: W, height: H });
+                const { n, pairs } = countCollisions(slots);
+                expect(n, `${W}x${H} zoom=${zoom} 겹침: ${JSON.stringify(pairs)}`).toBe(0);
+            }
+        }
+    });
+});
+
+describe('resolveCityLabels — degradation 순서', () => {
+    const metrics = realMapMetrics();
+    const mk = (id: string, px: number, py: number, mustPlace = false): CityLabelInput => ({
+        id, name: '가가', garrisonText: '9999', px, py,
+        iconW: 22, iconH: 14, priority: 100, nameW: 24, mustPlace, badgeAllowed: true,
+    });
+
+    it('병력 배지를 먼저 버리고 도시명은 끝까지 남긴다', () => {
+        // 6x6 격자에 2px 간격. 후보 9자리가 모두 막혀 배지를 버리는 도시가 생긴다.
+        const inputs = Array.from({ length: 20 }, (_, i) => mk('c' + i, 400 + (i % 6) * 2, 300 + Math.floor(i / 6) * 2));
+        const slots = resolveCityLabels(inputs, metrics, CITY_CANVAS);
+        const kept = [...slots.values()];
+        expect(kept.length, '어떤 도시도 배치를 얻지 못했다').toBeGreaterThan(0);
+        expect(kept.some(s => !s.showBadge), '밀집 구역에서 배지 희생이 발생해야 한다').toBe(true);
+        // 이름 좌표는 항상 유한하다 — 이름이 사라지거나 화면 밖으로 밀리진 않는다
+        expect(kept.every(s => Number.isFinite(s.nameX) && Number.isFinite(s.nameY))).toBe(true);
+    });
+
+    it('완전히 같은 점에 몰린 도시수는 후보 자리 수를 넘지 못한다', () => {
+        // 라벨 후보는 9개(현 배치 + 동서남북 + 대각 4 + ��고리)뿐이라 완전 중첩이면 자리가 모자란다.
+        // 정확한 개수는 좌표에 의존하므로 상한(=후보 수)만 잠근다.
+        const inputs = Array.from({ length: 40 }, (_, i) => mk('c' + i, 400, 300));
+        const slots = resolveCityLabels(inputs, metrics, CITY_CANVAS);
+        expect(slots.size).toBeLessThanOrEqual(9);
+        expect(slots.size).toBeGreaterThan(0);
+        expect(countCollisions(slots).n).toBe(0);
+    });
+
+    it('선택된 도시(mustPlace)는 다른 도시에 밀려도 반드시 남는다', () => {
+        const slots = resolveCityLabels(
+            [mk('low', 400, 300), mk('sel', 400, 300, true)],
+            metrics,
+            CITY_CANVAS,
+        );
+        expect(slots.has('sel')).toBe(true);
+    });
+
+    it('자리가 전혀 없어도 이름은 유한 좌표에 그린다 (화면 밖으로 안 사라진다)', () => {
+        const slot = resolveCityLabels([mk('x', 1, 1, true)], metrics, CITY_CANVAS).get('x')!;
+        expect(Number.isFinite(slot.nameX)).toBe(true);
+        expect(Number.isFinite(slot.nameY)).toBe(true);
+    });
+});
+
+describe('resolveCityLabels — badgeAllowed 정책 게이트', () => {
+    const metrics = realMapMetrics();
+    const one = (badgeAllowed: boolean, over: Partial<CityLabelInput> = {}): CityLabelInput => ({
+        id: 'a', name: '장안', garrisonText: '8325', px: 900, py: 900,
+        iconW: 22, iconH: 14, priority: 100, nameW: 36, mustPlace: false, badgeAllowed,
+        ...over,
+    });
+
+    it('badgeAllowed=false 면 공간이 넉넉해도 배지를 그리지 않는다', () => {
+        const slot = resolveCityLabels([one(false)], metrics, CITY_CANVAS).get('a')!;
+        expect(slot.showBadge).toBe(false);
+        expect(Number.isFinite(slot.nameX)).toBe(true);
+    });
+
+    it('badgeAllowed=true 면 배지를 그린다', () => {
+        expect(resolveCityLabels([one(true)], metrics, CITY_CANVAS).get('a')!.showBadge).toBe(true);
+    });
+
+    it('정책은 공간 규칙을 덮어쓴다 — 공간이 있어도 badgeAllowed=false 면 숨김', () => {
+        // 두 도시를 완전히 떨어뜨려 어느 후보든 통과하는 상황
+        const a = resolveCityLabels([one(false, { px: 300, py: 300 })], metrics, CITY_CANVAS).get('a')!;
+        const b = resolveCityLabels([one(true, { px: 1400, py: 1400 })], metrics, CITY_CANVAS).get('a')!;
+        expect(a.showBadge).toBe(false);
+        expect(b.showBadge).toBe(true);
+    });
+
+    it('실제 지도 57개 — 정책으로 막으면 배지 0개, 도시명은 57개 유지', () => {
+        const slots = resolveCityLabels(
+            buildRealMapInputs(CITY_CANVAS.width, CITY_CANVAS.height, 1, false),
+            realMapMetrics(1),
+            CITY_CANVAS,
+        );
+        expect(slots.size).toBe(57);
+        expect([...slots.values()].filter(s => s.showBadge).length).toBe(0);
+    });
+});
+
+describe('resolveCityLabels — 결정성', () => {
+    it('같은 입력은 언제나 같은 결과를 낸다', () => {
+        const a = resolveCityLabels(buildRealMapInputs(), realMapMetrics(), CITY_CANVAS);
+        const b = resolveCityLabels(buildRealMapInputs(), realMapMetrics(), CITY_CANVAS);
+        for (const [id, s] of a) {
+            const t = b.get(id)!;
+            expect([s.nameX, s.nameY, s.badgeX, s.badgeY, s.displaced, s.showBadge])
+                .toEqual([t.nameX, t.nameY, t.badgeX, t.badgeY, t.displaced, t.showBadge]);
+        }
+    });
+
+    it('입력 배열을 바꾸지 않는다 (정렬은 복사본에서 한다)', () => {
+        const inputs = buildRealMapInputs();
+        const names = inputs.map(c => c.id);
+        resolveCityLabels(inputs, realMapMetrics(), CITY_CANVAS);
+        expect(inputs.map(c => c.id)).toEqual(names);
+    });
+});
+
+// ============================================================
+// distanceToSegment — 선분 최단거리
+// ============================================================
+
+describe('distanceToSegment — 선분 최단거리', () => {
+    it('수직선분 위의 점은 0', () => {
+        expect(distanceToSegment(0.5, 0.5, 0.2, 0.5, 0.8, 0.5)).toBeCloseTo(0, 9);
+    });
+
+    it('대각선분 위의 점', () => {
+        expect(distanceToSegment(0.5, 0.5, 0, 0, 1, 1)).toBeCloseTo(0, 9);
+    });
+
+    it('끝점 바깥은 거리로 연장된다 (무한 직선이 아니다)', () => {
+        // 양 끝을 잠그지 않으면 0 으로 나오거나 음수가 된다
+        expect(distanceToSegment(-5, 0.5, 0, 0.5, 1, 0.5)).toBeCloseTo(5, 9);
+        expect(distanceToSegment(6, 0.5, 0, 0.5, 1, 0.5)).toBeCloseTo(5, 9);
+    });
+
+    it('수직 거리', () => {
+        expect(distanceToSegment(0, 1, 0, 0, 1, 0)).toBeCloseTo(1, 9);
+        expect(distanceToSegment(0.5, 1, 0, 0, 1, 0)).toBeCloseTo(1, 9);
+    });
+
+    it('길이 0 인 선분(점)은 점까지의 거리', () => {
+        expect(distanceToSegment(3, 4, 0, 0, 0, 0)).toBeCloseTo(5, 9);
+    });
+
+    it('끝점 순서를 바꿔도 같은 거리', () => {
+        const a = distanceToSegment(0.2, 0.9, 0.1, 0.1, 0.8, 0.3);
+        const b = distanceToSegment(0.2, 0.9, 0.8, 0.3, 0.1, 0.1);
+        expect(a).toBeCloseTo(b, 12);
+    });
+});
+
+// ============================================================
+// buildRoadNetwork — 세력별 최소 신장 트리
+// ============================================================
+
+describe('buildRoadNetwork — 세력별 MST', () => {
+    const node = (id: string, x: number, y: number, factionKey = 'f1', isPlayer = false): RoadNode => ({
+        id, x, y, factionKey,
+        color: factionKey === 'f1' ? '#2a5a8a' : '#b04a2a',
+        isPlayer,
+    });
+    const segLen = (s: RoadSegment) => Math.hypot(s.bx - s.ax, s.by - s.ay);
+
+    it('도시가 0개나 1개면 도로가 없다', () => {
+        expect(buildRoadNetwork([])).toEqual([]);
+        expect(buildRoadNetwork([node('a', 0.5, 0.5)])).toEqual([]);
+    });
+
+    it('세력당 정확히 N-1 개 도로가 생긴다', () => {
+        for (const n of [2, 3, 5, 8, 13]) {
+            const nodes = Array.from({ length: n }, (_, i) => node(`c${i}`, 0.3 + i * 0.03, 0.4 + (i % 3) * 0.05));
+            expect(buildRoadNetwork(nodes).length, `${n}개 도시`).toBe(n - 1);
+        }
+    });
+
+    it('세력별로 따로 센다 — 합계는 (도시수 - 세력수)', () => {
+        const nodes = [
+            node('a1', 0.30, 0.30, 'red'),
+            node('a2', 0.32, 0.31, 'red'),
+            node('b1', 0.31, 0.32, 'blue'),
+            node('b2', 0.33, 0.33, 'blue'),
+            node('c1', 0.70, 0.70, 'green'),
+        ];
+        const segs = buildRoadNetwork(nodes);
+        // red 1 + blue 1 + green 0
+        expect(segs.length).toBe(2);
+        const byFaction = new Map<string, number>();
+        for (const s of segs) byFaction.set(s.factionKey, (byFaction.get(s.factionKey) ?? 0) + 1);
+        expect([...byFaction.values()].sort()).toEqual([1, 1]);
+        expect(byFaction.has('green')).toBe(false);
+    });
+
+    it('세력 내 모든 도시가 하나로 연결된다 — 고립 도시가 없다', () => {
+        const nodes = Array.from({ length: 7 }, (_, i) => node(`c${i}`, 0.2 + i * 0.07, 0.3 + (i % 4) * 0.06));
+        const segs = buildRoadNetwork(nodes);
+        const adj = new Map<string, string[]>();
+        const link = (u: string, v: string) => {
+            if (!adj.has(u)) adj.set(u, []);
+            if (!adj.has(v)) adj.set(v, []);
+            adj.get(u)!.push(v);
+            adj.get(v)!.push(u);
+        };
+        for (const s of segs) {
+            const a = nodes.find(n => n.x === s.ax && n.y === s.ay)!;
+            const b = nodes.find(n => n.x === s.bx && n.y === s.by)!;
+            link(a.id, b.id);
+        }
+        const seen = new Set<string>(['c0']);
+        const stack = ['c0'];
+        while (stack.length) {
+            for (const nb of adj.get(stack.pop()!) ?? []) {
+                if (!seen.has(nb)) { seen.add(nb); stack.push(nb); }
+            }
+        }
+        const isolated = nodes.map(n => n.id).filter(i => !seen.has(i));
+        expect(isolated, `고립 도시: ${isolated.join(',')}`).toEqual([]);
+    });
+
+    it('사이클이 없다 — 같은 두 도시를 잇는 도로가 중복되지 않는다', () => {
+        const nodes = Array.from({ length: 6 }, (_, i) => node(`c${i}`, 0.25 + i * 0.08, 0.35 + (i % 3) * 0.07));
+        const segs = buildRoadNetwork(nodes);
+        expect(segs.length).toBe(5);
+        const keys = segs.map(s => [`${s.ax},${s.ay}`, `${s.bx},${s.by}`].sort().join('|'));
+        expect(new Set(keys).size, '중복 도로가 있다').toBe(keys.length);
+    });
+
+    it('일직선 배치는 인접 도시끼리만 잇고 총길이가 최소다', () => {
+        // "각 도시가 가장 가까운 이웃과 연결"이면 1-2, 2-3, 3-4 에 중복이 생긴다
+        const nodes = Array.from({ length: 4 }, (_, i) => node(`c${i}`, 0.3 + i * 0.1, 0.5));
+        const segs = buildRoadNetwork(nodes);
+        expect(segs.length).toBe(3);
+        const total = segs.reduce((n, s) => n + segLen(s), 0);
+        expect(total, 'MST 최소 길이가 아니다').toBeCloseTo(0.3, 6);
+    });
+
+    it('색과 isPlayer 가 세력에서 상속된다', () => {
+        const segs = buildRoadNetwork([node('a', 0.3, 0.3, 'f1', true), node('b', 0.4, 0.4, 'f1', true)]);
+        expect(segs).toHaveLength(1);
+        expect(segs[0].isPlayer).toBe(true);
+        expect(segs[0].color).toBe('#2a5a8a');
+        expect(segs[0].factionKey).toBe('f1');
+    });
+
+    it('입력 배열을 바꾸지 않는다', () => {
+        const nodes = [node('a', 0.3, 0.3), node('b', 0.9, 0.9), node('c', 0.6, 0.1)];
+        const before = nodes.map(n => n.id);
+        buildRoadNetwork(nodes);
+        expect(nodes.map(n => n.id)).toEqual(before);
+    });
+
+    it('실제 57개 도시로도 도로가 세력당 N-1 개다', () => {
+        const cities = (mapCoords as { cities: Array<{ id: string; name: string; x: number; y: number }> }).cities;
+        const byColor = new Map<string, RoadNode[]>();
+        cities.forEach((c, i) => {
+            const key = `f${i % 5}`;
+            const n = node(c.id, c.x / 4096, c.y / 4096, key);
+            if (!byColor.has(key)) byColor.set(key, []);
+            byColor.get(key)!.push(n);
+        });
+        const nodes = [...byColor.values()].flat();
+        const segs = buildRoadNetwork(nodes);
+        let expected = 0;
+        for (const g of byColor.values()) expected += Math.max(0, g.length - 1);
+        expect(segs.length).toBe(expected);
+    });
+});
+
+// ============================================================
+// 영토 반경 + 도로 통로
+// ============================================================
+
+describe('영토 반경 — TERRITORY_RADIUS 상한', () => {
+    const city = (id: string, x: number, y: number): MapCityView => ({
+        id, name: id, x, y, ownerColor: '#2a5a8a', isPlayer: false, garrison: 1000,
+    });
+    const cellsOf = (r: ChinaMapRenderer) => r.getFactionLabels().reduce((n, f) => n + f.cells, 0);
+    const makeRenderer = (cities: MapCityView[]) => {
+        const r = new ChinaMapRenderer(createMockCanvas());
+        r.setCities(cities);
+        return r;
+    };
+
+    it('도시는 영토를 차지한다', () => {
+        expect(cellsOf(makeRenderer([city('a', 0.5, 0.5)]))).toBeGreaterThan(0);
+    });
+
+    it('영토 넓이는 도시 위치와 무관하다 — 무한 보로노이가 아니어야 한다', () => {
+        // 실제 지도 위의 도시로 비교한다. 임의의 모서리 좌표는 바다여서 영토가 0 이 된다.
+        // 중심(장안) 과 가장 바깥(서단 남중) — 반경이 걸려 있으면 둘 다 비슷한 원판이어야 한다.
+        const a = cellsOf(makeRenderer([city('a', 0.523, 0.409)]));   // 장안
+        const b = cellsOf(makeRenderer([city('a', 0.431, 0.684)]));   // 남중 — 도시 중 가장 서쪽
+        expect(a, '장안 영토가 없다').toBeGreaterThan(0);
+        expect(b, '남중 영토가 없다').toBeGreaterThan(0);
+        expect(Math.abs(a - b) / Math.max(a, b), `중심 ${a}셀 vs 바깥 ${b}셀 — 반경 없이 무한 확장`).toBeLessThan(0.6);
+    });
+
+    it('여러 도시를 주면 영토가 그 합에 비례해 늘어난다 (겹치지 않음)', () => {
+        const one = cellsOf(makeRenderer([city('a', 0.5, 0.5)]));
+        const two = cellsOf(makeRenderer([city('a', 0.5, 0.5), city('b', 0.52, 0.5)]));
+        expect(two).toBeGreaterThan(one);
+    });
+
+    it('아무 도시도 없으면 영토가 없다', () => {
+        expect(cellsOf(makeRenderer([]))).toBe(0);
+    });
+});
+
+describe('도로 통로 — 영토 연속성', () => {
+    const city = (id: string, x: number, y: number, color: string, isPlayer = false): MapCityView => ({
+        id, name: id, x, y, ownerColor: color, isPlayer, garrison: 5000,
+    });
+    const makeRenderer = (cities: MapCityView[]) => {
+        const r = new ChinaMapRenderer(createMockCanvas());
+        r.setCities(cities);
+        return r;
+    };
+    const totalCells = (r: ChinaMapRenderer) => r.getFactionLabels().reduce((n, f) => n + f.cells, 0);
+
+    it('멀리 떨어진 같은 세력 도시 — 도로가 잇는 만큼 영토가 늘어난다', () => {
+        // 두 도시 간격 0.20 은 도시 반경(0.05) 두 배가 넘으므로 도시끼리는 닿지 않는다
+        const a = makeRenderer([city('a', 0.40, 0.45, '#2a5a8a')]);
+        const b = makeRenderer([city('a', 0.40, 0.45, '#2a5a8a'), city('b', 0.60, 0.45, '#2a5a8a')]);
+        expect(totalCells(b)).toBeGreaterThan(totalCells(a));
+    });
+
+    it('서로 다른 세력끼리는 도로로 이어지지 않는다', () => {
+        const a = makeRenderer([city('a', 0.40, 0.45, '#2a5a8a')]);
+        const b = makeRenderer([city('a', 0.40, 0.45, '#2a5a8a'), city('b', 0.60, 0.45, '#b04a2a')]);
+        expect(totalCells(b)).toBeLessThan(totalCells(a) * 2);
+    });
+
+    it('영토는 언제나 도시 반경 + 도로 통로 밖으로 뻗지 않는다', () => {
+        const r = makeRenderer([city('a', 0.50, 0.50, '#2a5a8a'), city('b', 0.52, 0.50, '#2a5a8a')]);
+        // 도시 반경 원판 둘 = 약 2 * 40셀, 통로를 더해도 크게 넘지 않아야 한다
+        expect(totalCells(r)).toBeLessThan(400);
+    });
+});
+
+// ============================================================
+// 도성 아이콘 크기 — 인구 기반 정규화
+// ============================================================
+
+describe('cityIconScale — 인구 → 아이콘 배율', () => {
+    const sqrtOf = (p: number) => Math.sqrt(p);
+
+    it('최소 도시는 0.55 배 윗값, 최대 도시는 1.0 배', () => {
+        expect(cityIconScale(10, 10, 20)).toBeCloseTo(0.55, 9);
+        expect(cityIconScale(20, 10, 20)).toBeCloseTo(1, 9);
+    });
+
+    it('중간 인구는 중간 크기다 (선형 정규화)', () => {
+        expect(cityIconScale(15, 10, 20)).toBeCloseTo(0.775, 9);
+    });
+
+    it('오름차순으로 단조 증가한다 — 큰 도시가 더 크다', () => {
+        let prev = -Infinity;
+        for (let p = 10; p <= 20; p += 0.5) {
+            const k = cityIconScale(p, 10, 20, false);
+            expect(k, `인구 ${p} 에서 크기가 줄었다`).toBeGreaterThan(prev);
+            prev = k;
+        }
+    });
+
+    it('제곱근 정규화는 중간 인구를 상대적으로 크게 만든다 (면적 비례)', () => {
+        // 100~400 인구를 100/200/400 세 도시로 본다.
+        // sqrt(200)=14.14 → t=0.414, 선형이면 t=0.333 이다.
+        // 즉 sqrt 는 "중간 도시" 를 선형보다 크게 그린다 — 면적이 인구에 비례해야
+        // 눈으로 보이는 크기가 맞기 때문이다(큰 도시가 화면을 지배하지 않게).
+        //
+        // 참고: 최소/최대 도시의 끝값 비율(1.0/0.55)은 변환 방식과 무관하게 같다.
+        // sqrt 가 바꾸는 것은 끝이 아니라 "사이" 의 배분이다.
+        const kSqrt = cityIconScale(sqrtOf(200), sqrtOf(100), sqrtOf(400), false);
+        const kLinear = cityIconScale(200, 100, 400, false);   // 선형으로 정규화한 경우
+        expect(kSqrt).toBeGreaterThan(kLinear);
+        expect(kSqrt).toBeCloseTo(0.7364, 3);
+        expect(kLinear).toBeCloseTo(0.70, 9);
+    });
+
+    it('전 도시 인구가 같으면 span=0 — 전부 중간 크기다', () => {
+        // 0 으로 두면 전부 최소 크기가 되어 "도시가 하나뿐" 과 "전부 작은 도시" 가 구분되지 않는다
+        expect(cityIconScale(5, 5, 5, false)).toBeCloseTo(0.775, 9);
+    });
+
+    it('수도에는 0.18 보정 — 같은 인구여도 더 크다', () => {
+        const normal = cityIconScale(15, 10, 20, false);
+        const capital = cityIconScale(15, 10, 20, true);
+        expect(capital).toBeGreaterThan(normal);
+        expect(capital - normal).toBeCloseTo(0.18, 9);
+    });
+
+    it('1 을 넘지 않는다 (최대 도시 + 수도 보정)', () => {
+        expect(cityIconScale(20, 10, 20, true)).toBeLessThanOrEqual(1);
+    });
+
+    // ─── [2026-10-02] 수도 boost 클램프 증상 — 아래 테스트들이 함께 이 결함을 잠근다 ───
+    //
+    // 위 두 단언을 함께 읽으면 이 결함이 보인다: 수도 boost 0.18 은 Math.min(1, ...) 에서
+    // 잘린다. 인구가 최대인 도시(t=1)는 boost を 받든 안 받든 k 가 정확히 1.0 이므로,
+    // "수도" 와 "최대 인구 도시" 의 배율이 같아진다 — 코드가 의도한 것과 반대다.
+    // 그래서 확정적 수도 우위는 배율 밖(CAPITAL_CASTLE_MUL)에서 만든다.
+
+    it('증상: 최대 인구 도시에서는 수도 boost 이 클램프에 잘린다', () => {
+        // 이 단언이 참인 한, 도시IconScale 만으로는 수도 우위를 만들 수 없다는 뜻이다.
+        expect(cityIconScale(20, 10, 20, true)).toBe(cityIconScale(20, 10, 20, false));
+    });
+
+    it('수도 배율은 1 보다 커서 클램프에 잘리지 않는다', () => {
+        expect(CAPITAL_CASTLE_MUL).toBeGreaterThan(1);
+        expect(Number.isFinite(CAPITAL_CASTLE_MUL)).toBe(true);
+    });
+
+    it('수도 크기는 같은 인구의 비수도보다 항상 크다 (전 인구 구간)', () => {
+        // 실제 크기 식을 그대로 재현한다 — iconSizeRange 와 같은 계수.
+        const sizeOf = (k: number, capital: boolean) =>
+            (CASTLE_W_MIN + CASTLE_W_SPAN * k) * (capital ? CAPITAL_CASTLE_MUL : 1);
+        let min = Infinity;
+        let max = -Infinity;
+        for (let p = 10; p <= 20; p += 0.25) {
+            const kCap = cityIconScale(p, 10, 20, true);
+            const kNorm = cityIconScale(p, 10, 20, false);
+            expect(sizeOf(kCap, true), `인구 ${p}: 수도가 같은 인구 도시보다 크지 않다`)
+                .toBeGreaterThan(sizeOf(kNorm, false));
+            if (sizeOf(kCap, true) < min) min = sizeOf(kCap, true);
+            if (sizeOf(kNorm, false) > max) max = sizeOf(kNorm, false);
+        }
+        // 그리고 가장 작은 수도도 가장 큰 비수도보다 크다 — "인구 무관하게 항상 최대" 요구.
+        expect(min, '가장 작은 수도가 가장 큰 비수도보다 작거나 같다').toBeGreaterThan(max);
+    });
+
+    it('아이콘 크기가 도시 개수와 무관하게 70% 수준으로 줄었다', () => {
+        // 예전 값 w=(7+9k) → 최소 11.95 / 최대 16.0. 지금은 8.41 / 11.20 이다.
+        expect(MIN_CASTLE_W).toBeCloseTo(8.41, 9);
+        expect(MAX_CASTLE_W).toBeCloseTo(11.20, 9);
+        // 축소 비율: 최소 8.41/11.95 = 70.4%, 최대 11.20/16.0 = 70.0%
+        expect(MIN_CASTLE_W / (7 + 9 * 0.55)).toBeGreaterThanOrEqual(0.70);
+        expect(MAX_CASTLE_W / (7 + 9 * 1.0)).toBeGreaterThanOrEqual(0.70);
+        // 최소 아이콘은 여전히 최소 선 두께(0.55px)보다 넓어야 병풍벽 3개가 들어간다
+        expect(MIN_CASTLE_W * 0.22).toBeGreaterThan(0.55);
+    });
+
+    it('필요 도시 간격은 그려질 수 있는 최대 아이콘(수도 포함)을 따른다', () => {
+        // requiredCityGap 은 MAX_CASTLE_W_DRAWN 을 쓴다. 옛 리터럴(16.0) 을 쓰면
+        // 축소 뒤 수도끼리(13.22px)가 붙는다 — 간격은 최대 아이콘을 따라야 한다.
+        expect(MAX_CASTLE_W_DRAWN).toBeCloseTo(11.20 * 1.18, 9);
+        expect(MAX_CASTLE_W_DRAWN).toBeGreaterThan(MAX_CASTLE_W);
+    });
+
+    it('배율은 항상 0.55 이상이다 — 0 이 되지 않는다', () => {
+        for (const p of [0, 1, 10, 1e6]) {
+            expect(cityIconScale(p, 0, 1e6, false), `인구 ${p}`).toBeGreaterThanOrEqual(0.55);
+        }
+    });
+
+    it('음수 인구에도 NaN 이 없다 (데이터는 방어적으로 들어온다)', () => {
+        const k = cityIconScale(-5, -5, 5, false);
+        expect(Number.isFinite(k)).toBe(true);
+    });
+});
+
+// ============================================================
+// 도로 굴곡 — 결정성
+// ============================================================
+
+describe('roadBendFactor — 도로 곡률 계수', () => {
+    it('항상 -1..1 범위다', () => {
+        for (let i = 0; i < 300; i++) {
+            const f = roadBendFactor(i * 0.013, i * 0.027, i * 0.041, i * 0.059);
+            expect(f).toBeGreaterThanOrEqual(-1);
+            expect(f).toBeLessThanOrEqual(1);
+            expect(Number.isFinite(f)).toBe(true);
+        }
+    });
+
+    it('같은 끝점이면 항상 같은 값 — 프레임마다 떨리지 않는다', () => {
+        const a = roadBendFactor(0.42, 0.31, 0.55, 0.60);
+        for (let i = 0; i < 50; i++) {
+            expect(roadBendFactor(0.42, 0.31, 0.55, 0.60)).toBe(a);
+        }
+    });
+
+    it('입력 순서를 바꾸면 값이 달라진다 (무작위가 아니다)', () => {
+        const a = roadBendFactor(0.1, 0.2, 0.3, 0.4);
+        const b = roadBendFactor(0.3, 0.4, 0.1, 0.2);
+        expect(a).not.toBe(b);
+    });
+
+    it('분포가 한쪽으로 치우치지 않는다 (0 근처가 가장 많다)', () => {
+        let sign = 0;
+        for (let i = 0; i < 200; i++) {
+            if (roadBendFactor(i * 0.017, i * 0.031, i * 0.043, i * 0.067) > 0) sign++;
+        }
+        // 전부 한 부호면 해시가 제 기능을 못 한다
+        expect(sign).toBeGreaterThan(20);
+        expect(sign).toBeLessThan(180);
+    });
+
+    it('완전히 겹친 두 점(길이 0)도 유한값을 준다', () => {
+        const f = roadBendFactor(0.5, 0.5, 0.5, 0.5);
+        expect(Number.isFinite(f)).toBe(true);
+    });
+});
+
+// ============================================================
+// 전략 요충지 — 관·전장·항구
+// ============================================================
+
+describe('전략 요충지 아이콘 — 크기 제한', () => {
+    it('제일 작은 도성 크기의 반 이하다 (사용자 요구)', () => {
+        // 최소 도성 폭 = CASTLE_W_MIN + CASTLE_W_SPAN*0.55 = 5.0 + 3.41 = 8.41, 절반 = 4.205
+        // 요충지 폭 = FEATURE_ICON_R * 2 = 4.0
+        expect(FEATURE_ICON_R * 2).toBeLessThanOrEqual(MIN_CASTLE_W / 2);
+    });
+
+    it('도시보다 눈에 띄지 않는다 — 요충지가 도시보다 크면 안 된다', () => {
+        expect(FEATURE_ICON_R * 2).toBeLessThan(MIN_CASTLE_W);
+    });
+
+    it('확대해도 도시와 비례한다 (zoom 을 곱하므로 같이 커진다)', () => {
+        expect(FEATURE_ICON_R).toBeGreaterThan(0);
+        expect(Number.isFinite(FEATURE_ICON_R)).toBe(true);
+    });
+});
+
+describe('전략 요충지 데이터 — MAP_FEATURE_ANCHORS', () => {
+    const feats = Object.entries(MAP_FEATURE_ANCHORS);
+
+    it('요충지가 하나 이상 있다 (관·전장·항구)', () => {
+        expect(feats.length).toBeGreaterThan(0);
+    });
+
+    it('사용자가 지목한 관문이 포함되어 있다', () => {
+        const names = feats.map(([n]) => n);
+        expect(names).toContain('호로관');
+    });
+
+    it('종류는 PASS / BATTLEFIELD / PORT 뿐이다', () => {
+        for (const [, f] of feats) {
+            expect(['PASS', 'BATTLEFIELD', 'PORT']).toContain(f.kind);
+        }
+    });
+
+    it('모든 좌표가 지도 안(0~1)이다', () => {
+        for (const [name, f] of feats) {
+            expect(f.x, `${name} x`).toBeGreaterThanOrEqual(0);
+            expect(f.x, `${name} x`).toBeLessThanOrEqual(1);
+            expect(f.y, `${name} y`).toBeGreaterThanOrEqual(0);
+            expect(f.y, `${name} y`).toBeLessThanOrEqual(1);
+        }
+    });
+
+    it('좌표가 유한하다 (NaN 이면 화면에 아무것도 안 그려진다)', () => {
+        for (const [name, f] of feats) {
+            expect(Number.isFinite(f.x), `${name} x`).toBe(true);
+            expect(Number.isFinite(f.y), `${name} y`).toBe(true);
+        }
+    });
+});
+
+// ============================================================
+// 관·요충지 접도로 — 전략 요충지가 도로망에 닿아야 한다
+// ============================================================
+
+describe('관·요충지 접도로', () => {
+    const mkCity = (id: string, x: number, y: number): MapCityView => ({
+        id, name: id, x, y, imageX: x, imageY: y,
+        ownerColor: '#2a5a8a', isPlayer: false, garrison: 1000,
+    });
+
+    it('요충지 근처에 도시를 두면 접도로가 생긴다', () => {
+        const [name, f] = Object.entries(MAP_FEATURE_ANCHORS)[0];
+        // 요충지 바로 옆(0.01)에 도시를 둔다 — 접도로 거리 한도(0.12) 안이다
+        const r = new ChinaMapRenderer(createMockCanvas());
+        r.setCities([mkCity('near', f.x + 0.01, f.y + 0.01)]);
+        const spurs = r.getFeatureSpurs();
+        expect(spurs.length, '접도로가 하나도 안 생겼다').toBeGreaterThan(0);
+        expect(spurs.some(s => s.name === name), `${name} 접도로 없음`).toBe(true);
+    });
+
+    it('요충지와 세력은 다르다 — 그래서 무채색으로 그린다', () => {
+        // 접도로는 "지형 접근로" 이지 세력 영토가 아니다
+        const [name, f] = Object.entries(MAP_FEATURE_ANCHORS)[0];
+        const r = new ChinaMapRenderer(createMockCanvas());
+        r.setCities([mkCity('near', f.x + 0.01, f.y + 0.01)]);
+        const spur = r.getFeatureSpurs().find(s => s.name === name);
+        expect(spur).toBeDefined();
+        expect(spur!.kind).toBe(f.kind);
+    });
+
+    it('도시가 없으면 접도로도 없다', () => {
+        const r = new ChinaMapRenderer(createMockCanvas());
+        r.setCities([]);
+        expect(r.getFeatureSpurs()).toEqual([]);
+    });
+
+    it('모든 접도로는 거리 한도 이내다 (화면을 가로지르는 선 방지)', () => {
+        // 실제 31개 도시 — 도시가 바다에 두면 snapToLand 로 옮겨지므로, 도시를 직접
+        // 지ounded 좌표로 가정하지 않고 렌더러가 실제로 만든 접도로 길이를 잰다.
+        const cities = (mapCoords as { cities: Array<{ id: string; name: string; x: number; y: number }> }).cities;
+        const r = new ChinaMapRenderer(createMockCanvas());
+        r.setCities(cities.map(c => mkCity(c.name, c.x / 4096, c.y / 4096)));
+        for (const s of r.getFeatureSpurs()) {
+            expect(s.length, `${s.name} 접도로가 너무 길다`).toBeLessThanOrEqual(0.12);
+        }
+    });
+
+    it('실제 31개 도시로도 접도로가 다수 만들어진다', () => {
+        const cities = (mapCoords as { cities: Array<{ id: string; name: string; x: number; y: number }> }).cities;
+        const r = new ChinaMapRenderer(createMockCanvas());
+        r.setCities(cities.map(c => mkCity(c.name, c.x / 4096, c.y / 4096)));
+        const spurs = r.getFeatureSpurs();
+        expect(spurs.length, '어떤 요충지도 도시와 연결되지 않았다').toBeGreaterThan(0);
+        // 도시 31개 중 몇 개는 화면 밖이라 전부가 연결되지는 않는다 — 전부연결을 요구하지 않는다
+        expect(spurs.length).toBeLessThanOrEqual(Object.keys(MAP_FEATURE_ANCHORS).length);
+    });
+});
+
+// ============================================================
+// 도시 겹침 — 최소 간격이 창 크기에 따라 계산되는지
+// ============================================================
+
+describe('도시 최소 간격이 창 크기에 연동된다', () => {
+    const mkCity = (id: string, x: number, y: number): MapCityView => ({
+        id, name: id, x, y, imageX: x, imageY: y,
+        ownerColor: '#2a5a8a', isPlayer: false, garrison: 1000,
+    });
+
+    /**
+     * 실제 코드의 requiredCityGap 과 같은 식 — 테스트가 구현을 그대로 베끼지 않도록 검증용.
+     *
+     * [2026-10-02] 옛 식은 `MIN_CASTLE_W + 9 * 0.45` 로 최대 아이콘 폭(16.0px)을 하드코딩했는데,
+     * 축소 뒤 실제 최대는 수도 배율까지 포함한 MAX_CASTLE_W_DRAWN(13.22) 이다. 옛 값을 그대로
+     * 두면 "간격 ≥ 최대 아이콘" 이라는 이 테스트의 의도가 거짓말이 된다(간격이 과대 산정돼
+     * 통과가 보장되므로, 버그를 못 잡는 방향이다). production 상수를 그대로 참조한다.
+     */
+    const expectedGap = (maxWH: number, zoom: number): number =>
+        (MAX_CASTLE_W_DRAWN * zoom / (maxWH * 0.96 * zoom)) * 1.25;
+
+    const gapOf = (r: ChinaMapRenderer): number =>
+        (r as unknown as { requiredCityGap(): number }).requiredCityGap();
+
+    it('좁은 창일수록 필요한 정규화 간격이 크다', () => {
+        const small = new ChinaMapRenderer({ ...createMockCanvas(), width: 360, height: 520 } as HTMLCanvasElement);
+        const large = new ChinaMapRenderer({ ...createMockCanvas(), width: 1920, height: 1080 } as HTMLCanvasElement);
+        expect(gapOf(small), '좁은 창에서 간격이 더 커야 한다').toBeGreaterThan(gapOf(large));
+        expect(gapOf(small) / gapOf(large)).toBeCloseTo(1920 / 520, 2);
+    });
+
+    it('줌은 필요 간격에 영향을 주지 않는다 (아이콘과 지도 축척이 함께 커지므로)', () => {
+        const r = new ChinaMapRenderer(createMockCanvas());
+        const at1 = gapOf(r);
+        r.setView({ zoom: 2.5 });
+        expect(gapOf(r), '줌을 바꿔도 필요 간격은 같아야 한다').toBeCloseTo(at1, 10);
+    });
+
+    it('간격은 항상 최대 아이콘 픽셀폭 이상이다 (겹침의 직접 원인)', () => {
+        // baseScale = max(W,H)*0.96*zoom 이므로 "필요 간격 * baseScale" 가 곧 픽셀 간격이다.
+        for (const [w, h] of [[360, 520], [768, 1024], [1920, 1080], [2560, 1440]] as const) {
+            const zoom = 1;
+            const r = new ChinaMapRenderer({ ...createMockCanvas(), width: w, height: h } as HTMLCanvasElement);
+            const baseScale = Math.max(w, h) * 0.96 * zoom;
+            const px = gapOf(r) * baseScale;
+            expect(px, `${w}x${h} 에서 간격 ${px.toFixed(1)}px 는 아이콘보다 좁다`)
+                .toBeGreaterThanOrEqual(MAX_CASTLE_W_DRAWN);
+        }
+    });
+
+    it('실측 57도시: 좁은 창에서도 모든 도시 쌍이 아이콘 폭 이상 떨어진다', () => {
+        const cities = (mapCoords as { cities: Array<{ id: string; name: string; x: number; y: number }> }).cities
+            .map(c => ({ ...c, nx: c.x / 4096, ny: c.y / 4096 }));
+        // 좁은 창(사용자 캡처 360x520) + 해안 밀기 없음 — 순수 간격만 검증한다.
+        const r = new ChinaMapRenderer({ ...createMockCanvas(), width: 360, height: 520 } as HTMLCanvasElement);
+        const gap = gapOf(r);
+        const seeded = cities.map(c => ({ id: c.id, x: c.nx, y: c.ny }));
+        const out = relaxCityPlacement(seeded, { isLand: () => true, minGap: gap, maxMove: 0.045, coastBias: 0 });
+        for (let i = 0; i < cities.length; i++) {
+            for (let j = i + 1; j < cities.length; j++) {
+                const a = out.positions.get(cities[i].id)!;
+                const b = out.positions.get(cities[j].id)!;
+                const d = Math.hypot(a.x - b.x, a.y - b.y);
+                expect(d, `${cities[i].name}-${cities[j].name} 가 ${(d * 499).toFixed(1)}px 로 붙었다`)
+                    .toBeGreaterThanOrEqual(gap - 1e-3);
+            }
+        }
+    });
+
+    it('넓은 창에서는 도시를 거의 밀지 않는다 (실측 지형을 보존)', () => {
+        const cities = (mapCoords as { cities: Array<{ id: string; x: number; y: number }> }).cities
+            .map(c => ({ id: c.id, x: c.x / 4096, y: c.y / 4096 }));
+        const gap = expectedGap(1920, 1);
+        const out = relaxCityPlacement(cities, { isLand: () => true, minGap: gap, maxMove: 0.045, coastBias: 0 });
+        const maxMoved = Math.max(...[...out.moved.values()]);
+        expect(maxMoved, '1920px 창에서 0.01 넘게 밀리면 과하다').toBeLessThan(0.01);
     });
 });

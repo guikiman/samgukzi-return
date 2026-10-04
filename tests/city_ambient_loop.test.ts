@@ -166,8 +166,12 @@ describe('main.ts 배선', () => {
         // [결함] 출진 버튼 경로가 stopCityAmbient() 를 빠뜨려 0.5초 repaint 가
         // 세션 내내 흘렀다. 숨김 경로가 늘려나므로, 각 경로가 stop 과 짝을 이루는지
         // 코드로 확인해 다음 경로에서 같은 실수를 반복하지 않게 한다.
+        //
+        // 하한은 2026-09-30 에 2 → 1 로 내렸다. 출진 UI(出征 섹션)를 통째로 삭제하면서
+        // 숨김 경로 하나가 함께 없어졌기 때문이다. 짝 검증(아래 루프)이 본래 불변식이고
+        // 그건 그대로다 — 하한은 "숨김 경로가 남아 있는가" 만 재는 초침이다.
         const hideSites = [...MAIN_TS.matchAll(/cityDetailPanel\.style\.display = 'none';/g)];
-        expect(hideSites.length).toBeGreaterThanOrEqual(2);
+        expect(hideSites.length).toBeGreaterThanOrEqual(1);
         for (const site of hideSites) {
             expect(
                 hasStopCallBefore(site.index),
