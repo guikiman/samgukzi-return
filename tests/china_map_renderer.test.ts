@@ -129,7 +129,10 @@ describe('ChinaMapRenderer', () => {
 
         // [2026-10-04] 턴이 지나면 지도 위 마커가 실제로 전진해야 한다.
         //   진행도가 멈춰 있으면 "이동 중" 인 화면만 보고 있을 뿐이다.
-        describe('progressForDays — 남은 일수를 거리 기준으로 환산', () => {
+        //   단위는 개월(1턴=1개월)이다 — `progressForDays` 는 이름만 남았고
+        //   인자도 남은 개월 수를 받는다. 개수를 모르면 언제나 아무것도 못 하므로
+        //   이름 변경은 표시 문자열과 주석에만 반영했다.
+        describe('progressForDays — 남은 개월 수를 거리 기준으로 환산', () => {
             const mk = (): ChinaMapRenderer => {
                 const r = new ChinaMapRenderer(createMockCanvas());
                 r.setCities([
@@ -142,31 +145,31 @@ describe('ChinaMapRenderer', () => {
 
             it('아직 출발 전이면 진행도 0', () => {
                 const r = mk();
-                const total = r.getTravelPlan().totalDays;
+                const total = r.getTravelPlan().totalMonths;
                 expect(r.progressForDays(total, total), '출발인데 출발점이다').toBeCloseTo(0, 5);
             });
 
             it('매 턴 진행도가 앞으로만 증가한다 (뒤로 가지 않는다)', () => {
                 const r = mk();
-                const total = r.getTravelPlan().totalDays;
+                const total = r.getTravelPlan().totalMonths;
                 expect(total).toBeGreaterThan(1);
                 let prev = -1;
                 for (let left = total; left >= 0; left--) {
                     const p = r.progressForDays(left, total);
-                    expect(p, `남은 ${left} 일에서 진행도가 뒤로 갔다`).toBeGreaterThanOrEqual(prev);
+                    expect(p, `남은 ${left} 개월에서 진행도가 뒤로 갔다`).toBeGreaterThanOrEqual(prev);
                     expect(p, '진행도가 0~1 밖이다').toBeLessThanOrEqual(1);
                     expect(p, '진행도가 음수다').toBeGreaterThanOrEqual(0);
                     prev = p;
                 }
             });
 
-            it('도착(0일)이면 진행도 1', () => {
+            it('도착(0개월)이면 진행도 1', () => {
                 const r = mk();
-                const total = r.getTravelPlan().totalDays;
+                const total = r.getTravelPlan().totalMonths;
                 expect(r.progressForDays(0, total)).toBeCloseTo(1, 5);
             });
 
-            it('총 일수가 0 이면 진행도 0 (나눗셈 없음)', () => {
+            it('총 개월 수가 0 이면 진행도 0 (나눗셈 없음)', () => {
                 const r = mk();
                 expect(r.progressForDays(3, 0)).toBe(0);
             });

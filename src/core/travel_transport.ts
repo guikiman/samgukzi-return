@@ -18,30 +18,57 @@ export type TransportMode = 'HORSE' | 'BOAT';
 /** 지형 판정 콜백 — 정규화 좌표(0~1) → 육지인가. */
 export type LandProbe = (x: number, y: number) => boolean;
 
-/** 한 구간의 소요 시간. */
+/** 한 구간의 소요 시간 — 게임 1턴 = 1개월 이므로 단위는 **개월** 이다. */
 export interface TravelLeg {
     mode: TransportMode;
     ax: number; ay: number;
     bx: number; by: number;
     /** 구간 거리 (정규화 좌표 단위) */
     distance: number;
-    /** 소요 시간 (일) */
-    days: number;
+    /** 소요 개월 수. 1턴 = 1개월 이므로 이 값이 곧 턴 수다. */
+    months: number;
 }
 
 /** 이동 전체 계획. */
 export interface TravelPlan {
     legs: TravelLeg[];
-    totalDays: number;
+    totalMonths: number;
     totalDistance: number;
     legCount: number;
 }
 
-/** 말의 정규화 좌표당 일일 이동 거리 — 밸런스 상수다. */
-export const HORSE_DAILY_DISTANCE = 0.085;
-/** 배는 말의 60% — 풍향·파도·항구에 정박하는 시간이 들어 육로보다 느리다. */
+/**
+ * 말의 **월당** 이동 거리 (정규화 좌표 단위). [2026-10-04 단위 통일]
+ *
+ * [왜 "일" 이 아니라 "월" 인가 — 이 상수가 존재하는 이유]
+ * 게임의 1턴은 **1개월** 이다.
+ *   game_store.advanceTime() { month += 1; ... }
+ * 즉 턴 경계가 곧 월 경계다. 그런데 이 모듈은 처음에 "일" 단위로 움직임을
+ * 계산했다. 결과가 어긋났다: `daysTotal: 5` 인 이동이 **턴을 5번** 눌러야
+ * 도착했다. "5일" 이 실제로는 5개월이었다.
+ *
+ * 더 나쁜 것은 속도 자체였다. 정규화 1.0 은 중국 전역 가로폭(67.8도 = 7526km)다.
+ * 말 0.085/일 은 **하루 640km, 한 달 19191km** 였다 — 삼국지에서 불가능하다.
+ * 말은 하루 40~60km 가 한계다.
+ *
+ * 그래서 0.2/월 로 다시 잡았다:
+ *   0.2 * 7526km = 1505km/월 = 하루 약 50km  ← 실제 말의 체력
+ * 배는 그 60% = 하루 30km. 풍향·파도·정박을 고려한 값이다.
+ *
+ * [이 값이 만드는 감각]
+ *   허창 -> 진류 (근거리, 2구간)  : 1개월
+ *   진류 -> 연주 (8구간, 해로 포함) : 5개월
+ *   하비 -> 업  (12구간, 해로 2회) : 11개월
+ *   중국 전역 횡단                : 5~6개월
+ * 먼 곳으로 갈수록 실제로 오래 걸린다. 턴제 전략 게임으로 읽힌다.
+ *
+ * 밸런스 조정이 필요하면 이 상수 두 개만 바꾸면 된다 — 계산 전체가 그 위에서
+ * 돌아간다.
+ */
+export const HORSE_MONTHLY_DISTANCE = 0.2;
+/** 배는 말의 60% — 풍향·파도·항구에 정박하는 시간이 든다. */
 export const BOAT_SPEED_RATIO = 0.6;
-export const BOAT_DAILY_DISTANCE = HORSE_DAILY_DISTANCE * BOAT_SPEED_RATIO;
+export const BOAT_MONTHLY_DISTANCE = HORSE_MONTHLY_DISTANCE * BOAT_SPEED_RATIO;
 
 /** 한 선분을 표본으로 쪼갤 때의 기준 밀도. */
 const LEG_SAMPLES = 24;
@@ -109,26 +136,26 @@ export function splitByTerrain(
 }
 
 /**
- * 분해된 구간들의 소요 시간을 계산한다.
+ * 분해된 구간들의 소요 개월 수를 계산한다.
  *
- * [최소 1일 규칙 — 왜, 그리고 그 부작용]
- * `Math.ceil` 로 올림하고 최소 1일을 준다. 0.2일짜리 구간을 0일로 내리면
- * "하루 만에 도착"이 되어 여행의 무게가 사라지고 도착 턴 계산이 어긋난다.
+ * 최소 1개월 규칙 — 왜, 그리고 그 부작용
+ *
+ * `Math.ceil` 로 올림하고 최소 1개월을 준다. 0.2개월짜리 구간을 0으로 내리면
+ * "바로 도착"이 되어 여행의 무게가 사라지고 도착 턴 계산이 어긋난다.
  *
  * 하지만 이 규칙을 **최소 거리 필터 없이** 적용하면 부풀림이 생긴다. 실측:
- * 말 0.0526 + 배 0.0012 + 배 0.0539 인 경로가 최소 1일씩 올라 1+1+2=4 일이
- * 된다. 도중 0.0012 짜리 해로 조각이 1일(= 말 24시간)을 먹은 것이다.
+ * 말 0.0526 + 배 0.0012 + 배 0.0539 인 경로가 최소 1개월씩 올라 1+1+2=4 이
+ * 된다. 도중 0.0012 짜리 해로 조각이 1개월(말 30일)을 먹은 것이다.
  *
  * 그래서 `MIN_LEG_DISTANCE` 보다 짧은 조각은 통째로 버린다. 해안선 근처에서
  * 표본 하나만 바다로 잡혀 생기는 0.001 짜리 조각이 전부 이것이다.
  *
- * [올림 규칙의 나머지 효과]
- * 최소 거리 필터를 통과한 구간도 최소 1일은 받는다. "당일 중 도착"이 되어
- * 시간은 턴 경계에서만 소모되므로 실감과 규칙이 맞는다.
+ * 최소 거리 필터를 통과한 구간도 최소 1개월은 받는다 — 그래야 턴 경계에서
+ * "한 달 만에 도착" 으로 읽힌다.
  */
 export const MIN_LEG_DISTANCE = 0.004;
 
-export function computeTravelDays(
+export function computeTravelMonths(
     legs: ReadonlyArray<{
         mode: TransportMode;
         ax: number; ay: number; bx: number; by: number;
@@ -139,17 +166,17 @@ export function computeTravelDays(
             const distance = Math.hypot(leg.bx - leg.ax, leg.by - leg.ay);
             return { ...leg, distance };
         })
-        // 최소 거리 미만의 조각은 버린다 — 최소 1일 규칙의 부풀림 원천 차단.
+        // 최소 거리 미만의 조각은 버린다 — 최소 1개월 규칙의 부풀림 원천 차단.
         .filter(leg => leg.distance >= MIN_LEG_DISTANCE)
         .map(leg => {
-            const daily = leg.mode === 'HORSE' ? HORSE_DAILY_DISTANCE : BOAT_DAILY_DISTANCE;
-            const days = Math.max(1, Math.ceil(leg.distance / daily));
-            return { ...leg, days };
+            const monthly = leg.mode === 'HORSE' ? HORSE_MONTHLY_DISTANCE : BOAT_MONTHLY_DISTANCE;
+            const months = Math.max(1, Math.ceil(leg.distance / monthly));
+            return { ...leg, months };
         });
 }
 
 /**
- * 이동 계획 — 구간 분해 + 시간 계산.
+ * 이동 계획 — 구간 분해 + 개월 수 계산.
  *
  * 3단계에서 군단이 실제로 이 계획을 따라 움직인다. 지금은 안내 문구와 경로 구간
  * 표시에만 쓴다.
@@ -158,10 +185,10 @@ export function planTravel(
     points: ReadonlyArray<{ x: number; y: number }>,
     isLand: LandProbe,
 ): TravelPlan {
-    const legs = computeTravelDays(splitByTerrain(points, isLand));
+    const legs = computeTravelMonths(splitByTerrain(points, isLand));
     return {
         legs,
-        totalDays: legs.reduce((s, l) => s + l.days, 0),
+        totalMonths: legs.reduce((s, l) => s + l.months, 0),
         totalDistance: legs.reduce((s, l) => s + l.distance, 0),
         legCount: legs.length,
     };
@@ -175,22 +202,22 @@ export function transportLabel(mode: TransportMode): string {
 /**
  * 이동 계획을 사람이 읽는 한 줄로.
  *
- * 예: "총 4일 — 육로(말) 2일 + 해로(배) 2일"
- * 구간이 하나면 단일 수송으로 표기한다("총 3일 — 해로(배)").
+ * 예: "총 4개월 — 육로(말) 2개월 + 해로(배) 2개월"
+ * 구간이 하나면 단일 수송으로 표기한다("총 3개월 — 해로(배)").
  */
 export function describeTravelPlan(plan: TravelPlan): string {
     if (plan.legCount === 0) return '이동 경로 없음';
-    if (plan.legs.length === 1) return `총 ${plan.totalDays}일 — ${transportLabel(plan.legs[0].mode)}`;
+    if (plan.legs.length === 1) return `총 ${plan.totalMonths}개월 — ${transportLabel(plan.legs[0].mode)}`;
     // 같은 수송 구간을 합쳐 한 줄로 만든다.
     const parts: string[] = [];
     let i = 0;
     while (i < plan.legs.length) {
         const mode = plan.legs[i].mode;
-        let days = 0;
+        let months = 0;
         let j = i;
-        while (j < plan.legs.length && plan.legs[j].mode === mode) { days += plan.legs[j].days; j++; }
-        parts.push(`${transportLabel(mode)} ${days}일`);
+        while (j < plan.legs.length && plan.legs[j].mode === mode) { months += plan.legs[j].months; j++; }
+        parts.push(`${transportLabel(mode)} ${months}개월`);
         i = j;
     }
-    return `총 ${plan.totalDays}일 — ${parts.join(' + ')}`;
+    return `총 ${plan.totalMonths}개월 — ${parts.join(' + ')}`;
 }

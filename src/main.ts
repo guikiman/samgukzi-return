@@ -1574,14 +1574,14 @@ function confirmTravelTo(dest: import('./core/types.js').City): void {
     chinaMap?.setTravelProgress(0);
 
     // [2026-10-04] 이동 시간을 계산한다. 육로는 말, 바다는 배 — 배가 더 느리다.
+    //   단위는 **개월** 이다. 게임 1턴 = 1개월 이므로 이 값이 곧 소요 턴 수다.
     const plan = chinaMap?.getTravelPlan() ?? null;
-    const days = plan?.totalDays ?? 0;
+    const months = plan?.totalMonths ?? 0;
     const how = plan ? describeTravelPlan(plan) : '이동 경로 없음';
     addLog(`${dest.name}(으)로 이동한다 — ${how}`);
 
-    // 1일 미만이면 턴을 쓰지 않고 즉시 도착한다. 부분일을 1일로 올려도 괜찮지만,
-    // 여기서는 "같은 도시 안에서의 이동"이 이 값에 걸릴 수 있어 0 을 먼저 거른다.
-    if (days <= 0) {
+    // 경로가 없거나 0 개월이면 턴을 쓰지 않고 즉시 도착한다.
+    if (months <= 0) {
         playTravelAnimation(originId, dest.id, () => {
             travelRoute = null;
             chinaMap?.clearTravelRoute();
@@ -1597,27 +1597,27 @@ function confirmTravelTo(dest: import('./core/types.js').City): void {
         activeTravel: {
             fromCityId: originId,
             toCityId: dest.id,
-            daysRemaining: days,
-            daysTotal: days,
+            monthsRemaining: months,
+            monthsTotal: months,
         },
     });
     travelReturnCityId = null; // 이동 중에는 원래 도시로 돌아가지 않는다
-    renderActiveTravelHint(dest, days);
+    renderActiveTravelHint(dest, months);
     // [2026-10-04] 턴을 기다리지 않고 계속 움직인다 — 실시간 이동 모습.
     startTravelLoop();
 }
 
 /**
- * 이동 중 안내 — "목적지까지 N일" 을 보여주고 취소를 제공한다.
+ * 이동 중 안내 — "목적지까지 N개월" 을 보여주고 취소를 제공한다.
  *
  * [왜 map 위가 아니라 지도 위 토스트인가]
  * 이동 중에는 도시 화면이 닫혀 있고 지도가 보인다. 진행 상태를 지도 위에 두는
  * 것이 사용자가 자연스럽게 보는 곳이다.
  */
-function renderActiveTravelHint(dest: import('./core/types.js').City, days: number): void {
+function renderActiveTravelHint(dest: import('./core/types.js').City, months: number): void {
     const hint = document.getElementById('travel-hint');
     if (!hint) return;
-    hint.innerHTML = `<span class="travel-hint-text">${dest.name}로 이동 중 — 남은 ${days}일</span>`
+    hint.innerHTML = `<span class="travel-hint-text">${dest.name}로 이동 중 — 남은 ${months}개월</span>`
         + '<button type="button" class="travel-hint-cancel">이동 중지</button>';
     hint.hidden = false;
     hint.querySelector('.travel-hint-cancel')?.addEventListener('click', cancelActiveTravel);
@@ -1638,32 +1638,36 @@ function cancelActiveTravel(): void {
 }
 
 /**
- * 턴 경계마다 이동 1일 경과 — 턴이 끝날 때마다 부른다.
+ * 턴 경계마다 이동 1개월 경과 — 턴이 끝날 때마다 부른다.
+ *
+ * [단위가 개월인 이유]
+ * 1턴 = 1개월 이므로 "1개월 경과" 와 "턴 1회" 는 같은 사건이다. 여기서 1 을 빼는
+ * 것이 곧 한 달을 보내는 것이다.
  *
  * [3단계로 이어지는 자리]
- * 지금은 "하루씩 줄이고 0 이 되면 도착" 만 한다. 군단(Army) 이 붙으면 여기에
+ * 지금은 "한 달씩 줄이고 0 이 되면 도착" 만 한다. 군단(Army) 이 붙으면 여기에
  * 행군 사건(식량 고갈·길목 교전·날씨 페널티)을 끼워 넣으면 된다. 지금 넣으면
  * Army 가 없는 상태에서 규칙이 죽으므로 넣지 않는다.
  *
  * @returns 도착했으면 목적지 도시 id, 아니면 null
  */
-export function advanceActiveTravelOneDay(): string | null {
+export function advanceActiveTravelOneTurn(): string | null {
     const store = engine?.['store'];
     const active = store?.getGlobalState().activeTravel;
     if (!store || !active) return null;
-    const left = active.daysRemaining - 1;
+    const left = active.monthsRemaining - 1;
     if (left > 0) {
         store.setGlobalState({
             ...store.getGlobalState(),
-            activeTravel: { ...active, daysRemaining: left },
+            activeTravel: { ...active, monthsRemaining: left },
         });
         const dest = store.getCity(active.toCityId);
         if (dest) renderActiveTravelHint(dest, left);
         // [2026-10-04] 지도 위에서 실제로 한 칸 앞으로 이동시킨다.
         //   진행도를 **날짜 비율**이 아니라 **경로 거리 비율**로 환산해야 한다.
-        //   말 구간과 배 구간의 하루 이동 거리가 다르므로, 날짜 비율을 그대로 쓰면
+        //   말 구간과 배 구간의 월 이동 거리가 다르므로, 개월 비율을 그대로 쓰면
         //   빠른 말 구간에서 마커가 지형을 뚫고 앞질러 나간다.
-        syncTravelProgressToDays(active.daysTotal, left);
+        syncTravelProgressToMonths(active.monthsTotal, left);
         return null;
     }
     // 도착 — 상태를 비우고 경로를 지운다.
@@ -1678,28 +1682,28 @@ export function advanceActiveTravelOneDay(): string | null {
 }
 
 /**
- * 남은 일수 → 지도 위 진행도(0~1).
+ * 남은 개월 수 → 지도 위 진행도(0~1).
  *
- * [왜 거리 비율로 환산하는가]
- * 이동 계획의 구간마다 소요 일수가 다르다(말은 빠르고 배는 느리다). 날짜 비율을
- * 그대로 진행도에 쓰면, 3일 걸리는 구간을 하루 만에 지나가 버린다 — 지형을 무시하고
- * 순간이동하는 것처럼 보인다. 그래서 **해당 날짜 지점에서 실제로 어디쯤인지** 를
+ * [왜 개월 비율이 아니라 거리 비율인가]
+ * 이동 계획의 구간마다 소요 개월 수가 다르다(말은 빠르고 배는 느리다). 개월 비율을
+ * 그대로 진행도에 쓰면, 3개월 걸리는 구간을 한 달 만에 지나가 버린다 — 지형을 무시하고
+ * 순간이동하는 것처럼 보인다. 그래서 **해당 개월 지점에서 실제로 어디쯤인지** 를
  * 거리로 환산해야 한다.
  *
  * 렌더러가 구간별 누적 거리를 갖고 있으므로 그쪽에서 계산한다. 여기서는 목표
  * 진행도만 넘긴다.
  *
- * @param daysTotal 총 소요 일수
- * @param daysLeft  남은 일수
+ * @param monthsTotal 총 소요 개월 수 (= 소요 턴 수)
+ * @param monthsLeft  남은 개월 수
  */
-function syncTravelProgressToDays(daysTotal: number, daysLeft: number): void {
-    if (daysTotal <= 0) return;
+function syncTravelProgressToMonths(monthsTotal: number, monthsLeft: number): void {
+    if (monthsTotal <= 0) return;
     // [2026-10-04] 실시간 루프가 떠 있는 동안은 루프가 그린다. 턴 경계에서만
     //   진행도를 정확히 되감을 뿐( re-align ), 그 사이에 애니메이션을 새로 띄우면
     //   루프와 부딪혀 두 애니메이션이 같은 값을 놓고 다툰다.
-    if (travelLoopHandle) { realignToTurnProgress(daysTotal, daysLeft); return; }
+    if (travelLoopHandle) { realignToTurnProgress(monthsTotal, monthsLeft); return; }
     // 루프가 없는 경우(감소 모드)만 부드러운 점프 애니메이션을 쓴다.
-    const target = chinaMap?.progressForDays(daysLeft, daysTotal) ?? 0;
+    const target = chinaMap?.progressForDays(monthsLeft, monthsTotal) ?? 0;
     animateTravelProgressTo(target);
 }
 
@@ -1825,12 +1829,12 @@ function stopTravelLoop(): void {
  *
  * [루프와 턴의 관계]
  * 루프는 화면을 예쁘게 만들기 위한 것이고 **진짜 상태는 아니다**. 턴이 넘어가면
- * `daysRemaining` 이 줄어들었으므로, 진행도를 그 값에 맞는 위치로 되돌려야
+ * `monthsRemaining` 이 줄어들었으므로, 진행도를 그 값에 맞는 위치로 되돌려야
  * "여기까지 왔다" 는 사실이 화면과 어긋나지 않는다. 되돌린 뒤 루프가 다시
  * 그 자리에서 계속 움직인다.
  */
-function realignToTurnProgress(daysTotal: number, daysLeft: number): void {
-    const target = chinaMap?.progressForDays(daysLeft, daysTotal) ?? 0;
+function realignToTurnProgress(monthsTotal: number, monthsLeft: number): void {
+    const target = chinaMap?.progressForDays(monthsLeft, monthsTotal) ?? 0;
     travelProgressCurrent = target;
     chinaMap?.setTravelProgress(target);
 }
@@ -5668,7 +5672,7 @@ btnNextMonth.addEventListener('click', async () => {
         // [2026-10-04] 진행 중인 이동 1일 경과. 도착하면 목적지 도시를 연다.
         //   턴이 한 달(한 기) 진행될 때 1일만 줄어든다는 점이 규칙의 핵심이다 —
         //   가까운 도시는 1~2개월, 먼 곳은 여러 달 걸린다.
-        const arrived = advanceActiveTravelOneDay();
+        const arrived = advanceActiveTravelOneTurn();
         if (arrived) enterCity(arrived);
     } catch (err) {
         addLog(`턴 진행 실패: ${err}`);

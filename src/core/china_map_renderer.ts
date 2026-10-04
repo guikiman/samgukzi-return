@@ -687,8 +687,10 @@ export class ChinaMapRenderer {
         /**
          * 지형별로 나눈 구간 — 말(육로) / 배(해로). 그릴 때 색을 다르게 한다.
          * setTravelRoute 가 계산해 넣는다.
+         *
+         * 소요 시간 단위는 **개월** 이다 — 게임 1턴 = 1개월 이므로 이 값이 곧 턴 수다.
          */
-        legs?: Array<{ mode: 'HORSE' | 'BOAT'; ax: number; ay: number; bx: number; by: number; distance: number; days: number }>;
+        legs?: Array<{ mode: 'HORSE' | 'BOAT'; ax: number; ay: number; bx: number; by: number; distance: number; months: number }>;
     } | null = null;
     private travelProgress = 0;
 
@@ -1579,7 +1581,7 @@ export class ChinaMapRenderer {
             // 구간 정보가 없으면 날짜 비율로 대체한다 — 선형 경로라 차이가 없다.
             return 1 - Math.max(0, Math.min(1, daysLeft / daysTotal));
         }
-        const totalDays = legs.reduce((s, l) => s + l.days, 0);
+        const totalDays = legs.reduce((s, l) => s + l.months, 0);
         if (totalDays <= 0) return 0;
         const totalDist = legs.reduce((s, l) => s + l.distance, 0);
         if (totalDist <= 0) return 0;
@@ -1590,9 +1592,9 @@ export class ChinaMapRenderer {
         let accDist = 0;
         for (const leg of legs) {
             if (elapsed <= accDays) break;
-            const take = Math.min(leg.days, elapsed - accDays);
-            accDist += leg.distance * (take / leg.days);
-            accDays += leg.days;
+            const take = Math.min(leg.months, elapsed - accDays);
+            accDist += leg.distance * (take / leg.months);
+            accDays += leg.months;
         }
         return Math.max(0, Math.min(1, accDist / totalDist));
     }
