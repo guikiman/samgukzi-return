@@ -2,7 +2,7 @@
  * 중국 전도 도시 클릭 좌표 히트 테스트 (모듈 단위)
  */
 import { describe, it, expect } from 'vitest';
-import { ChinaMapRenderer, pointInPolygon, resolveCityLabels, buildRoadNetwork, distanceToSegment, cityIconScale, roadBendFactor, FEATURE_ICON_R, MIN_CASTLE_W, MAX_CASTLE_W, MAX_CASTLE_W_DRAWN, CASTLE_W_MIN, CASTLE_W_SPAN, CAPITAL_CASTLE_MUL } from '../src/core/china_map_renderer';
+import { ChinaMapRenderer, pointInPolygon, resolveCityLabels, buildRoadNetwork, distanceToSegment, cityIconScale, cityIconSlot, roadBendFactor, FEATURE_ICON_R, MIN_CASTLE_W, MAX_CASTLE_W, MAX_CASTLE_W_DRAWN, CASTLE_W_MIN, CASTLE_W_SPAN, CAPITAL_CASTLE_MUL, CITY_ICON_SLOT, CITY_ICON_CELL_PX, CITY_ICON_CELL_COUNT, CITY_ICON_ATLAS_W, CITY_ICON_ATLAS_H, CITY_ICON_ATLAS_PATH, CITY_ICON_SPRITE_MIN_ZOOM } from '../src/core/china_map_renderer';
 import { relaxCityPlacement } from '../src/core/city_placement';
 import type { CityLabelInput, CityLabelSlot, LabelRect, RoadNode, RoadSegment } from '../src/core/china_map_renderer';
 import type { MapCityView } from '../src/core/china_map_renderer';
@@ -1027,23 +1027,31 @@ describe('cityIconScale — 인구 → 아이콘 배율', () => {
         }
         // 그리고 가장 작은 수도도 가장 큰 비수도보다 크다 — "인구 무관하게 항상 최대" 요구.
         expect(min, '가장 작은 수도가 가장 큰 비수도보다 작거나 같다').toBeGreaterThan(max);
+        // [2026-10-05] 여유가 0.25px 이상이어야 위계가 읽힌다 — 예전 구성은 0.04px(0.4%)라
+        // 반올림 하나로 뒤집힐 수 있었다. 지금은 13.32 - 13.0 = 0.32px(2.4%) 다.
+        expect(min - max, '수도 최소와 비도시 최대의 여유가 0.25px 미만이다')
+            .toBeGreaterThanOrEqual(0.25);
     });
 
-    it('아이콘 크기가 도시 개수와 무관하게 70% 수준으로 줄었다', () => {
-        // 예전 값 w=(7+9k) → 최소 11.95 / 최대 16.0. 지금은 8.41 / 11.20 이다.
+    it('[2026-10-05] 위계 강화 — 소도시는 유지하고 대도시 끝값만 키웠다', () => {
+        // 예전(2026-10-02 축소안 B): 최소 8.41 / 대도시 11.20 — 비율 1.33 이라 지도에서
+        // "큰 도시" 가 눈에 안 들어왔다. 최소는 그대로 두고 끝값만 13.0 으로 올렸다.
         expect(MIN_CASTLE_W).toBeCloseTo(8.41, 9);
-        expect(MAX_CASTLE_W).toBeCloseTo(11.20, 9);
-        // 축소 비율: 최소 8.41/11.95 = 70.4%, 최대 11.20/16.0 = 70.0%
-        expect(MIN_CASTLE_W / (7 + 9 * 0.55)).toBeGreaterThanOrEqual(0.70);
-        expect(MAX_CASTLE_W / (7 + 9 * 1.0)).toBeGreaterThanOrEqual(0.70);
+        expect(MAX_CASTLE_W).toBeCloseTo(13.0, 9);
+        // 이 변경의 목적: 대도시/소도시 비율이 1.5배 이상이어야 크기 차가 읽힌다.
+        expect(MAX_CASTLE_W / MIN_CASTLE_W).toBeGreaterThanOrEqual(1.5);
+        // 소도시를 더 줄이지 않은 이유 — "아이콘이 크다" 지적의 대상은 42~57개 전체였고,
+        // 최소 폭이 7.68px 아래로 내려가면 병풍벽이 1~2px 로 뭉개진다(2026-10-02 C 안 기각).
+        expect(MIN_CASTLE_W).toBeCloseTo(CASTLE_W_MIN + CASTLE_W_SPAN * 0.55, 9);
         // 최소 아이콘은 여전히 최소 선 두께(0.55px)보다 넓어야 병풍벽 3개가 들어간다
         expect(MIN_CASTLE_W * 0.22).toBeGreaterThan(0.55);
     });
 
     it('필요 도시 간격은 그려질 수 있는 최대 아이콘(수도 포함)을 따른다', () => {
-        // requiredCityGap 은 MAX_CASTLE_W_DRAWN 을 쓴다. 옛 리터럴(16.0) 을 쓰면
-        // 축소 뒤 수도끼리(13.22px)가 붙는다 — 간격은 최대 아이콘을 따라야 한다.
-        expect(MAX_CASTLE_W_DRAWN).toBeCloseTo(11.20 * 1.18, 9);
+        // requiredCityGap 은 MAX_CASTLE_W_DRAWN 을 쓴다. 위계 강화(2026-10-05)로
+        // 최대 아이콘이 13.22 → 16.90 이 됐고, 간격도 이 상수를 통해 같이 커진다.
+        expect(MAX_CASTLE_W_DRAWN).toBeCloseTo(MAX_CASTLE_W * CAPITAL_CASTLE_MUL, 9);
+        expect(MAX_CASTLE_W_DRAWN).toBeCloseTo(16.9, 9);
         expect(MAX_CASTLE_W_DRAWN).toBeGreaterThan(MAX_CASTLE_W);
     });
 
@@ -1056,6 +1064,203 @@ describe('cityIconScale — 인구 → 아이콘 배율', () => {
     it('음수 인구에도 NaN 이 없다 (데이터는 방어적으로 들어온다)', () => {
         const k = cityIconScale(-5, -5, 5, false);
         expect(Number.isFinite(k)).toBe(true);
+    });
+});
+
+// ============================================================
+// 하이브리드 도시 아이콘 — 벡터/스프라이트 전환 계약
+// ============================================================
+
+describe('cityIconSlot — 벡터/스프라이트가 공유하는 형태 판정', () => {
+    it('zoom 으로 나눈 pre-zoom 폭으로 3단 계층을 만든다', () => {
+        // MIN_CASTLE_W(8.41) 는 SMALL, 그 위는 MEDIUM, MAX_CASTLE_W(13.0) 는 LARGE.
+        expect(cityIconSlot(MIN_CASTLE_W, 1)).toBe('SMALL');
+        expect(cityIconSlot(9.5, 1)).toBe('MEDIUM');   // 경계값은 MEDIUM (>= 9.5)
+        expect(cityIconSlot(11.9, 1)).toBe('MEDIUM');
+        expect(cityIconSlot(MAX_CASTLE_W, 1)).toBe('LARGE'); // 경계값은 LARGE (>= 12)
+    });
+
+    it('수도만 CAPITAL 로 올라간다 — 형태 계층을 건너뛰지 않는다', () => {
+        // 수도는 CAPITAL_CASTLE_MUL 덕분에 항상 LARGE 이상이다. SMALL/MEDIUM 인데
+        // CAPITAL 이 나오면 벡터 스위치와 스프라이트 셀 선택이 어긋난다.
+        expect(cityIconSlot(MAX_CASTLE_W_DRAWN, 1, true)).toBe('CAPITAL');
+        expect(cityIconSlot(MAX_CASTLE_W_DRAWN, 1, false)).toBe('LARGE');
+        // 데이터가 깨져(baseW 가 SMALL) 수도여도 계층을 건너뛰지 않는다.
+        expect(cityIconSlot(MIN_CASTLE_W, 1, true)).toBe('SMALL');
+        expect(cityIconSlot(9.5, 1, true)).toBe('MEDIUM');
+    });
+
+    it('같은 도시의 판정은 zoom 과 무관하다 (pre-zoom 폭으로 환산하기 때문)', () => {
+        // zoom 2.5 에서 그려지는 13.0px 아이콘은 zoom 0.6 의 3.12px 와 같은 도시다.
+        // 판정이 zoom 에 의존하면 확대할 때 도시가 계층을 바꾸어 변형돼 보인다.
+        for (const baseW of [MIN_CASTLE_W, 10.0, MAX_CASTLE_W]) {
+            for (const zoom of [0.6, 1.0, 1.6, 2.5]) {
+                expect(cityIconSlot(baseW * zoom, zoom), `baseW=${baseW} zoom=${zoom}`)
+                    .toBe(cityIconSlot(baseW, 1));
+            }
+        }
+    });
+
+    it('zoom 0 근접에서도 폭발하지 않는다 (방어적 나눗셈)', () => {
+        // 렌더러가 쓰는 0.3 바닥과 같은 값 — 0 으로 나누면 Infinity 가 되어 계층이 SMALL 이 된다.
+        expect(cityIconSlot(13.0, 0)).toBe('LARGE');
+        expect(cityIconSlot(0, 0)).toBe('SMALL');
+    });
+
+    it('아틀라스 셀 인덱스가 4개 셀 안에 들어간다', () => {
+        // CITY_ICON_SLOT 은 스크립트(scripts/build_city_icon_atlas.mjs)의 SLOTS 순서와
+        // 1:1 이어야 한다. 어긋나면 SMALL 자리에 수도가 그려진다.
+        expect(Object.keys(CITY_ICON_SLOT)).toHaveLength(CITY_ICON_CELL_COUNT);
+        for (const [name, idx] of Object.entries(CITY_ICON_SLOT)) {
+            expect(Number.isInteger(idx), name).toBe(true);
+            expect(idx).toBeGreaterThanOrEqual(0);
+            expect(idx).toBeLessThan(CITY_ICON_CELL_COUNT);
+        }
+        // 스크립트가 0,1,2,3 순으로 아틀라스를 이어붙이므로 값도 그 순서여야 한다.
+        expect(CITY_ICON_SLOT.SMALL).toBe(0);
+        expect(CITY_ICON_SLOT.MEDIUM).toBe(1);
+        expect(CITY_ICON_SLOT.LARGE).toBe(2);
+        expect(CITY_ICON_SLOT.CAPITAL).toBe(3);
+    });
+
+    it('아틀라스 규격은 셀 × 4 = 512×128 이다 (스크립트와 공유)', () => {
+        expect(CITY_ICON_ATLAS_W).toBe(512);
+        expect(CITY_ICON_ATLAS_H).toBe(128);
+        expect(CITY_ICON_ATLAS_W).toBe(CITY_ICON_CELL_PX * CITY_ICON_CELL_COUNT);
+        expect(CITY_ICON_ATLAS_H).toBe(CITY_ICON_CELL_PX);
+    });
+});
+
+describe('CITY_ICON_SPRITE_MIN_ZOOM — 전환 zoom 계약', () => {
+    it('전환 지점에서 스프라이트가 살아 있을 만큼 크다 (13px 이상)', () => {
+        // 이 값보다 낮추면 스프라이트가 13px 근처에서 쓰인다 — 그 크기에서는 벡터의
+        // "세력색 실루엣 + 1px 테두리"가 배경 지도 위에서 명백히 더 읽힌다.
+        const smallestAtCutoff = MIN_CASTLE_W * CITY_ICON_SPRITE_MIN_ZOOM;
+        expect(smallestAtCutoff).toBeGreaterThanOrEqual(13);
+    });
+
+    it('전환 지점에서 수도는 아틀라스 원본(128px)을 과도하게 축소하지 않는다', () => {
+        // 수도는 전환 지점에서 27px — 원본 128px 의 21% 다. 브라우저 downscale 은
+        // 이 정도 배율에서 형태를 보존한다(2배 이상 축소부터 뭉개진다).
+        const capitalAtCutoff = MAX_CASTLE_W_DRAWN * CITY_ICON_SPRITE_MIN_ZOOM;
+        expect(capitalAtCutoff).toBeGreaterThan(20);
+        expect(CITY_ICON_CELL_PX / capitalAtCutoff).toBeLessThanOrEqual(6);
+    });
+
+    it('최대 zoom 에서도 확대 구간이 남아 있다 — 하이브리드 도입이 의미 있다', () => {
+        // 전환값이 2.5 에 붙으면 확대해도 스프라이트를 거의 못 보고 하이브리드가 무의미하다.
+        expect(CITY_ICON_SPRITE_MIN_ZOOM).toBeLessThan(2.0);
+        expect(CITY_ICON_SPRITE_MIN_ZOOM).toBeGreaterThan(1.0);
+    });
+
+    it('도시 간격 계약과 어긋나지 않는다 (최대 아이콘 16.9px 는 그대로)', () => {
+        // 스프라이트를 도입해도 아이콘 크기 자체는 바뀌지 않는다 — 같은 w/h 를
+        // 다른 방법으로 그릴 뿐이다. 따라서 간격/배치 계약 값은 손대지 않았다.
+        expect(MAX_CASTLE_W_DRAWN).toBeCloseTo(16.9, 9);
+    });
+});
+
+describe('도시 아이콘 아틀라스 자산 경로', () => {
+    it('경로는 assets/ 아래 — ip-gate(PROVENANCE allowlist) 관리 경로다', () => {
+        // assets/ 아래가 아니면 출처 대장 등록을 우회하게 되고, 그것은 게이트가
+        // 정확히 막으려는 상황이다. 경로를 바꾸려면 대장을 함께 고쳐야 한다.
+        expect(CITY_ICON_ATLAS_PATH.startsWith('assets/')).toBe(true);
+        expect(CITY_ICON_ATLAS_PATH).toMatch(/\.webp$/);
+    });
+});
+
+describe('하이브리드 디스패치 — 실제로 어느 경로로 그리는가', () => {
+    /**
+     * drawImage 호출을 기록하는 목 캔버스. 벡터는 drawImage 를 전혀 쓰지 않고
+     * (모든 도성이 path 로 그려진다) 스프라이트는 매 아이콘마다 한 번씩 쓴다 —
+     * 그래서 "drawImage 가 불렸나"만으로 경로가 갈린 것을 판별할 수 있다.
+     */
+    function createRecordingCanvas() {
+        const calls = { drawImage: 0, fill: 0, stroke: 0 };
+        const ctx = {
+            ...createMockCanvas().getContext('2d')!,
+            drawImage: () => { calls.drawImage++; },
+            fill: () => { calls.fill++; },
+            stroke: () => { calls.stroke++; },
+        } as unknown as CanvasRenderingContext2D;
+        return { calls, ctx };
+    }
+
+    const city = {
+        id: 'c1', name: '성도', x: 0.5, y: 0.5, imageX: 0.5, imageY: 0.5,
+        ownerColor: '#2a5a8a', isPlayer: false, garrison: 1000, population: 90000,
+    } as unknown as MapCityView;
+
+    /** private 필드를 테스트에서 직접 제어한다 — 흉격 외에 다른 수단이 없다. */
+    function poke<T>(obj: object, key: string, value: T): void {
+        (obj as unknown as Record<string, unknown>)[key] = value;
+    }
+
+    it('아틀라스가 없으면 확대 zoom 에서도 벡터로 그린다 (폴백)', () => {
+        // 오프라인 첫 실행·구버전 sw 캐시·경로 오기 전부 이 경로다.
+        // "확대했는데 도시 아이콘이 안 보인다" 는 최악의 회귀이므로 반드시 벡터로 내려와야 한다.
+        const r = new ChinaMapRenderer(createMockCanvas());
+        const { calls, ctx } = createRecordingCanvas();
+        poke(r, 'iconAtlas', null);
+        poke(r, 'zoom', 2.5);
+        (r as unknown as {
+            drawCastleIcon: (c: CanvasRenderingContext2D, city: MapCityView, px: number, py: number, size: { w: number; h: number }, active: boolean) => void;
+        }).drawCastleIcon(ctx, city, 100, 100, { w: 30, h: 20 }, false);
+
+        expect(calls.drawImage, '스프라이트를 그렸다 — 아틀라스 미로딩인데').toBe(0);
+        expect(calls.fill + calls.stroke, '벡터 경로를 안 탔다 — 아이콘이 안 보인다').toBeGreaterThan(0);
+    });
+
+    it('아틀라스를 시도했다가 벡터로 물러나는 경로도 안전하다', () => {
+        // node 환경에는 document 가 없어 tintedAtlasCell 이 곧바로 null 을 돌려준다.
+        // 즉 이 테스트는 "스프라이트 합성이 불가능한 환경에서 도시가 사라지지 않는다" 를 본다.
+        // document 가 있는 브라우저에서 tinted 가 성공하는지는 E2E/브라우저 확인 대상이다.
+        const r = new ChinaMapRenderer(createMockCanvas());
+        const { calls, ctx } = createRecordingCanvas();
+        poke(r, 'zoom', 2.5);
+        (r as unknown as {
+            drawCastleIcon: (c: CanvasRenderingContext2D, city: MapCityView, px: number, py: number, size: { w: number; h: number }, active: boolean) => void;
+        }).drawCastleIcon(ctx, city, 100, 100, { w: 30, h: 20 }, false);
+
+        // iconAtlas 가 비었으면 벡터 — 이 환경에선 항상 이 결과다(폴백 계약).
+        expect(calls.fill + calls.stroke).toBeGreaterThan(0);
+    });
+
+    it('축소 zoom 에서는 아틀라스가 있어도 벡터로 그린다 (하이브리드의 정의)', () => {
+        // 전환값 1.6 아래면 스프라이트를 쓰지 않는다. 이것이 없으면 "하이브리드"가 아니라
+        // "스프라이트로 대체"가 되어 8~17px 구간이 전부 뭉개진다.
+        const r = new ChinaMapRenderer(createMockCanvas());
+        const { calls, ctx } = createRecordingCanvas();
+        poke(r, 'zoom', CITY_ICON_SPRITE_MIN_ZOOM - 0.01);
+        // 아틀라스를 "있는 척" 심어도(자연폭 0 = 미완성) 스프라이트를 쓰면 안 된다.
+        poke(r, 'iconAtlas', { naturalWidth: 0, naturalHeight: 0 } as HTMLImageElement);
+        (r as unknown as {
+            drawCastleIcon: (c: CanvasRenderingContext2D, city: MapCityView, px: number, py: number, size: { w: number; h: number }, active: boolean) => void;
+        }).drawCastleIcon(ctx, city, 100, 100, { w: 30, h: 20 }, false);
+
+        expect(calls.drawImage, '전환 zoom 아래에서 스프라이트를 썼다').toBe(0);
+        expect(calls.fill + calls.stroke).toBeGreaterThan(0);
+    });
+
+    it('수도도 벡터 폴백에서 깃발까지 그린다 (drawGrandCastleIcon 경로)', () => {
+        // CAPITAL 이 벡터 스위치에서 LARGE 와 같은 함수로 가는 것이 그 대가라고
+        // 주석에 적었다. 실제로 iconType 이 전달되어야 깃발이 그려진다.
+        const r = new ChinaMapRenderer(createMockCanvas());
+        const { calls, ctx } = createRecordingCanvas();
+        poke(r, 'iconAtlas', null);
+        poke(r, 'zoom', 1.0);
+        const capital = { ...city, iconType: 'CAPITAL' } as unknown as MapCityView;
+        (r as unknown as {
+            drawCastleIcon: (c: CanvasRenderingContext2D, city: MapCityView, px: number, py: number, size: { w: number; h: number }, active: boolean) => void;
+        }).drawCastleIcon(ctx, capital, 100, 100, { w: 17, h: 11 }, false);
+
+        expect(calls.fill + calls.stroke).toBeGreaterThan(0);
+    });
+
+    it('생성자는 아틀라스 로드로 예외를 던지지 않는다 (오프라인 안전)', () => {
+        // 생성자에서 loadIconAtlas 가 호출돼도 브라우저가 없을 때 예외를 던지면 안 된다.
+        // node 환경(테스트·SSR)에서 new 가 되는 것으로 확인한다.
+        expect(() => new ChinaMapRenderer(createMockCanvas())).not.toThrow();
     });
 });
 

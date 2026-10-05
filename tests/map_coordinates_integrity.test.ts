@@ -26,6 +26,7 @@
 import { describe, it, expect } from 'vitest';
 import mapCoords from '../assets/map-coordinates-4096.json';
 import regionsData from '../src/data/regions.json';
+import { MAX_CASTLE_W_DRAWN } from '../src/core/china_map_renderer';
 
 // ============================================================
 // 데이터 모양
@@ -85,26 +86,30 @@ const CANVAS = MAP.map.width;
  * `ChinaMapRenderer.requiredCityGap()` 은 도시 아이콘이 겹치지 않기 위해 필요한
  * 최소 정규화 거리를 이렇게 정의한다.
  *
- *   maxIconPx = (7 + 9*1.0) * zoom          // iconSizeRange 의 최대 성 아이콘 폭 = 16px
+ *   maxIconPx = MAX_CASTLE_W_DRAWN * zoom   // 최대 성 아이콘 폭 (2026-10-05: 16.90px)
  *   baseScale = max(W, H) * 0.96 * zoom
  *   gap_norm  = (maxIconPx / baseScale) * CITY_GAP_SLACK(1.25)
  *
  * zoom 이 약분되므로 창 크기에만 의존한다. 기준 캔버스는 1920x1920다 —
  * `tests/china_map_renderer.test.ts` 의 `CITY_CANVAS` 가 실측에 쓰는 값이다.
  *
- *   gap_norm = (16 * 1.25) / (1920 * 0.96) = 0.0108507
- *   4096 공간 = 0.0108507 * 4096          = 44.44px
+ *   gap_norm = (16.90 * 1.25) / (1920 * 0.96) = 0.0114609
+ *   4096 공간 = 0.0114609 * 4096             = 46.94px
  *
- * 즉 **44.4px 보다 가까운 두 도시는 1920px 캔버스에서 성 아이콘이 겹친다.**
+ * 즉 **46.9px 보다 가까운 두 도시는 1920px 캔버스에서 성 아이콘이 겹친다.**
  * 도시명 라벨은 아이콘 아래에 6px 폰트로 얹히므로 아이콘이 겹치면 라벨도 겹친다.
  * CITY_GAP_SLACK(1.25) 여유분까지 이미 포함된 수치라서 더 엄격하게 잡을 이유가 없다.
  *
- * 이 임계값 아래인 실제 쌍 (HEAD 42도시에서도 있던 것은 * 표시):
- *   C012 서주 ↔ C052 소패   23.09px  ← 미커밋 편집이 새로 만든 충돌
- *   C022 무창 ↔ C023 강하   31.85px  ← HEAD 부터 존재 *
- *   C008 건업 ↔ C019 단양   39.16px  ← HEAD 부터 존재 *
+ * [2026-10-05] 옛 값은 16px 리터럴이었다 — 그때는 실제 최대(13.22)보다 과대 산정이라
+ * 항상 엄격한 쪽이었지만, 위계 강화로 실제 최대가 16.90 이 되면서 리터럴은 이제
+ * 과소 산정이 된다("간격이 붙어도 통과" 로 drift). 그래서 프로덕션 상수를 직접 참조한다.
+ *
+ * 이 임계값 아래인 실제 쌍 (임계값 44.44 → 46.94 로 오르며 성도-광한이 새로 걸렸다):
+ *   C022 무창 ↔ C023 강하   31.85px  ← 42도시 시절부터 존재
+ *   C008 건업 ↔ C019 단양   39.16px  ← 42도시 시절부터 존재
+ *   C007 성도 ↔ C018 광한   46.77px  ← 2026-10-05 새로 걸림 (아슬아슬하게 아래)
  */
-const PROXIMITY_PX = (16 * 1.25 / (1920 * 0.96)) * CANVAS;
+const PROXIMITY_PX = (MAX_CASTLE_W_DRAWN * 1.25 / (1920 * 0.96)) * CANVAS;
 
 /**
  * 투영 이탈 허용치(px).

@@ -99,17 +99,36 @@ export function pointInPolygon(px: number, py: number, polygon: Array<{ x: numbe
  *  - B(8.41/11.20, 70%) 는 최소 폭이 8.41px 라 병풍벽 3개가 아직 구분되고(각 1.8px),
  *    최대 11.20px 라 대도시와 수도의 위계가 남는다. 라벨 12px 대비 70~93% 다.
  *
+ * [2026-10-05] 위계 강화 — "대도시·수도가 더 확실히 크고 뚜렷하게" (사용자 지시).
+ * 축소안 B 는 대도시/소도시 = 1.33배라 지도에서 "큰 도시" 가 눈에 안 들어온다.
+ * 최소는 그대로 두고 끝값만 키운다 — 작은 도시는 배경으로 남아야 하고, "아이콘이 크다"
+ * 지적의 대상이던 42~57개를 다시 통째로 키우면 같은 불평이 반복된다.
+ *
+ *   최소 8.41 (유지) → 대도시 13.0 → 수도 최대 16.9
+ *   비율: 대도시/소도시 1.55배(예전 1.33), 수도/소도시 2.01배(예전 1.57)
+ *
+ * [왜 대도시 상한이 13.0 인가 — 두 제약이 상한을 정한다]
+ *  - 수도 불변식. "가장 작은 수도 > 가장 큰 비수도" 를 지켜야 한다. 수도 k 는 boost 0.18
+ *    로 시작하므로(k=0.73) 곱셈 전 크기가 2.8+10.2*0.73 = 10.246 이고, 여기에
+ *    CAPITAL_CASTLE_MUL 1.30 을 곱하면 13.32 > 13.0 으로 불변식이 유지된다
+ *    (여유 0.32px — 예전 구성의 0.04px 보다 8배 넉넉하다). 14.0 이면 같은 불변식에
+ *    MUL 1.37 이상이 필요해져 수도만 19px 가 된다.
+ *  - 간격 비용. requiredCityGap 은 MAX_CASTLE_W_DRAWN(16.9) 을 따라가므로 최대 아이콘이
+ *    커지면 배치 완화가 도시를 더 민다. 실측 최밀집쌍(무창-강하 31.85px @4096)을
+ *    360x520 창에서도 이동 한도 안에서 분리할 수 있는 범위가 16.9 다 — 간격 계약
+ *    테스트(city_placement·도시 최소 간격)가 함께 검증한다.
+ *
  * 계수는 최소값 + 배율구간으로 분리했다 — MIN/MAX 를 코드와 테스트가 함께 참조해야
  * 크기를 한곳에서만 바꾸게 된다(아래 MIN_CASTLE_W·MAX_CASTLE_W 참조).
  */
-export const CASTLE_W_MIN = 5.0;
-export const CASTLE_W_SPAN = 6.2;
-export const CASTLE_H_MIN = 3.4;
-export const CASTLE_H_SPAN = 4.0;
+export const CASTLE_W_MIN = 2.8;
+export const CASTLE_W_SPAN = 10.2;
+export const CASTLE_H_MIN = 1.86;
+export const CASTLE_H_SPAN = 6.8;
 
 /** 최소 도성 폭 (k=0.55, zoom 1) = 8.41 */
 export const MIN_CASTLE_W = CASTLE_W_MIN + CASTLE_W_SPAN * 0.55;
-/** 최대 도성 폭/높이 (k=1.0, 비수도 한) = 11.20 / 7.40 */
+/** 최대 도성 폭/높이 (k=1.0, 비수도 한) = 13.0 / 8.66 */
 export const MAX_CASTLE_W = CASTLE_W_MIN + CASTLE_W_SPAN * 1.0;
 export const MAX_CASTLE_H = CASTLE_H_MIN + CASTLE_H_SPAN * 1.0;
 
@@ -122,11 +141,15 @@ export const MAX_CASTLE_H = CASTLE_H_MIN + CASTLE_H_SPAN * 1.0;
  * Math.min(1, ...) 에서 사라진다 — "수도" 와 "최대 인구 도시" 의 크기가 완전히 같아진다.
  * k 의 정의("인구 정규화 배율")를 깨지 않으면서 수도 우위를 만들려면 배율 k 밖에서
  * 곱해야 한다. cityIconScale 의 단언(최대 1.0)도 그대로 살아 있다.
+ *
+ * [2026-10-05] 1.18 → 1.30. 대도시 상한이 13.0 으로 오르면서 "가장 작은 수도"(10.246)와의
+ * 차이가 0.32px 뿐이라 위계가 안 읽힌다. 1.30 은 그 차이를 2.5% 여유로 벌리면서
+ * 최대 수도(16.9)가 소도시의 2배가 되게 한다 — 한눈에 "수도" 로 읽히는 선.
  */
-export const CAPITAL_CASTLE_MUL = 1.18;
+export const CAPITAL_CASTLE_MUL = 1.30;
 
 /**
- * 실제로 그려질 수 있는 최대 도성 폭 — 수도 배율까지 포함한 값(13.22).
+ * 실제로 그려질 수 있는 최대 도성 폭 — 수도 배율까지 포함한 값(16.90).
  * requiredCityGap() 과 그 계약 테스트가 이 상수를 공유한다.
  */
 export const MAX_CASTLE_W_DRAWN = MAX_CASTLE_W * CAPITAL_CASTLE_MUL;
@@ -141,6 +164,68 @@ export const MAX_CASTLE_W_DRAWN = MAX_CASTLE_W * CAPITAL_CASTLE_MUL;
  * 계약은 여전히 성립한다.
  */
 export const FEATURE_ICON_R = 2.0;
+
+/**
+ * 하이브리드 도시 아이콘 — 저zoom 벡터 / 고zoom AI 스프라이트.
+ *
+ * [문제]
+ * 도시 아이콘은 8.41~16.9px 라 AI 로 만든 그림을 내려앉혀도 형태가 남지 않는다.
+ * 병풍벽 하나가 1.8px 이므로 세부가 전부 뭉개진다. 그래서 지금까지는 코드로 그린
+ * 벡터만 썼고, 그 결과 "아이콘이 밋밋하다" 는 불평이 남았다.
+ *
+ * [해법 — zoom 으로 갈라 쓴다]
+ * zoom 범위는 0.6~2.5 다. zoom 1 에서 수도 아이콘이 16.9px 라면 zoom 2.5 에서는
+ * 42.3px 다 — AI 그림이 살아 있을 만큼 커진다. 즉 같은 지도에서
+ *   - 축소 상태(지도를 overview 로 볼 때) → 벡터: 픽셀 1px 에 형태 압축, 가독성 우선
+ *   - 확대 상태(한 도시를 자세히 볼 때) → 스프라이트: 재질·디테일, 감상 우선
+ * 이 된다. 어느 쪽에서도 손해가 없는 구간을 각각 쓰는 것이다.
+ *
+ * [왜 스프라이트가 4장뿐인가]
+ * 스프라이트는 벡터의 대체가 아니라 "확대 구간 전용 대체"다. 필요한 형태는
+ * 도시 규모 3단계(망루/성곽/대성) + 수도 깃발 1종 = 4장뿐이다. 세력색 변색은
+ * 스프라이트를 화이트 실루엣으로 만들어 GPU 컴포짓(source-atop)으로 입힌다 —
+ * 이래야 세력이 몇 개든 세력 수 × 스프라이트 개수가 아니라 4장으로 끝난다.
+ *
+ * [아틀라스 규격 — 스크립트와 반드시 일치해야 한다]
+ *   파일   : assets/city-icons.webp  (WebP, 알파 필요 → VP8L/VP8X)
+ *   크기   : 512×128  = 셀 128×128 4장을 가로로 이은 것
+ *   셀 순서: 0 SMALL(망루) / 1 MEDIUM(성곽) / 2 LARGE(대성) / 3 LARGE+깃발(수도)
+ *   배경   : 완전 투명, 아이콘은 셀 중앙에 맞추고 여백 8%(도성 바깥으로 뻗어나가지 않게)
+ *   색     : 화이트(#FFFFFF) 실루엣 + 회색 음영. 세력색은 런타임에 입힌다.
+ *   축소   : 브라우저가 downscale 하므로 128px 원본이 42px 에서도 깨지지 않는다.
+ *
+ * 규격이 어긋나면(크기/순서/색) 벡터 폴백으로 조용히 내려가므로 "화면이 그대로인데
+ * 이상하다" 는 상태가 되지 않는다. 스크립트: scripts/build_city_icon_atlas.mjs
+ */
+export const CITY_ICON_ATLAS_PATH = 'assets/city-icons.webp';
+/** 아틀라스 셀 한 장의 픽셀 크기 (정사각형). */
+export const CITY_ICON_CELL_PX = 128;
+/** 가로로 늘어선 셀 개수 — SMALL / MEDIUM / LARGE / CAPITAL. */
+export const CITY_ICON_CELL_COUNT = 4;
+export const CITY_ICON_ATLAS_W = CITY_ICON_CELL_PX * CITY_ICON_CELL_COUNT;
+export const CITY_ICON_ATLAS_H = CITY_ICON_CELL_PX;
+
+/** 아틀라스 셀 인덱스 — 순서는 위 규격과 1:1 이다. */
+export const CITY_ICON_SLOT = { SMALL: 0, MEDIUM: 1, LARGE: 2, CAPITAL: 3 } as const;
+export type CityIconSlot = keyof typeof CITY_ICON_SLOT;
+
+/**
+ * 스프라이트 전환 zoom — 이 값부터 AI 스프라이트를 그린다.
+ *
+ * [왜 1.6 인가]
+ * 1.0 에서 최대 수도 아이콘은 16.9px 다. 스프라이트 원본은 128px 라 downscale 로는
+ * 16.9px 에서도 깨지지 않는다. 그러나 그 크기에서는 벡터의 "세력색 실루엣 + 1px 테두리"가
+ * 배경 지도 위에서 훨씬 또렷하다 — 스프라이트의 명암이 배경 명암에 묻힌다.
+ *
+ * 1.6 에서 수도는 27.0px, 대성 20.8px, 소도시 13.5px 다. 명암이 읽히면서 형태 신호도
+ * 남는 구간이다. 2.0 으로 올리면 확대 구간이 너무 짧아져(줌을 많이 해야만 스프라이트가
+ * 보인다) 하이브리드 도입의 이득이 없어진다.
+ *
+ * [불변식 — 이 값이 지켜져야 하는 것]
+ * 전환 지점 아래에서 벡터, 위에서 스프라이트여야 한다. 스프라이트 미로딩(오프라인/경로
+ * 어긋남) 시에는 zoom 과 무관하게 벡터로 그린다 — see drawCityIcon.
+ */
+export const CITY_ICON_SPRITE_MIN_ZOOM = 1.6;
 
 /** 관·요충지 접도로 한 구간. 좌표는 정규화. */
 export interface FeatureSpur {
@@ -243,6 +328,43 @@ export function cityIconScale(
     // 결과적으로 "수도" 와 "최대 인구 도시" 는 이제 크기가 다르다.
     const boost = isCapital ? 0.18 : 0;
     return Math.min(1, 0.55 + 0.45 * t + boost);
+}
+
+/**
+ * 도시 아이콘 형태 단계 — 벡터 드로잉과 스프라이트 셀 선택이 **공유**하는 판정.
+ *
+ * [왜 zoom 으로 나눠 판정하는가]
+ * 같은 프레임의 zoom 은 모든 도시에 균일하다. 그래서 size.w 를 zoom 으로 나누면
+ * 수도 배율·인구가 그대로 드러나는 "축소 전 폭" 이 된다 — 도시 간 비교가 공평해진다.
+ *
+ *   < 9.5      → SMALL    망루   (단일 탑 + 총안 2개)
+ *   < 12       → MEDIUM   성곽   (몸체 + 병풍벽 3 + 성문 아치)
+ *   >= 12      → LARGE    대성   (몸체 + 모서리 탑 2 + 중앙 탑 + 병풍벽 3 + 성문 아치)
+ *   LARGE + 수도 → CAPITAL  위 LARGE 에 깃발만 얹는다
+ *
+ * [왜 CAPITAL 이 4번째 값인가 — 벡터에는 3단계만 있는데]
+ * 벡터는 깃발을 drawGrandCastleIcon 안에서 (iconType === 'CAPITAL') 로 그리고,
+ * 스프라이트는 깃발이 baked into 된 별도 셀이 필요하다. 두 경로가 같은 tier 를
+ * 나눠 갖게 하려고 CAPITAL 을 공통 값으로 넣었다 — 벡터 스위치에서 CAPITAL 과 LARGE 가
+ * 같은 함수로 가는 것이 그 대가이고, 대신 전환 순간 형태가 안 어긋난다.
+ *
+ * [경계 — 9.5 / 12 는 어디서 왔나]
+ * MIN_CASTLE_W(8.41) 와 MAX_CASTLE_W(13.0) 사이를 세 구간으로 나눈 값이다.
+ * 수도는 CAPITAL_CASTLE_MUL(1.30) 덕분에 항상 pre-zoom 폭 >= 13.32 라 LARGE 以上이다.
+ *
+ * @param drawnW  실제 그려질 폭(zoom 포함) — iconSizeRange 의 w
+ * @param zoom    현재 zoom
+ * @param isCapital 수도 여부 — iconType === 'CAPITAL'
+ */
+export function cityIconSlot(drawnW: number, zoom: number, isCapital = false): CityIconSlot {
+    // zoom 이 0 에 가까워지면 나누기가 폭발한다. 0.3 바닥은 렌더러가 쓰는 값과 같다.
+    const baseW = drawnW / Math.max(0.3, zoom);
+    if (baseW < 9.5) return 'SMALL';
+    if (baseW < 12) return 'MEDIUM';
+    // 수도는 항상 LARGE 이상(baseW >= 13.32) 이므로 여기서 CAPITAL 로 올려도 형태 계층을
+    // 건너뛰지 않는다. 그래도 LARGE 以上을 조건으로 걸어, 도시 목록 데이터가 깨져
+    // "수도인데 SMALL 로 그려지는" 상태를 만들지 않는다.
+    return isCapital ? 'CAPITAL' : 'LARGE';
 }
 
 /** 도로망 입력 한 도시. 좌표는 정규화(0~1). */
@@ -775,8 +897,11 @@ export class ChinaMapRenderer {
     private requiredCityGap(): number {
         // [2026-10-02] 리터럴 (7 + 9 * 1.0) 대신 MAX_CASTLE_W_DRAWN 을 쓴다.
         // 이 값은 수도 배율까지 포함한 "실제로 그려질 수 있는 최대 폭" 이다. 예전처럼
-        // 비수도 최대 폭만 쓰면 축소 뒤 수도끼리(13.22px)가 붙는다 — 간격은 아이콘 크기를
-        // 따라가야 하는데 최대 아이콘을 계산에서 빼면 그게 바로 "도시가 붙어 보인다" 다.
+        // 비수도 최대 폭만 쓰면 수도끼리가 붙는다 — 간격은 아이콘 크기를 따라가야 하는데
+        // 최대 아이콘을 계산에서 빼면 그게 바로 "도시가 붙어 보인다" 다.
+        //
+        // [2026-10-05] 위계 강화로 최대가 13.22 → 16.90 이 됐다. 이 상수를 참조하고 있어
+        // 간격·배치 완화가 자동으로 따라온다 — 상수를 여기서 빼먹었으면 수도끼리 붙었다.
         const maxIconPx = MAX_CASTLE_W_DRAWN * this.zoom;
         const base = Math.max(1, this.baseScale());
         return (maxIconPx / base) * ChinaMapRenderer.CITY_GAP_SLACK;
@@ -811,6 +936,17 @@ export class ChinaMapRenderer {
     /** 육지 판정용 마스크 알파 (0=바다, 255=육지). getLandMask가 함께 채운다. */
     private landAlpha: Uint8Array | null = null;
 
+    /**
+     * [하이브리드] AI 생성 도시 아이콘 아틀라스. 미로딩이면 null 이고 그때는 벡터로 그린다.
+     *
+     * 로딩은 지도 비트맵과 독립이다 — 아틀라스가 없어도 지도는 정상 동작한다(벡터 폴백).
+     * 반대로 아틀라스 로딩이 지도를 막으면 안 되므로 절대 블로킹하지 않는다.
+     */
+    private iconAtlas: HTMLImageElement | null = null;
+
+    /** 아틀라스 셀 인덱스 → 셀 tinted 버전 캐시 (세력색 입힌 결과). 키는 slot:color */
+    private iconAtlasTinted = new Map<string, HTMLCanvasElement>();
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d')!;
@@ -827,6 +963,38 @@ export class ChinaMapRenderer {
             this.borderLayerDirty = true;
         });
         img.src = 'assets/map-china-ai-4096.webp';
+
+        // 하이브리드 도시 아이콘 아틀라스 — 없어도 되지만 있으면 확대 구간이 그림으로 그려진다.
+        this.loadIconAtlas();
+    }
+
+    /**
+     * 도시 아이콘 아틀라스를 비차단으로 로드한다.
+     *
+     * [실패해도 조용히 넘어가는 이유]
+     * 오프라인 첫 실행, 구버전 sw 캐시, 경로 오기 — 어느 쪽이든 지도 자체는 그려져야 한다.
+     * 아틀라스는 "있으면 더 좋은 것"이므로 실패를 오류로 취급하지 않는다. 실패하면
+     * iconAtlas 가 null 로 남아 모든 zoom 에서 벡터로 폴백한다.
+     *
+     * onerror 도 반드시 건다 — 미로딩이면 load 도 영영 오지 않아 tinted 캐시가 조용히 쌓인다.
+     */
+    private loadIconAtlas(): void {
+        if (typeof Image === 'undefined') return;
+        const img = new Image();
+        img.addEventListener('load', () => {
+            this.iconAtlas = img;
+            this.iconAtlasTinted.clear();
+            // 늦게 로드되어도 현재 프레임을 다시 그려 스프라이트가 반영돼야 한다.
+            // (애니메이션 루프가 없는 정지 화면에서도 즉시 반영된다)
+            this.render();
+        });
+        img.addEventListener('error', () => {
+            // 벡터 폴백이 기본값이므로 여기서 할 일은 없다. 단, 이전에 성공한 적이 있으면
+            // 그 상태를 지워야 "화면엔 보인데 로드는 실패한" 상태로 남지 않는다.
+            this.iconAtlas = null;
+            this.iconAtlasTinted.clear();
+        });
+        img.src = CITY_ICON_ATLAS_PATH;
     }
 
     /**
@@ -2690,6 +2858,46 @@ export class ChinaMapRenderer {
     }
 
     /**
+     * [2026-10-05] HEX 색을 어둡게 섞는 헬퍼 (t: 0~1, 1에 가까울수록 검정).
+     *
+     * lightenColor 는 흰색 쪽으로만 섞는다. 아이콘 몸체에 아래쪽 음영을 주려면
+     * 검정 쪽 혼합이 별도로 필요하다 — castleBodyFill 이 위쪽 lighten + 아래쪽
+     * shade 를 한 그라데이션으로 묶는다.
+     */
+    private shadeColor(hex: string, t: number): string {
+        const m = hex.match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+        if (!m) return hex;
+        const r = Math.round(parseInt(m[1], 16) * (1 - t));
+        const g = Math.round(parseInt(m[2], 16) * (1 - t));
+        const b = Math.round(parseInt(m[3], 16) * (1 - t));
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    /**
+     * [2026-10-05] 도성 몸체 수직 그라데이션 — 위 하이라이트 → 세력색 → 아래 음영.
+     *
+     * [왜 그라데이션인가]
+     * 단색 실루엣은 지도 위에서 "납작한 도형" 으로 읽힌다. 위쪽을 0.28 밝히고
+     * 아래쪽을 0.18 어둡게 하면 광원이 위라는 신호가 생겨 성벽에 두께감이 난다.
+     * 중간 45% 는 세력색 그대로라 세력 식별(색 판독)이 그대로 유지된다.
+     *
+     * 그라데이션 구간은 탑 꼭대기(py - 0.8h)부터 몸체 하단(py + 0.55h)까지 —
+     * 병풍벽·모서리 탑·중앙 탑이 같은 빛을 공유하므로 형태가 쪼개지지 않는다.
+     */
+    private castleBodyFill(
+        ctx: CanvasRenderingContext2D,
+        py: number,
+        h: number,
+        base: string,
+    ): CanvasGradient {
+        const g = ctx.createLinearGradient(0, py - h * 0.8, 0, py + h * 0.55);
+        g.addColorStop(0, this.lightenColor(base, 0.28));
+        g.addColorStop(0.45, base);
+        g.addColorStop(1, this.shadeColor(base, 0.18));
+        return g;
+    }
+
+    /**
      * [321-340] 지도 날씨 오버레이 — 각 도시 위치에 날씨 아이콘을 그리고,
      * 수확 보정 0.8 미만 악천후 도시에는 경고 링을 표시한다.
      */
@@ -2901,8 +3109,9 @@ export class ChinaMapRenderer {
      *
      * 수도는 k 에서도boost 를 받지만(작은 도시의 수도) 클램프 때문에 최대 인구 도시에서는
      * boost 가 잘린다. 그래서 capitals 여부를 여기서 한 번 더 곱한다 — 이 곱셈은 클램프가
-     * 없는 곳이라 "수도 ≥ 모든 도시" 가 보장된다. 배율은 크기 축소와 같은 방향(1.18)으로
-     * 잡아 두 계수가 서로 상쇄되지 않게 했다.
+     * 없는 곳이라 "수도 ≥ 모든 도시" 가 보장된다. 배율 1.30 은 대도시 상한 13.0 과 함께
+     * "가장 작은 수도 > 가장 큰 비도시"(10.246 × 1.30 = 13.32 > 13.0) 가 되도록 유도했다 —
+     * 근거는 CAPITAL_CASTLE_MUL 주석.
      */
     private iconSizeRange(cities: readonly MapCityView[]): Map<string, { w: number; h: number }> {
         const s = this.zoom;
@@ -3071,6 +3280,10 @@ export class ChinaMapRenderer {
      *
      * [2026-10-02] 아이콘이 최소 11.95 → 8.41px 로 줄었으므로 비율을 다시 잡았다.
      *
+     * [2026-10-05] 대도시가 최대 13.0px(수도 16.9px) 로 커졌지만 이 함수의 비율은 전부
+     * w,h 에 비례하므로 그대로 유효하다. 커진 아이콘은 선도 굵어져(w*0.085 = 1.1~1.4px)
+     * 확대 없이도 형태가 읽힌다.
+     *
      * [선 두께 — 최소 선 두께 보장의 근거]
      * 예전 lineWidth = max(0.5, 0.7*s) 는 s=1 에서 0.7px 였다. 최소 아이콘에서 병풍벽 폭은
      * w*0.17 = 1.43px 인데, 테두리 0.7px 가 좌우를 0.35px씩 먹어 남는 칠영이 0.73px 다 —
@@ -3100,34 +3313,242 @@ export class ChinaMapRenderer {
         size: { w: number; h: number },
         active: boolean,
     ): void {
+        // [2026-10-05 하이브리드] 확대 구간은 AI 스프라이트. 미로딩이면 아래 벡터 경로로 넘어간다.
+        if (this.iconAtlas && this.zoom >= CITY_ICON_SPRITE_MIN_ZOOM) {
+            this.drawSpriteIcon(ctx, city, px, py, size, active);
+            return;
+        }
+        this.drawCastleIconVector(ctx, city, px, py, size, active);
+    }
+
+    /**
+     * AI 스프라이트 도시 아이콘 — 확대 구간 전용 (zoom >= CITY_ICON_SPRITE_MIN_ZOOM).
+     *
+     * [세력색 입히기]
+     * 아틀라스는 화이트 실루엣이다. 그대로 그리면 모든 세력이 같은 회색 성으로 보인다.
+     * 그래서 셀을 오프스크린에 한 번 그린 뒤 'source-atop' 으로 세력색을 덮는다 —
+     * source-atop 은 "이미 그려진 픽셀 위에만" 칠하므로 알파(투명 배경)는 그대로 살아난다.
+     * 결과는 캐시한다: 셀 128×128 이고 세력이 아무리 많아도 (4셀 × 세력수) 장이면 끝이며
+     * 매 프레임 다시 합성할 이유가 없다. 키는 `${slot}:${color}` 다.
+     *
+     * [왜 벡터의 1px 테두리를 그대로 옮기지 않는가]
+     * 벡터는 edge(rgba(12,10,8,0.85)) 로 실루엣을 지켰다. 스프라이트에 같은 테두리를 그리려면
+     * 매 셀마다 다시 합성해야 해 캐시 이득이 사라진다. 대신 명암 자체로 실루엣을 만들고
+     * 겉으로 옅은 그림자 한 겹만 얹어 배경 지도에서 띄운다 — 그게 캐시와 양립한다.
+     */
+    private drawSpriteIcon(
+        ctx: CanvasRenderingContext2D,
+        city: MapCityView,
+        px: number,
+        py: number,
+        size: { w: number; h: number },
+        active: boolean,
+    ): void {
+        const atlas = this.iconAtlas;
+        if (!atlas) {
+            this.drawCastleIconVector(ctx, city, px, py, size, active);
+            return;
+        }
+        const slot = cityIconSlot(size.w, this.zoom, city.iconType === 'CAPITAL');
+        // 호버/선택 시 한 단계 더 밝게 — 벡터의 lightenColor(active) 와 같은 의도.
+        const color = this.lightenColor(city.ownerColor || '#c8b070', active ? 0.34 : 0.12);
+        const cell = this.tintedAtlasCell(atlas, slot, color);
+        if (!cell) {
+            // 이미지 미완성 등 — 벡터로 물러난다. 스프라이트가 "있어야만" 나오는 경로다.
+            this.drawCastleIconVector(ctx, city, px, py, size, active);
+            return;
+        }
+
+        const w = size.w;
+        const h = size.h;
+        // 셀은 128×128 정사각형이지만 도성은 가로로 길다. 셀 전체를 정사각에 맞추면
+        // 세로로 늘어나 보인다. 가운데 일부(세로 62%)만 써서 벡터의 종횡비와 맞춘다 —
+        // 벡터 최대 h/w = 8.66/13.0 = 0.666 이므로 0.62 는 그 근처다.
+        const srcH = cell.height * 0.62;
+        const srcY = (cell.height - srcH) / 2;
+        ctx.drawImage(cell, 0, srcY, cell.width, srcH, px - w / 2, py - h / 2, w, h);
+    }
+
+    /**
+     * 아틀라스 한 셀을 꺼내 세력색을 입힌 오프스크린. 캐시 히트 → 캔버스.
+     *
+     * naturalWidth 로 "이미 로딩이 끝났는지"를 확인한다. 끝나지 않은 이미지에서 잘라내면
+     * 빈 셀(또는 이전 아틀라스)이 그대로 그려져 — 도시들이 아무것도 안 보인 채 조용히
+     * 사라진다. 방어적으로 걸러 벡터 폴백이 대신 맡게 한다.
+     */
+    private tintedAtlasCell(
+        atlas: HTMLImageElement,
+        slot: CityIconSlot,
+        color: string,
+    ): HTMLCanvasElement | null {
+        const key = `${slot}:${color}`;
+        const cached = this.iconAtlasTinted.get(key);
+        if (cached) return cached;
+        if (typeof document === 'undefined') return null;
+
+        if (atlas.naturalWidth < CITY_ICON_ATLAS_W || atlas.naturalHeight < CITY_ICON_ATLAS_H) {
+            return null;
+        }
+
+        const sx = CITY_ICON_SLOT[slot] * CITY_ICON_CELL_PX;
+        const c = document.createElement('canvas');
+        c.width = CITY_ICON_CELL_PX;
+        c.height = CITY_ICON_CELL_PX;
+        const cx = c.getContext('2d');
+        if (!cx) return null;
+        cx.drawImage(
+            atlas,
+            sx, 0, CITY_ICON_CELL_PX, CITY_ICON_CELL_PX,
+            0, 0, CITY_ICON_CELL_PX, CITY_ICON_CELL_PX,
+        );
+        cx.globalCompositeOperation = 'source-atop';
+        cx.fillStyle = color;
+        cx.fillRect(0, 0, c.width, c.height);
+
+        this.iconAtlasTinted.set(key, c);
+        return c;
+    }
+
+    /**
+     * 벡터 도시 아이콘 — 축소 구간 전용. 형태 tier 는 cityIconSlot 이 판정한다.
+     * (하이브리드 분기 전의 drawCastleIcon 본문 — 스프라이트가 없는 zoom 과
+     *  아틀라스 미로딩 시의 폴백 경로가 이 함수를 쓴다)
+     */
+    private drawCastleIconVector(
+        ctx: CanvasRenderingContext2D,
+        city: MapCityView,
+        px: number,
+        py: number,
+        size: { w: number; h: number },
+        active: boolean,
+    ): void {
         // s 를 쓰지 않는다 — 모든 두께/비율을 s 가 아니라 이미 zoom 이 곱해진 w,h 에서 낸다.
         // (s 로 두면 코드가 "축소 전 값" 이 남아 있어 아이콘 크기와 선 두께가 어긋난다)
         const w = size.w;
         const h = size.h;
         const body = this.lightenColor(city.ownerColor || '#c8b070', active ? 0.34 : 0.12);
         const edge = 'rgba(12, 10, 8, 0.85)';
-        const merlonW = w * 0.22;
-        const merlonH = h * 0.34;
         // 아이콘 폭에 비례하되 0.55px 바닥 — 이 선 두께가 테두리+칠영의 비율을 결정한다
         const strokeW = Math.max(0.55, w * 0.085);
         // 사다리꼴 하단 인셋 — 최소 폭 8.41px 에서도 0.76px 라 형태가 남는다
         const taper = w * 0.09;
 
-        // 성벽 몸체 — 아래로 살짝 wider 한 사다리꼴이라 각지지 않게
+        // [2026-10-05] 도시 규모별 디자인 — 인구 기반 크기(size)에서 tier 를 뽑아
+        // 아이콘 형태를 규모에 따라 바꾼다. 크기만으로는 "도시가 몇 단계인지" 가 한눈에
+        // 안 들어오고, 축소돼도 디자인 신호(탑/성문/모서리 탑)가 남아 있어야 규모가 읽힌다.
+        //
+        // tier 판정은 pre-zoom 폭으로 한다 — 같은 프레임의 zoom 은 모든 도시에 균일하므로
+        // size.w / zoom 으로 환산하면 수도 배율·인구가 그대로 드러난다:
+        //   < 9.5  → SMALL  망루   (단일 탑 + 총안 2개)
+        //   < 12   → MEDIUM 성곽   (몸체 + 병풍벽 3 + 성문 아치)
+        //   >= 12  → LARGE  대성   (몸체 + 모서리 탑 2 + 중앙 탑 + 병풍벽 3 + 성문 아치)
+        // 수도는 CAPITAL_CASTLE_MUL(1.30) 때문에 항상 pre-zoom 폭 >= 13.32 로 LARGE 에
+        // 속하므로, 깃발은 LARGE 에만 두면 된다(아래).
+        //
+        // [2026-10-05] 판정을 cityIconSlot 로 옮겼다. 벡터 스위치와 스프라이트 셀 선택이
+        // 같은 판정을 공유해야 전환 지점에서 형태가 튀지 않는다.
+        //
+        // [2026-10-05] 프리미엄 질감 — 드롭섀도우 1회 래핑.
+        // save/restore 를 도시당 1회로 묶어 42~57개 도시 렌더링 비용을 일정하게 둔다.
+        // 선택(active) 도시는 금빛 글로우 섀도우로 감싼다 — 기하학적 링을 쓰지 않는
+        // 이유는 모서리 탑·깃발이 몸체 박스 밖으로 뻗어 사각 링이 탑을 가로지르기 때문이다.
+        // 글로우는 실루엣을 그대로 따라가므로 8px 에서도 깨지지 않는다.
+        ctx.save();
+        if (active) {
+            ctx.shadowColor = 'rgba(255, 210, 120, 0.8)';
+            ctx.shadowBlur = w * 0.5;
+        } else {
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+            ctx.shadowBlur = w * 0.35;
+        }
+        ctx.shadowOffsetY = h * 0.12;
+        switch (cityIconSlot(size.w, this.zoom, city.iconType === 'CAPITAL')) {
+            case 'SMALL':
+                this.drawWatchtowerIcon(ctx, px, py, w, h, body, edge, strokeW, taper);
+                break;
+            case 'MEDIUM':
+                this.drawKeepIcon(ctx, px, py, w, h, body, edge, strokeW, taper);
+                break;
+            case 'LARGE':
+            case 'CAPITAL':
+                this.drawGrandCastleIcon(ctx, city, px, py, w, h, body, edge, strokeW, taper);
+                break;
+        }
+        ctx.restore();
+    }
+
+    /**
+     * 망루 — 가장 작은 도시. 세부를 최소화해 최소 폭(8.41px)에서도 형태가 남는다.
+     * 몸체 폭을 줄이고(0.56w) 위로만 두 개 총안을 얹어 "작은 요새" 로 읽히게 한다.
+     */
+    private drawWatchtowerIcon(
+        ctx: CanvasRenderingContext2D,
+        px: number,
+        py: number,
+        w: number,
+        h: number,
+        body: string,
+        edge: string,
+        strokeW: number,
+        taper: number,
+    ): void {
+        const towerW = w * 0.56;
+        const topY = py - h / 2 + h * 0.16;
+        // 탑 몸체 — 아래로 살짝 넓어지는 사다리꼴
+        ctx.beginPath();
+        ctx.moveTo(px - towerW / 2, topY);
+        ctx.lineTo(px + towerW / 2, topY);
+        ctx.lineTo(px + towerW / 2 - taper, py + h / 2);
+        ctx.lineTo(px - towerW / 2 + taper, py + h / 2);
+        ctx.closePath();
+        ctx.fillStyle = this.castleBodyFill(ctx, py, h, body);
+        ctx.fill();
+        ctx.strokeStyle = edge;
+        ctx.lineWidth = strokeW;
+        ctx.stroke();
+        // 총안 2개
+        const crenW = towerW * 0.24;
+        const crenH = h * 0.14;
+        ctx.fillStyle = this.castleBodyFill(ctx, py, h, body);
+        for (const m of [-0.25, 0.25]) {
+            ctx.beginPath();
+            ctx.rect(px + m * towerW - crenW / 2, topY - crenH, crenW, crenH);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
+
+    /**
+     * 성곽 — 중간 규모. 사다리꼴 몸체 + 병풍벽 3개 + 성문 아치.
+     * 성문이 추가돼 "요새(망루)보다 성이다" 가 읽힌다.
+     */
+    private drawKeepIcon(
+        ctx: CanvasRenderingContext2D,
+        px: number,
+        py: number,
+        w: number,
+        h: number,
+        body: string,
+        edge: string,
+        strokeW: number,
+        taper: number,
+    ): void {
+        const merlonW = w * 0.22;
+        const merlonH = h * 0.34;
+        // 성벽 몸체
         ctx.beginPath();
         ctx.moveTo(px - w / 2, py - h / 2 + merlonH);
         ctx.lineTo(px + w / 2, py - h / 2 + merlonH);
         ctx.lineTo(px + w / 2 - taper, py + h / 2);
         ctx.lineTo(px - w / 2 + taper, py + h / 2);
         ctx.closePath();
-        ctx.fillStyle = body;
+        ctx.fillStyle = this.castleBodyFill(ctx, py, h, body);
         ctx.fill();
         ctx.strokeStyle = edge;
         ctx.lineWidth = strokeW;
         ctx.stroke();
-
-        // 병풍벽 3개 — 가운데만 살짝 높게. 셋이 서로 구분돼야 크기 단계가 읽힌다
-        ctx.fillStyle = body;
+        // 병풍벽 3개 — 가운데만 살짝 높게
+        ctx.fillStyle = this.castleBodyFill(ctx, py, h, body);
         for (const m of [-0.32, 0, 0.32]) {
             const mh = m === 0 ? merlonH * 1.3 : merlonH;
             ctx.beginPath();
@@ -3135,22 +3556,128 @@ export class ChinaMapRenderer {
             ctx.fill();
             ctx.stroke();
         }
-
-        // 상단 하이라이트 — 한 줄 빛이 있어야 평면적이지 않다
+        // 성문 아치
+        const gateW = w * 0.2;
+        const gateTop = py - h / 2 + merlonH + h * 0.1;
+        ctx.beginPath();
+        ctx.moveTo(px - gateW / 2, py + h / 2);
+        ctx.lineTo(px - gateW / 2, gateTop);
+        ctx.arc(px, gateTop, gateW / 2, Math.PI, 0);
+        ctx.lineTo(px + gateW / 2, py + h / 2);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(12, 10, 8, 0.62)';
+        ctx.fill();
+        // [2026-10-05] 금빛 림라이트 — 아치 상단에만 얇게 둘러 성문에 깊이를 준다.
+        ctx.beginPath();
+        ctx.arc(px, gateTop, gateW / 2, Math.PI * 1.05, Math.PI * 1.95);
+        ctx.strokeStyle = 'rgba(255, 215, 130, 0.35)';
+        ctx.lineWidth = Math.max(0.35, w * 0.035);
+        ctx.stroke();
+        // 상단 하이라이트
         ctx.beginPath();
         ctx.moveTo(px - w / 2 + taper, py - h / 2 + merlonH + h * 0.14);
         ctx.lineTo(px + w / 2 - taper, py - h / 2 + merlonH + h * 0.14);
-        ctx.strokeStyle = 'rgba(255, 252, 240, 0.32)';
+        ctx.strokeStyle = 'rgba(255, 252, 240, 0.5)';
         ctx.lineWidth = Math.max(0.4, w * 0.05);
         ctx.stroke();
+    }
 
-        // 수도 — 깃발 한 개. "여긴 내 수도" 라는 정보가 아이콘 크기만으로는 안 읽힌다
+    /**
+     * 대성 — 가장 큰 도시(수도 포함). 좌우 모서리 탑 + 중앙 높은 탑 + 병풍벽 3개 +
+     * 성문 아치 + 상단 하이라이트. 수도는 깃발을 추가한다 — "여긴 내 수도" 가
+     * 아이콘 크기만으로는 안 읽히기 때문.
+     */
+    private drawGrandCastleIcon(
+        ctx: CanvasRenderingContext2D,
+        city: MapCityView,
+        px: number,
+        py: number,
+        w: number,
+        h: number,
+        body: string,
+        edge: string,
+        strokeW: number,
+        taper: number,
+    ): void {
+        const merlonW = w * 0.14;
+        const merlonH = h * 0.26;
+        const towerW = w * 0.16;
+        const towerH = h * 0.62;
+        // 성벽 몸체
+        ctx.beginPath();
+        ctx.moveTo(px - w / 2, py - h / 2 + merlonH);
+        ctx.lineTo(px + w / 2, py - h / 2 + merlonH);
+        ctx.lineTo(px + w / 2 - taper, py + h / 2);
+        ctx.lineTo(px - w / 2 + taper, py + h / 2);
+        ctx.closePath();
+        ctx.fillStyle = this.castleBodyFill(ctx, py, h, body);
+        ctx.fill();
+        ctx.strokeStyle = edge;
+        ctx.lineWidth = strokeW;
+        ctx.stroke();
+        // 좌우 모서리 탑
+        ctx.fillStyle = this.castleBodyFill(ctx, py, h, body);
+        for (const side of [-1, 1]) {
+            const tx = px + side * (w / 2 - towerW / 2);
+            ctx.beginPath();
+            ctx.rect(tx - towerW / 2, py - h / 2 + merlonH - towerH, towerW, towerH);
+            ctx.fill();
+            ctx.stroke();
+            // 탑 지붕 (뾰족)
+            ctx.beginPath();
+            ctx.moveTo(tx - towerW / 2, py - h / 2 + merlonH - towerH);
+            ctx.lineTo(tx, py - h / 2 + merlonH - towerH - towerW * 0.7);
+            ctx.lineTo(tx + towerW / 2, py - h / 2 + merlonH - towerH);
+            ctx.closePath();
+            ctx.fillStyle = this.lightenColor(city.ownerColor || '#c8b070', 0.22);
+            ctx.fill();
+            ctx.stroke();
+        }
+        // 병풍벽 3개 — 몸체 위, 좌우 탑 사이
+        ctx.fillStyle = this.castleBodyFill(ctx, py, h, body);
+        for (const m of [-0.32, 0, 0.32]) {
+            const mh = m === 0 ? merlonH * 1.3 : merlonH;
+            ctx.beginPath();
+            ctx.rect(px + m * w - merlonW / 2, py - h / 2 + merlonH - mh, merlonW, mh);
+            ctx.fill();
+            ctx.stroke();
+        }
+        // 중앙 탑 — 병풍벽보다 높게
+        const ctW = w * 0.2;
+        const ctH = h * 0.5;
+        ctx.fillStyle = this.castleBodyFill(ctx, py, h, body);
+        ctx.beginPath();
+        ctx.rect(px - ctW / 2, py - h / 2 + merlonH - ctH, ctW, ctH);
+        ctx.fill();
+        ctx.stroke();
+        // 성문 아치
+        const gateW = w * 0.18;
+        const gateTop = py - h / 2 + merlonH + h * 0.12;
+        ctx.beginPath();
+        ctx.moveTo(px - gateW / 2, py + h / 2);
+        ctx.lineTo(px - gateW / 2, gateTop);
+        ctx.arc(px, gateTop, gateW / 2, Math.PI, 0);
+        ctx.lineTo(px + gateW / 2, py + h / 2);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(12, 10, 8, 0.62)';
+        ctx.fill();
+        // [2026-10-05] 금빛 림라이트 — 아치 상단에만 얇게 둘러 성문에 깊이를 준다.
+        ctx.beginPath();
+        ctx.arc(px, gateTop, gateW / 2, Math.PI * 1.05, Math.PI * 1.95);
+        ctx.strokeStyle = 'rgba(255, 215, 130, 0.35)';
+        ctx.lineWidth = Math.max(0.35, w * 0.035);
+        ctx.stroke();
+        // 상단 하이라이트
+        ctx.beginPath();
+        ctx.moveTo(px - w / 2 + taper, py - h / 2 + merlonH + h * 0.12);
+        ctx.lineTo(px + w / 2 - taper, py - h / 2 + merlonH + h * 0.12);
+        ctx.strokeStyle = 'rgba(255, 252, 240, 0.5)';
+        ctx.lineWidth = Math.max(0.4, w * 0.05);
+        ctx.stroke();
+        // 수도 깃발 — 기둥 세로 0.62h, 폭 비례 0.45px 이상
         if (city.iconType === 'CAPITAL') {
             const fx = px + w / 2 + w * 0.1;
             const fy = py - h / 2 + merlonH;
-            // [2026-10-02] 기둥 세로 0.5h → 0.62h. 최소 높이(h=5.6px)에서 2.8px 는
-            // 깃발이 삼각형보다 점에 가깝게 나와 "수도" 신호가 사라졌다. 기둥은 아이콘
-            // 폭에 비례한 최소 0.45px 두께로 그린다(옛 max(0.4, 0.5*s) 와 같은 수준).
             const fh = h * 0.62;
             ctx.beginPath();
             ctx.moveTo(fx, fy);
@@ -3163,7 +3690,11 @@ export class ChinaMapRenderer {
             ctx.lineTo(fx + w * 0.26, fy - fh * 0.68);
             ctx.lineTo(fx, fy - fh * 0.36);
             ctx.closePath();
-            ctx.fillStyle = city.ownerColor || '#c8b070';
+            // [2026-10-05] 수도 깃발 그라데이션 — 위쪽을 밝히면 천이 빛을 받는 느낌이 난다.
+            const flagGrad = ctx.createLinearGradient(fx, fy - fh, fx, fy);
+            flagGrad.addColorStop(0, this.lightenColor(city.ownerColor || '#c8b070', 0.3));
+            flagGrad.addColorStop(1, city.ownerColor || '#c8b070');
+            ctx.fillStyle = flagGrad;
             ctx.fill();
             ctx.stroke();
         }
