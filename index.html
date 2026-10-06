@@ -24,18 +24,21 @@
             <div id="controls" aria-label="게임 제어">
                 <button id="btn-start" class="game-btn" data-icon="▶" aria-label="게임 시작" title="게임 시작"><span class="btn-label">게임 시작</span></button>
                 <button id="btn-pause" class="game-btn" data-icon="⏸" aria-label="일시정지" aria-keyshortcuts="P" title="일시정지/재개 (P)" disabled><span class="btn-label">일시정지</span></button>
+                <span class="ctl-sep" aria-hidden="true"></span>
                 <button id="btn-save" class="game-btn" data-icon="💾" aria-label="저장" aria-keyshortcuts="S" title="저장 (S)" disabled><span class="btn-label">저장</span></button>
                 <button id="btn-slots" class="game-btn" data-icon="🗄️" aria-label="슬롯" title="세이브 슬롯" disabled><span class="btn-label">슬롯</span></button>
                 <!-- [2026-10-03 제거] 「❓ 도움말」버튼 — 안내 패널 삭제에 맞춰 함께 뺐다. -->
                 <button id="btn-settings" class="game-btn" data-icon="⚙️" aria-label="설정" title="설정"><span class="btn-label">설정</span></button>
                 <button id="btn-auth" class="game-btn" data-icon="👤" aria-label="로그인" title="계정 로그인"><span class="btn-label">로그인</span></button>
+                <span class="ctl-sep" aria-hidden="true"></span>
                 <button id="btn-graph" class="game-btn" data-icon="🕸️" aria-label="人脈 인맥 관계망" aria-keyshortcuts="G" title="인맥 관계망 (G)" disabled><span class="btn-label">人脈</span></button>
                 <button id="btn-trace" class="game-btn" data-icon="🌲" aria-label="軌跡 턴 실행 과정" title="턴 실행 과정 보기" disabled><span class="btn-label">軌跡</span></button>
                 <button id="btn-diplomacy" class="game-btn" data-icon="🕊️" aria-label="外交 외교" aria-keyshortcuts="D" title="외교 (D)" disabled><span class="btn-label">外交</span></button>
                 <button id="btn-report" class="game-btn" data-icon="📊" aria-label="報告 보고" aria-keyshortcuts="R" title="월간 보고 (R)" disabled><span class="btn-label">報告</span></button>
                 <button id="btn-battle" class="game-btn" data-icon="⚔️" aria-label="전투" title="전투" disabled><span class="btn-label">전투</span></button>
                 <button id="btn-map-visibility" class="game-btn" data-icon="🗺️" aria-label="전체 도시" aria-pressed="false" disabled title="전체 도시 / 방문·소유 도시 전환"><span class="btn-label">전체 도시</span></button>
-                <button id="btn-next-month" class="game-btn" data-icon="⏭" aria-label="다음 月" aria-keyshortcuts="N" title="다음 달 진행 (N)" disabled><span class="btn-label">다음 月</span></button>
+                <span class="ctl-sep" aria-hidden="true"></span>
+                <button id="btn-next-month" class="game-btn is-primary" data-icon="⏭" aria-label="다음 月" aria-keyshortcuts="N" title="다음 달 진행 (N)" disabled><span class="btn-label">다음 月</span></button>
             </div>
         </div>
         <canvas id="game-canvas" aria-label="중국 전도. 도시를 탭하면 상세 정보가 열립니다." role="img"></canvas>

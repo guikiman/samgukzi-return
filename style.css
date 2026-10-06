@@ -58,10 +58,10 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     background: var(--bg-panel);
     backdrop-filter: var(--glass);
     -webkit-backdrop-filter: var(--glass);
-    padding: 10px 18px;
+    padding: 6px 12px;
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 12px;
     border-bottom: 1px solid var(--gold-dim);
     z-index: 5;
 }
@@ -70,15 +70,15 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
    예전엔 .title-sub(10px) 가 따로 붙어 있어서 같은 이름이 두 크기로 보였다. */
 #game-title .title-cn {
     font-family: var(--font-serif);
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 700;
     color: var(--gold);
-    letter-spacing: 4px;
+    letter-spacing: 3px;
     text-shadow: 0 0 12px rgba(212, 175, 55, 0.35);
     white-space: nowrap;
 }
 
-#game-info { display: flex; gap: 8px; }
+#game-info { display: flex; gap: 6px; align-items: center; }
 
 /* 조작 버튼 = 아이콘 전용. 아이콘은 data-icon 속성에서 ::before 로 뽑는다.
    DOM 텍스트가 아니라 속성에 있어야 JS 의 textContent 덮어쓰기(일시정지/진행중/전체도시)
@@ -86,41 +86,72 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 #controls .game-btn .btn-label { display: none; }
 #controls .game-btn::before {
     content: attr(data-icon);
-    font-size: 15px;
+    font-size: 16px;
     line-height: 1;
 }
 /* 완전 투명 — 2026-09-30 사용자 요청. 배경·테두리를 모두 걷어내 아이콘만 남긴다.
    평평해져서 클릭范围(버튼)이 보이지 않으므로, 못 누른 느낌이 들면 hover 시 아주 옅게
    반응을 되돌린다. */
 #controls .game-btn {
-    min-width: 34px;
-    padding: 6px 9px;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    flex: 0 0 32px;
+    padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     background: transparent;
     border: 1px solid transparent;
+    border-radius: 7px;
     box-shadow: none;
-    color: rgba(255, 246, 214, .5);
+    color: rgba(255, 246, 214, .62);
     text-shadow: 0 1px 3px rgba(0, 0, 0, .9);
 }
 #controls .game-btn:hover:not(:disabled) {
     background: rgba(212, 175, 55, .10);
     border-color: rgba(212, 175, 55, .35);
+    color: var(--gold-bright);
 }
 #controls .game-btn:disabled { opacity: .3; }
-.stat-chip {
+/* [2026-10-06] 그룹 구분선 — 시작/저장·정보·다음月 덩어리를 나눈다. */
+#controls .ctl-sep {
+    width: 1px;
+    height: 18px;
+    margin: 0 5px;
+    background: rgba(212, 175, 55, .25);
+    flex: 0 0 auto;
+}
+/* [2026-10-06] 다음月 주 버튼 — 지도 위에서도 바로 보인다. */
+#controls .game-btn.is-primary {
+    width: auto;
+    flex-basis: auto;
+    padding: 0 10px;
+    gap: 5px;
+    background: rgba(212, 175, 55, .16);
+    border-color: rgba(212, 175, 55, .55);
+    color: var(--gold-bright);
     font-size: 12px;
+}
+#controls .game-btn.is-primary::before { font-size: 13px; }
+#controls .game-btn.is-primary .btn-label { display: inline; }
+#controls .game-btn.is-primary:disabled { opacity: .45; }
+.stat-chip {
+    font-size: 11px;
     color: var(--text-muted);
-    padding: 3px 12px;
+    padding: 3px 10px;
     border: 1px solid var(--gold-faint);
     border-radius: 20px;
     background: rgba(0, 0, 0, 0.25);
     transition: border-color .3s, color .3s;
+    white-space: nowrap;
 }
 .stat-chip:hover { border-color: var(--gold-dim); color: var(--text); }
 
-#controls { margin-left: auto; display: flex; gap: 8px; }
+/* [2026-10-06] 상단바 고도화 — 스크린샷에서 아이콘이 듬성듬성해 보여
+   32px 균등 셀 + 2px 간격 + 그룹 구분선으로 묶는다. JS 가 data-icon 만
+   바꾸므로 ::before 렌더 방식과 버튼 id 는 그대로 둔다. */
+#controls { margin-left: auto; display: flex; gap: 2px; align-items: center; }
 
 /* ---------- 공통 버튼 ---------- */
 .game-btn {
@@ -267,6 +298,7 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 #top-bar .game-btn {
     pointer-events: auto;
 }
+#top-bar .ctl-sep { pointer-events: none; }
 
 /* ---------- 사이드바 ---------- */
 /* 이미지 *내부* 좌측. 상단 바와 겹치지 않게 top 만큼 내린다 --top-bar 실제 높이는
@@ -2469,11 +2501,13 @@ button:focus-visible, select:focus-visible, input:focus-visible, [tabindex]:focu
 [role="dialog"]:focus { outline: none; }
 
 @media (max-width: 1000px) {
-    #top-bar { gap: 10px; padding: 8px 10px; }
+    #top-bar { gap: 8px; padding: 6px 8px; }
     #game-title { flex-shrink: 0; }
     #game-info { flex-wrap: wrap; gap: 4px; }
-    #controls { flex: 1; margin-left: 0; }
-    .game-btn { padding: 6px 11px; white-space: nowrap; }
+    #controls { flex: 1; margin-left: 0; justify-content: flex-end; }
+    .game-btn { white-space: nowrap; }
+    #controls .game-btn { width: 30px; height: 30px; min-width: 30px; flex-basis: 30px; }
+    #controls .game-btn.is-primary { width: auto; flex-basis: auto; }
     #sidebar { width: 245px; }
     #graph-panel, #a11y-panel { top: 74px; right: 10px; }
 }
