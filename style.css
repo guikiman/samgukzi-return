@@ -2087,6 +2087,107 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 .cdp-facility-name { font-size: 12px; font-weight: 700; color: var(--gold, #d4af37); }
 .cdp-facility-level { font-size: 10px; color: var(--text-muted, #aaa); white-space: nowrap; }
 /* ============================================================
+   [2026-10-07] 도시화면 UI 고도화 — 상단바 작업의 연장.
+   E2E(browser_smoke)가 클래스 구조·텍스트를 직접 읽으므로 마크업·클래스명은
+   그대로 두고 CSS만 덧씌운다. 핵심은 ①헤더 가독성 ②칩·버튼 규격 통일
+   ③터치 타깃 ④포커스 가시성이다.
+   ============================================================ */
+/* 헤더 — 도시명 + 세력 배지 + 요약 + 닫기 한 줄 정렬 */
+.cdp-header { gap: 10px; }
+.cdp-title-wrap { gap: 8px; flex: 1 1 auto; }
+.cdp-city-name {
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cdp-faction-badge {
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-weight: 700;
+    flex: 0 0 auto;
+}
+.cdp-close {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-radius: 7px;
+}
+.cdp-close:hover { background: rgba(212, 175, 55, .10); }
+/* 요약 칩 — 상단바 stat-chip 과 같은 필(pill) 언어로 통일 */
+.cdp-summary { gap: 6px; align-items: center; }
+.cdp-chip {
+    border-radius: 20px;
+    padding: 3px 10px;
+    background: rgba(0, 0, 0, .30);
+    line-height: 1.5;
+}
+.cdp-chip b { margin-right: 4px; }
+/* 섹션 타이틀 — 구분선으로 그룹을 나눈다 */
+.cdp-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.cdp-section-title::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: rgba(212, 175, 55, .15);
+}
+/* 명령 버튼 — 32px 최소 터치 타깃 + 포커스 가시성 */
+.cdp-action-btn { min-height: 32px; }
+.cdp-action-btn:disabled { cursor: not-allowed; }
+.cdp-action-btn:focus-visible,
+.cdp-facility:focus-visible,
+.city-badge:focus-visible,
+.cdp-close:focus-visible,
+.cdp-sheet-close:focus-visible {
+    outline: 2px solid var(--gold-bright);
+    outline-offset: 2px;
+}
+/* 시트 — 닫기 버튼과 겹치지 않게 상단 여백, 등장 애니메이션 */
+.cdp-scene-sheet {
+    width: min(680px, calc(100% - 32px));
+    border-radius: 12px;
+    padding-top: 34px;
+    animation: fadeUp .25s ease;
+}
+.cdp-sheet-close {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
+}
+/* 명령 그룹 간격 — 타이틀과 버튼 묶음이 붙지 않게 */
+.cdp-command-group { gap: 4px; }
+.cdp-command-groups { gap: 10px; }
+/* 시설 배지 — hover 때만 올리고 포커스 때도 같은 강조 */
+.city-badge:focus-visible {
+    transform: translate(-50%, -50%) scale(1.12);
+    background: rgba(10, 12, 26, .72);
+}
+.city-badge:active { transform: translate(-50%, -50%) scale(1.05); }
+/* 하단 시설줄 — 스크롤 힌트용 하단 여백 */
+.cdp-facilities-wrap .cdp-facilities { padding-bottom: 2px; }
+.cdp-facilities-wrap .cdp-facility { border-radius: 7px; }
+/* 무장 행 — 수장이 한눈에 들어오게 좌측 골드 바 */
+.cdp-officer-row:has(.cdp-officer-name.is-leader) { border-left: 3px solid var(--gold-dim); }
+@media (max-width: 700px) {
+    .cdp-scene-sheet { width: calc(100% - 16px); max-height: 82%; padding: 30px 12px 12px; }
+    .cdp-summary { gap: 4px; }
+    .cdp-city-name { font-size: 18px; letter-spacing: 2px; }
+}
+
+/* ============================================================
    대화 창 — 무대(스테이지) 방식 [신규 기능]
    San7 과의 차이: 판(panel) 안에 카드를 놓지 않는다.
    인물이 서 있는 무대가 있고, 아래 반투명 바에 말이 오른다.
