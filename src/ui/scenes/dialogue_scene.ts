@@ -166,6 +166,8 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
     const pageLabel = must<El>(modal, '#dialogue-page');
     const prevBtn = must<HTMLButtonElement>(modal, '#dialogue-prev');
     const nextBtn = must<HTMLButtonElement>(modal, '#dialogue-next');
+    /** 하단 이동 바 — hideFooter 페이지에서 숨긴다. 없으면(구 고정본) 그냥 둔다. */
+    const foot = modal.querySelector<HTMLElement>('.dlg-foot');
     const closeBtn = must<HTMLButtonElement>(modal, '#dialogue-close');
     const bandSpeaker = modal.querySelector<El>('#dlg-band-speaker');
     const leftFigure = must<El>(modal, '#dlg-left-figure');
@@ -192,6 +194,12 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
     let giftItems: readonly DialogueGiftItem[] = [];
     /** 마지막으로 밀어넣은 페이지 표시 — 스크립트 노드가 갈 때 다시 그려지도록 기억한다. */
     let pageLabel_ = '';
+    /** steps 모드에서 현재 드러난 조각 인덱스 */
+    let revealStep = 0;
+    /** steps 모드에서 본문이 마지막 조각까지 드러났는가 */
+    let bodyDone = false;
+    /** 선택 확정 모드에서 고른 선택지 id — ▶ 가 확정할 때까지 보관한다. */
+    let selectedChoiceId: string | null = null;
 // ------------------------------------------------------------ 기록 / 타이포그래피
 
     function resetTranscript(): void {
@@ -374,25 +382,40 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         title.textContent = page.title;
         paintStage(page);
 
-        const sep = page.text.indexOf('\n\n');
-        if (sep >= 0) {
-            // 타이포그래피는 대사만 조금씩 드러낸다 — 참고는 정보이므로 한 번에 보여준다.
-            startReveal(page.text.slice(0, sep));
-            notes.textContent = page.text.slice(sep + 2);
-            notes.style.display = 'block';
-        } else {
-            startReveal(page.text);
+        if (page.steps && page.steps.length > 0) {
+            // 단계 모드: 현재 단계 하나만 보여준다. 클릭·◀▶ 로 교체한다(누적하지 않는다).
+            text.textContent = page.steps[revealStep - 1] ?? '';
             notes.textContent = '';
             notes.style.display = 'none';
+            bodyDone = revealStep >= page.steps.length;
+        } else {
+            const sep = page.text.indexOf('\n\n');
+            if (sep >= 0) {
+                startReveal(page.text.slice(0, sep));
+                notes.textContent = page.text.slice(sep + 2);
+                notes.style.display = 'block';
+            } else {
+                startReveal(page.text);
+                notes.textContent = '';
+                notes.style.display = 'none';
+            }
+            bodyDone = true;
         }
         // TTS: 화면 조각이 아니라 통으로 읽는다 — 소리가 끊겨 들리면 안 된다.
-        hooks.speak?.({ speaker: page.speaker, text: planReveal(page.text, 0).spoken });
+        // 단계 모드에서는 지금 보여준 단계만 읽는다.
+        const speechSource = page.steps && page.steps.length > 0
+            ? (page.steps[revealStep - 1] ?? '')
+            : page.text;
+        hooks.speak?.({ speaker: page.speaker, text: planReveal(speechSource, 0).spoken });
 
         detail.innerHTML = (page.detail ?? []).map(line => `<span>${line}</span>`).join('');
         detail.style.display = page.detail && page.detail.length > 0 ? 'grid' : 'none';
-        stepLabel.textContent = state.pages.length > 1 ? `단계 ${state.index + 1} / ${state.pages.length}` : '';
+        stepLabel.textContent = page.steps && page.steps.length > 0
+            ? `대화 ${revealStep} / ${page.steps.length}`
+            : (state.pages.length > 1 ? `단계 ${state.index + 1} / ${state.pages.length}` : '');
 
-        choices.innerHTML = (page.choices ?? []).map((choice, i) =>
+        choices.innerHTML = (page.choicePrompt ? `<div class="dlg-choice-prompt">${page.choicePrompt}</div>` : '')
+            + (page.choices ?? []).map((choice, i) =>
             `<button class="dlg-choice" data-choice="${choice.id}" ${choice.disabled ? 'disabled' : ''}>`
             + `<span class="dlg-choice-idx">${i + 1}</span>`
             + `<span class="dlg-choice-label">${choice.label}</span>`
@@ -401,11 +424,34 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
 
         result.style.display = 'none';
         result.textContent = '';
-        prevBtn.disabled = state.index <= 0;
-        nextBtn.disabled = state.index >= state.pages.length - 1;
+        // 단계 모드에서는 ◀▶ 가 장면이 아니라 대화 단계를 옮긴다.
+        const hasSteps = !!(page.steps && page.steps.length > 0);
+        prevBtn.disabled = hasSteps ? revealStep <= 1 : state.index <= 0;
+        nextBtn.disabled = hasSteps ? revealStep >= page.steps.length : state.index >= state.pages.length - 1;
+        // hideFooter 장면에서는 하단 바째로 숨긴다 — 본문 클릭·키보드로 이동한다.
+        if (foot) foot.style.display = page.hideFooter ? 'none' : '';
         // 연쇄 대화는 게임이 '방문 N' 같은 자체 표시를 밀어넣는다 — 덮어쓰면 안 된다.
-        pageLabel.textContent = pageLabel_ !== '' ? pageLabel_ : `${state.index + 1} / ${state.pages.length}`;
-        if (cont && pageLabel_ === '') { cont.disabled = true; cont.classList.remove('dlg-bouncing'); }
+        // 단계 모드에서는 푸터 표시도 대화 단계(1/3·2/3·3/3)를 따른다.
+        pageLabel.textContent = pageLabel_ !== ''
+            ? pageLabel_
+            : (hasSteps ? `${revealStep} / ${page.steps.length}` : `${state.index + 1} / ${state.pages.length}`);
+        if (cont) {
+            if (page.selectChoice) {
+                // 선택 확정 모드: ▶ 는 '고른 선택지를 확정' 하는 버튼이다.
+                // 고르기 전엔 잠겨 있고, 단계 대사를 다 봐야 살린다.
+                const ready = selectedChoiceId !== null && (bodyDone || !hasSteps);
+                cont.disabled = !ready;
+                cont.classList.toggle('dlg-bouncing', ready);
+            } else if (pageLabel_ === '') {
+                cont.disabled = true;
+                cont.classList.remove('dlg-bouncing');
+            }
+        }
+        // 단계 사이를 오가도 고른 선택지는 유지한다 — 다시 표시한다.
+        if (page.selectChoice && selectedChoiceId) {
+            const sel = choices.querySelector(`[data-choice="${selectedChoiceId}"]`) as HTMLButtonElement | null;
+            if (sel && !sel.disabled) sel.classList.add('dlg-choice-selected');
+        }
 
         // 지나온 장면을 기록에 싣는다.
         // 앞 페이지가 통째로 누락되지 않도록 0..index 를 순서대로 돌며 쌓는다.
@@ -430,6 +476,9 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
             resetTranscript();
             transcriptTopIndex = -1;
         }
+        revealStep = 1;
+        bodyDone = false;
+        selectedChoiceId = null;
         renderPage();
         modal.style.display = 'flex';
         modal.focus({ preventScroll: true });
@@ -458,9 +507,27 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
 
     function step(delta: 1 | -1): void {
         if (!state) return;
+        const page = state.pages[state.index];
+        if (page?.steps && page.steps.length > 0) {
+            // 단계 모드: ◀▶ 는 장면이 아니라 대화 단계를 옮긴다.
+            const next = Math.max(1, Math.min(revealStep + delta, page.steps.length));
+            if (next === revealStep) return;
+            revealStep = next;
+            bodyDone = revealStep >= page.steps.length;
+            renderPage();
+            return;
+        }
         if (delta === 1 && state.index >= state.pages.length - 1) return;
         if (delta === -1 && state.index <= 0) return;
         state = { ...state, index: state.index + delta };
+        renderPage();
+    }
+
+    /** 선택 확정 뒤 다음 장면으로 넘어간다. 단계 모드를 무시하고 장면을 옮긴다. */
+    function advancePage(): void {
+        if (!state) return;
+        if (state.index >= state.pages.length - 1) return;
+        state = { ...state, index: state.index + 1 };
         renderPage();
     }
 
@@ -469,9 +536,51 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
     prevBtn.addEventListener('click', () => step(-1));
     nextBtn.addEventListener('click', () => step(1));
     closeBtn.addEventListener('click', () => close());
-    if (cont) cont.addEventListener('click', () => { if (!cont.disabled) step(1); });
+    if (cont) cont.addEventListener('click', () => {
+        if (cont.disabled) return;
+        const page = state?.pages[state.index];
+        if (page?.selectChoice && selectedChoiceId) {
+            // 선택 확정: 고른 선택지의 onSelect 를 실행한다.
+            const choice = page.choices?.find((item: DialogueSceneChoice) => item.id === selectedChoiceId);
+            if (!choice) return;
+            const message = choice.onSelect?.() ?? '';
+            transcript = recordChoice(transcript, choice.label, message);
+            renderTranscript();
+            selectedChoiceId = null;
+            choices.querySelectorAll('.dlg-choice-selected').forEach(b => b.classList.remove('dlg-choice-selected'));
+            if (choice.advanceOnConfirm) {
+                // ▶ 확정 뒤 다음 화면으로 넘어간다.
+                advancePage();
+                return;
+            }
+            if (message) {
+                result.textContent = message;
+                result.style.display = 'block';
+            }
+            // 확정한 선택지는 다시 눌리지 않는다 (중복 실행 방지).
+            const done = choices.querySelector(`[data-choice="${choice.id}"]`) as HTMLButtonElement | null;
+            if (done) done.disabled = true;
+            cont.disabled = true;
+            cont.classList.remove('dlg-bouncing');
+            return;
+        }
+        step(1);
+    });
     // 대사 본문을 클릭하면 글자를 다 보여준다(가상Novel 관습).
-    text.addEventListener('click', () => { skipReveal(); });
+    text.addEventListener('click', () => {
+        if (!state) { skipReveal(); return; }
+        const page = state.pages[state.index];
+        if (!page) { skipReveal(); return; }
+        if (page.steps && page.steps.length) {
+            const next = Math.min(revealStep + 1, page.steps.length);
+            if (next === revealStep) return; // 마지막 단계에선 멈춘다
+            revealStep = next;
+            bodyDone = revealStep >= page.steps.length;
+            renderPage();
+            return;
+        }
+        skipReveal();
+    });
 
     modal.addEventListener('keydown', (event) => {
         if (!state) return;
@@ -480,6 +589,23 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         // 스페이스/엔터: 글자가 다 안 나왔으면 먼저 끝낸다.
         if (event.key === ' ' || event.key === 'Enter') {
             if (skipReveal()) { event.preventDefault(); return; }
+            // 단계 모드: 스페이스/엔터로 다음 단계로. 버튼에 포커스가 있으면 버튼이 먼저 처리한다.
+            const page = state.pages[state.index];
+            if (page?.steps && page.steps.length > 0 && revealStep < page.steps.length
+                && t?.tagName !== 'BUTTON') {
+                revealStep += 1;
+                bodyDone = revealStep >= page.steps.length;
+                renderPage();
+                event.preventDefault();
+                return;
+            }
+            // 선택 확정 모드: 단계를 다 보이고 선택이 있으면 스페이스/엔터가 ▶ 확정과 같다.
+            if (page?.selectChoice && selectedChoiceId && (bodyDone || !(page.steps && page.steps.length > 0))
+                && t?.tagName !== 'BUTTON') {
+                cont?.click();
+                event.preventDefault();
+                return;
+            }
         }
         if (event.key === 'ArrowRight') {
             if (nextBtn.disabled) return;
@@ -528,7 +654,17 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         if (!button || button.disabled) return;
         const page = state.pages[state.index];
         const choice = page.choices?.find((item: DialogueSceneChoice) => item.id === button.dataset.choice);
-        if (!choice?.onSelect) return;
+        if (!choice) return;
+        if (page.selectChoice) {
+            // 선택 확정 모드: 고르기만 한다. 실행은 ▶(계속) 에서 한다.
+            selectedChoiceId = choice.id;
+            choices.querySelectorAll('.dlg-choice').forEach(b =>
+                b.classList.toggle('dlg-choice-selected', b === button));
+            const ready = bodyDone || !(page.steps && page.steps.length > 0);
+            if (cont) { cont.disabled = !ready; cont.classList.toggle('dlg-bouncing', ready); }
+            return;
+        }
+        if (!choice.onSelect) return;
         const message = choice.onSelect();
         result.textContent = message;
         result.style.display = 'block';

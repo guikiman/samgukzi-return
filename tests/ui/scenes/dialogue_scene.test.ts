@@ -44,7 +44,7 @@ function mountFixture(): void {
           <button id="dlg-continue"></button>
           <div id="dialogue-result" role="status" style="display:none;"></div>
         </div>
-        <footer>
+        <footer class="dlg-foot">
           <button id="dialogue-prev"></button>
           <span id="dialogue-page"></span>
           <button id="dialogue-next"></button>
@@ -605,5 +605,223 @@ describe('참고 줄', () => {
         });
         expect(el('dialogue-page').textContent).toBe('1 / 2');
         expect(el('dialogue-progress-label').textContent).toContain('1 / 2');
+    });
+});
+
+// ---------------------------------------------------------------- 단계 대화 (steps)
+
+describe('단계 대화 (steps)', () => {
+    let scene: DialogueScene;
+    beforeEach(() => { mountFixture(); scene = makeScene(); });
+
+    const stepsState = (): DialogueSceneState => ({
+        pages: [{
+            title: '입성', speaker: '성문지기', placeMark: '邑',
+            text: '첫째 대사 둘째 대사 셋째 대사',
+            steps: ['첫째 대사', '둘째 대사', '셋째 대사'],
+        }],
+        index: 0,
+    });
+
+    it('열면 첫 단계가 바로 보인다', () => {
+        scene.open(stepsState());
+        expect(el('dialogue-text').textContent).toBe('첫째 대사');
+        expect(el('dialogue-progress-label').textContent).toBe('대화 1 / 3');
+    });
+
+    it('클릭하면 다음 단계로 교체된다 (누적되지 않는다)', () => {
+        scene.open(stepsState());
+        el('dialogue-text').click();
+        expect(el('dialogue-text').textContent).toBe('둘째 대사');
+        el('dialogue-text').click();
+        expect(el('dialogue-text').textContent).toBe('셋째 대사');
+    });
+
+    it('마지막 단계에서 클릭해도 그대로다', () => {
+        scene.open(stepsState());
+        el('dialogue-text').click();
+        el('dialogue-text').click();
+        el('dialogue-text').click();
+        expect(el('dialogue-text').textContent).toBe('셋째 대사');
+    });
+
+    it('첫 단계에서 ◀ 이전은 비활성, 둘째 단계에서 활성', () => {
+        scene.open(stepsState());
+        const prev = document.getElementById('dialogue-prev') as HTMLButtonElement;
+        expect(prev.disabled).toBe(true);
+        el('dialogue-text').click();
+        expect(prev.disabled).toBe(false);
+    });
+
+    it('마지막 단계에서 ▶ 다음은 비활성', () => {
+        scene.open(stepsState());
+        const next = document.getElementById('dialogue-next') as HTMLButtonElement;
+        expect(next.disabled).toBe(false);
+        el('dialogue-text').click();
+        el('dialogue-text').click();
+        expect(next.disabled).toBe(true);
+    });
+
+    it('◀▶ 버튼으로 단계를 오간다', () => {
+        scene.open(stepsState());
+        const prev = document.getElementById('dialogue-prev') as HTMLButtonElement;
+        const next = document.getElementById('dialogue-next') as HTMLButtonElement;
+        next.click();
+        expect(el('dialogue-text').textContent).toBe('둘째 대사');
+        next.click();
+        expect(el('dialogue-text').textContent).toBe('셋째 대사');
+        prev.click();
+        expect(el('dialogue-text').textContent).toBe('둘째 대사');
+        prev.click();
+        expect(el('dialogue-text').textContent).toBe('첫째 대사');
+        expect(prev.disabled).toBe(true);
+    });
+
+    it('→ 키로 다음 단계, ← 키로 이전 단계', () => {
+        scene.open(stepsState());
+        const modal = el('dialogue-modal');
+        modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        expect(el('dialogue-text').textContent).toBe('둘째 대사');
+        modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+        expect(el('dialogue-text').textContent).toBe('첫째 대사');
+    });
+
+    it('스페이스로 다음 단계로 진행한다', () => {
+        scene.open(stepsState());
+        const modal = el('dialogue-modal');
+        modal.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+        expect(el('dialogue-text').textContent).toBe('둘째 대사');
+    });
+
+    it('단계 모드에서 speak 훅은 전체가 아니라 현재 단계만 받는다', () => {
+        const speak = vi.fn();
+        const sceneWithHook = makeScene({ speak });
+        sceneWithHook.open(stepsState());
+        expect(speak.mock.calls[0][0].text).toBe('첫째 대사');
+        el('dialogue-text').click();
+        expect(speak.mock.calls[1][0].text).toBe('둘째 대사');
+    });
+
+    it('푸터 표시도 대화 단계를 따른다 (1/3 → 2/3 → 3/3)', () => {
+        scene.open(stepsState());
+        expect(el('dialogue-page').textContent).toBe('1 / 3');
+        el('dialogue-text').click();
+        expect(el('dialogue-page').textContent).toBe('2 / 3');
+        el('dialogue-text').click();
+        expect(el('dialogue-page').textContent).toBe('3 / 3');
+    });
+
+    it('hideFooter 장면에서는 하단 바가 숨고, 아니면 보인다', () => {
+        scene.open({
+            pages: [{ title: '성문', speaker: 's', text: 'x', hideFooter: true }],
+            index: 0,
+        });
+        expect(document.querySelector('.dlg-foot')?.style.display).toBe('none');
+        scene.open(simpleState());
+        expect(document.querySelector('.dlg-foot')?.style.display).toBe('');
+    });
+
+    it('steps 가 없으면 기존처럼 본문을 통으로 보여준다', () => {
+        scene.open(simpleState('“오랜만이옵니다.”'));
+        expect(el('dialogue-text').textContent).toBe('“오랜만이옵니다.”');
+        expect(el('dialogue-progress-label').textContent).toBe('');
+    });
+});
+
+// ---------------------------------------------------------------- 선택 확정 모드 (selectChoice)
+
+describe('선택 확정 모드 (selectChoice)', () => {
+    let scene: DialogueScene;
+    beforeEach(() => { mountFixture(); scene = makeScene(); });
+
+    const selectState = (repairFn: () => string = () => '보수했다'): DialogueSceneState => ({
+        pages: [
+            {
+                title: '입성', speaker: '성문지기', placeMark: '邑',
+                text: '첫째 대사 둘째 대사',
+                steps: ['첫째 대사', '둘째 대사'],
+                selectChoice: true,
+                choicePrompt: '업무 또는 방문 계획이 있으신가',
+                choices: [
+                    { id: 'repair', label: '성벽 보수', description: '수리', onSelect: repairFn },
+                    { id: 'visit', label: '도시 방문', description: '이동', advanceOnConfirm: true },
+                ],
+            },
+            {
+                title: '이동', speaker: '성문지기', placeMark: '門',
+                text: '어디로 갈까',
+                choices: [
+                    { id: 'travel', label: '다른 도시로 이동한다', description: '지도', onSelect: () => '떠난다' },
+                ],
+            },
+        ],
+        index: 0,
+    });
+
+    const contBtn = (): HTMLButtonElement => document.getElementById('dlg-continue') as HTMLButtonElement;
+    const choiceBtns = (): HTMLButtonElement[] =>
+        [...document.querySelectorAll('.dlg-choice')] as HTMLButtonElement[];
+
+    it('고르기 전에는 ▶가 잠겨 있다', () => {
+        scene.open(selectState());
+        expect(contBtn().disabled).toBe(true);
+    });
+
+    it('선택지를 누르면 고르기만 하고 실행하지 않는다', () => {
+        const repairFn = vi.fn(() => '보수했다');
+        scene.open(selectState(repairFn));
+        const [first] = choiceBtns();
+        first.click();
+        expect(repairFn).not.toHaveBeenCalled();
+        expect(first.classList.contains('dlg-choice-selected')).toBe(true);
+        // 단계를 다 보기 전이라 ▶는 아직 잠김
+        expect(contBtn().disabled).toBe(true);
+    });
+
+    it('단계를 다 보고 고르면 ▶가 살아난다', () => {
+        scene.open(selectState());
+        el('dialogue-text').click();
+        choiceBtns()[0].click();
+        expect(contBtn().disabled).toBe(false);
+        expect(contBtn().classList.contains('dlg-bouncing')).toBe(true);
+    });
+
+    it('▼ 확정하면 onSelect가 실행되고 결과·잠금이 남는다', () => {
+        const repairFn = vi.fn(() => '보수했다');
+        scene.open(selectState(repairFn));
+        el('dialogue-text').click();
+        const [first] = choiceBtns();
+        first.click();
+        contBtn().click();
+        expect(repairFn).toHaveBeenCalledTimes(1);
+        expect(el('dialogue-result').textContent).toBe('보수했다');
+        expect(el('dialogue-result').style.display).toBe('block');
+        expect(first.disabled).toBe(true);
+        expect(contBtn().disabled).toBe(true);
+    });
+
+    it('advanceOnConfirm 선택지를 확정하면 다음 장면으로 넘어간다', () => {
+        scene.open(selectState());
+        el('dialogue-text').click();
+        choiceBtns()[1].click();
+        contBtn().click();
+        expect(el('dialogue-title').textContent).toBe('이동');
+        expect(el('dialogue-page').textContent).toBe('2 / 2');
+    });
+
+    it('choicePrompt가 선택지 위에 그려진다', () => {
+        scene.open(selectState());
+        expect(document.querySelector('.dlg-choice-prompt')?.textContent)
+            .toBe('업무 또는 방문 계획이 있으신가');
+    });
+
+    it('스페이스로 단계를 다 보고 선택이 있으면 ▶ 확정과 같다', () => {
+        const repairFn = vi.fn(() => '보수했다');
+        scene.open(selectState(repairFn));
+        const modal = el('dialogue-modal');
+        modal.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+        choiceBtns()[0].click();
+        modal.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+        expect(repairFn).toHaveBeenCalledTimes(1);
     });
 });

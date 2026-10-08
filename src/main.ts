@@ -70,7 +70,7 @@ import { RuntimeModLoader } from './core/runtime_mod_loader.js';
 import { MultiTabMutexCoordinator } from './core/multi_tab_mutex_coordinator.js';
 import { checkInteraction, executeInteraction, getAffinityBetween, GIFT_ITEMS, calculateGiftAffinity, type GiftItemId, type GiftOptions } from './core/officer_interaction_system.js';
 import { ConversationSystem } from './core/conversation_system.js';
-import { shouldInspectAtGate, resolveGateChoice, gateBribeCost, gateSneakThreshold } from './core/city_gate_system.js';
+import { shouldInspectAtGate, resolveGateChoice, resolveGateEvent, gateBribeCost, gateSneakThreshold } from './core/city_gate_system.js';
 import { describeTravelPlan } from './core/travel_transport.js';
 import { catchUpOfflineTurns } from './core/offline_catchup.js';
 import type { GateChoiceId } from './core/city_gate_system.js';
@@ -140,7 +140,7 @@ import {
     RUFFIAN_BRIBE_COST,
 } from './core/ruffian_event_system.js';
 import { getCaptivesInCity } from './core/captive_escape_system.js';
-import { FacilityType, type CityBuildingState, type OfficerID, type CityID } from './core/types.js';
+import { FacilityType, type CityBuildingState, type OfficerID, type CityID, type Personality } from './core/types.js';
 import type { GameStore } from './core/game_store.js';
 import { DomesticTaskType } from './core/domestic_scheduler.js';
 // [Auth] 계약 + 백엔드 스토어 + UI 흐름을 조립하는 통합 글루
@@ -1007,16 +1007,108 @@ function enterCity(cityId: string): void {
     });
     syncChinaMapCities();
     showCityInfo(cityId);
-    // 알현과 부족 교섭은 둘 다 대화창을 띄운다. 순서대로 두 번 열면 나중 것이 앞 것을 덮어써서
-    // 하나가 통째로 사라진다(황제 도시=세력 수도는 부족 배치지와 겹칠 때가 있다).
+    // 마을 진입 안내 대화를 먼저 띄우고, 닫히면 알현/부족/요충지 창을 이어서 연다.
     // 알현이 떴으면 그 선택이 끝나고 부족 창을 띄운다.
-    if (maybeOpenImperialAudience(cityId)) {
-        queueCityWindowsAfterDialogue(cityId);
-    } else if (!maybeOpenTribeNegotiation(cityId)) {
-        maybeOpenFeatureSiege(cityId);
-    } else {
-        queueCityWindowsAfterDialogue(cityId, true);
-    }
+    openCityEntryDialogue(cityId);
+    queueAfterDialogueChained(() => {
+        if (maybeOpenImperialAudience(cityId)) {
+            queueCityWindowsAfterDialogue(cityId);
+        } else if (!maybeOpenTribeNegotiation(cityId)) {
+            maybeOpenFeatureSiege(cityId);
+        } else {
+            queueCityWindowsAfterDialogue(cityId, true);
+        }
+    });
+}
+
+/**
+ * 마을 진입 안내 대화 — 호칭 인사 + 도시 간략 안내 + 조건 선택지 [49]
+ *
+ * - 진입 즉시 호칭을 넣어 인사하고 도시 간략 안내를 3단계로 표시한다.
+ * - 성벽 내구도가 100% 가 아니면 성벽 보수 선택지를 활성화한다.
+ * - 선택지는 고른 뒤 ▶ 로 확정한다(선택 확정 모드).
+ * - 도시 방문을 확정하면 전국 지도가 바로 열려 목적지를 고를 수 있다.
+ */
+function openCityEntryDialogue(cityId: string): void {
+    const store = engine['store'];
+    const city = store.getCity(cityId);
+    if (!city) return;
+    const gs = store.getGlobalState();
+    const faction = city.ownerId ? store.getFaction(city.ownerId) : null;
+
+    const selected = store.getOfficer(gs.selectedOfficerId ?? '');
+    const leader = faction ? store.getOfficer(faction.leaderId) : null;
+    const caller = (selected && selected.factionId === gs.playerFactionId)
+        ? selected
+        : leader
+        ?? store.getAllOfficers().find(o => o.factionId === gs.playerFactionId && o.runtime.isAlive)
+        ?? null;
+
+    const title = caller ? `${caller.name}님` : '주군';
+
+    const wallPct = city.maxDefense > 0 ? Math.round((city.defense / city.maxDefense) * 100) : 100;
+    const wallLine = wallPct >= 100
+        ? `성벽은 완전하다 (${city.defense}/${city.maxDefense}).`
+        : `성벽이 완전하지 않다 (${city.defense}/${city.maxDefense}, ${wallPct}%).`;
+
+    // [대화창 단계 표시] 인사 · 도시 현황 · 안내를 3단계로 나눠
+    // 클릭·◀▶ 로 교체하며 진행한다. 첫 단계에서 ◀ 는 비활성이다.
+    const stepGreeting = `성문지기 ${title}, ${city.name}땅에 이르셨구려.`;
+    const stepStatus = `백성은 ${city.population.toLocaleString()}명, 주둔 병력은 ${city.development.toLocaleString()}명이라오. ${wallLine}`;
+    const stepGuide = `살림살이는 제법 안정되어 있으니, 한번 둘러보시지요.`;
+    const text = `${stepGreeting} ${stepStatus} ${stepGuide}`;
+
+    // [선택 확정 모드] 성벽 보수 · 도시 방문을 고른 뒤 ▶ 로 확정한다.
+    const repairChoice: DialogueSceneChoice = {
+        id: 'repair_wall',
+        label: '성벽 보수',
+        description: '',
+        disabled: wallPct >= 100,
+        onSelect: () => {
+            const cost = 200 + Math.round((city.maxDefense - city.defense) * 2);
+            if (city.funds < cost) {
+                return `자금이 부족하다 (필요 ${cost}金, 보유 ${city.funds}金).`;
+            }
+            store.updateCity(cityId, {
+                funds: city.funds - cost,
+                defense: Math.min(city.maxDefense, city.defense + Math.max(5, Math.round((city.maxDefense - city.defense) * 0.4))),
+            });
+            addLog(`${city.name} 성벽을 보수했다 (비용 ${cost}金).`);
+            return `성벽을 보수했다. 이제 방어력이 더 단단해졌다.`;
+        },
+    };
+    const visitChoice: DialogueSceneChoice = {
+        id: 'visit_city',
+        label: '도시 방문',
+        description: '',
+        // ▶ 확정 뒤 전국 지도를 바로 연다.
+        onSelect: () => {
+            // 도시를 떠나므로 알현·부족·요충지 창은 열지 않는다.
+            clearQueuedDialogue();
+            closeDialogue();
+            setTimeout(() => openWorldMapForTravel(cityId), 180);
+            return `${city.name}을 떠나 다른 도시로 향한다.`;
+        },
+    };
+
+    openDialogue({
+        pages: [
+            {
+                title: `${city.name} 입성`,
+                subtitle: faction ? `${faction.name} · ${city.name}` : city.name,
+                speaker: title,
+                placeMark: '邑',
+                speakerPortrait: !!caller,
+                text,
+                steps: [stepGreeting, stepStatus, stepGuide],
+                selectChoice: true,
+                hideFooter: true,
+                choicePrompt: `${title}, 업무 또는 다른 도시 방문 계획이 있으신 가요`,
+                choices: [repairChoice, visitChoice],
+            },
+        ],
+        index: 0,
+    });
 }
 
 /**
@@ -1347,37 +1439,52 @@ function openGateDialogue(cityId: string, strict: boolean): void {
         : faction ? store.getOfficer(faction.leaderId) : null;
     const officerInt = actor?.stats.intelligence ?? 50;
     const cost = gateBribeCost(strict);
-    const chance = Math.max(0, Math.min(100, gateSneakThreshold(officerInt, strict)));
     const ownerName = city.ownerId ? store.getFaction(city.ownerId)?.name ?? '낯선 세력' : '무주공산';
+    const relationName = city.ownerId && ownerName !== '무주공산' ? ownerName : null;
+
+    const statusLabel = strict
+        ? `${ownerName}의 엄중한 경계`
+        : relationName ? `${ownerName}의 성문` : '미방문 도시의 성문';
+
     const text = strict
         ? `“멈춰라! 여기는 ${ownerName}의 영역이다. ${city.name} 성문은 적에게 열리지 않는다. 목숨이 아깝거든 당장 돌아가라.”`
-        : `“처음 보는 얼굴이군. ${city.name}에 무슨 볼일이냐? 수상쩍은 자는 성문에서 돌려보낸다는 엄명이다.”`;
+        : relationName
+            ? `“처음 보는 얼굴이군. ${ownerName} 땅 ${city.name}에 무슨 볼일이냐? 수상한 자는 성문에서 돌려보낸다는 엄명이다.”`
+            : `“낯선 이로군. ${city.name}에 무슨 볼일이냐? 수상한 자는 성문에서 돌려보낸다는 엄명이다.”`;
+
     const applyChoice = (choiceId: GateChoiceId): string => {
-        const result = resolveGateChoice(choiceId, {
+        const ev = resolveGateEvent(choiceId, {
             factionGold: faction?.gold ?? 0,
             officerIntelligence: officerInt,
             strict,
         });
-        if (result.goldSpent > 0 && faction) {
-            store.updateFaction(faction.id, { gold: Math.max(0, faction.gold - result.goldSpent) });
+        if (ev.goldSpent > 0 && faction) {
+            store.updateFaction(faction.id, { gold: Math.max(0, faction.gold - ev.goldSpent) });
         }
-        if (result.infamyDelta !== 0 && actor) {
-            store.updateOfficer(actor.id, { infamy: actor.infamy + result.infamyDelta });
+        if (ev.infamyDelta !== 0 && actor) {
+            store.updateOfficer(actor.id, { infamy: actor.infamy + ev.infamyDelta });
         }
-        addLog(result.message);
-        if (result.entered) {
+        addLog(ev.message);
+        if (ev.entered) {
             // 큐를 먼저 비운다. closeDialogue() 가 남아 있는 큐를 실행하면,
             // enterCity 가 새로 등록할 '이 도시' 교섭이 이전 도시 것으로 먼저 열린다.
             clearQueuedDialogue();
             closeDialogue();
             enterCity(cityId);
+            return `${ev.tag} — ${city.name}에 들어간다.`;
         }
-        return result.message;
+        return `${ev.tag} — ${ev.why}`;
     };
+
+    const sneakChance = Math.max(0, Math.min(100, gateSneakThreshold(officerInt, strict)));
+    const sneakDesc = strict
+        ? `${actor?.name ?? '斥候'} 지력 ${officerInt} · 엄중한 경계, 성공률 약 ${sneakChance}%`
+        : `${actor?.name ?? '斥候'} 지력 ${officerInt} · 성공률 약 ${sneakChance}%`;
+
     openDialogue({
         pages: [{
             title: `성문 검문 — ${city.name}`,
-            subtitle: strict ? `${ownerName} · 적대 세력의 성문` : `${ownerName} · 미방문 도시의 성문`,
+            subtitle: statusLabel,
             speaker: '성문지기',
             placeMark: '門',
             // 문지기는 사람이라 표식 글자 대신 초상화를 세운다.
@@ -1387,21 +1494,17 @@ function openGateDialogue(cityId: string, strict: boolean): void {
                 {
                     id: 'bribe',
                     label: `뇌물을 건넨다 (${cost}金)`,
-                    description: faction && faction.gold >= cost ? '문지기를 매수해 통과한다' : `자금 부족 (보유 ${faction?.gold ?? 0}金)`,
+                    description: faction && faction.gold >= cost
+                        ? `문지기에게 ${cost}金을 쥐여주고 통과한다`
+                        : `자금 부족 (보유 ${faction?.gold ?? 0}金, 필요 ${cost}金)`,
                     disabled: !faction || faction.gold < cost,
                     onSelect: () => applyChoice('bribe'),
                 },
                 {
                     id: 'sneak',
                     label: '몰래 잠입한다',
-                    description: `${actor?.name ?? '斥候'} 지력 ${officerInt} · 성공률 약 ${chance}%`,
+                    description: sneakDesc,
                     onSelect: () => applyChoice('sneak'),
-                },
-                {
-                    id: 'leave',
-                    label: '돌아간다',
-                    description: '검문을 포기하고 물러난다',
-                    onSelect: () => applyChoice('leave'),
                 },
             ],
         }],
@@ -1430,10 +1533,11 @@ let travelProgressCurrent = 0;
  * 정렬은 이름 순이다. 이동 경로를 아직 상태로 갖고 있지 않으므로(2단계는 시각
  * 표시만), 가까운 순으로 보여주면 도착 시간을 예측할 수 없는 순서로 보게 된다.
  */
-function travelTargetCities(): Array<import('./core/types.js').City> {
+function travelTargetCities(originId?: string | null): Array<import('./core/types.js').City> {
     if (!engine) return [];
+    const origin = originId ?? citySceneCityId;
     return engine['store'].getAllCities()
-        .filter(c => c.id !== citySceneCityId)
+        .filter(c => c.id !== origin)
         .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
 }
 
@@ -1455,38 +1559,69 @@ function openCityGatekeeperDialogue(city: import('./core/types.js').City | null 
     const gs = store.getGlobalState();
     const faction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
     const officerCount = countCityOfficers(city);
-    const text = `“문은 열려 있소. ${city.name}의 일은 언제든 말씀하시지. `
-        + `지금 치안은 ${city.developmentStats.publicOrder}이고, 병영에 무장 ${officerCount}명이 있습니다. `
-        + `바깥은 넓으니 다른 도시로도 얼마든지 다닐 수 있지요.”`;
+    // [대화창 단계 표시·선택 확정 모드] 입성 대화와 같은 구조 — 3단계로 읽고
+    // 선택지를 고른 뒤 ▶ 로 확정한다. 첫 단계에서 ◀ 는 비활성이다.
+    const stepGreeting = `문은 열려 있소. ${city.name}의 일은 언제든 말씀하시지.`;
+    const stepStatus = `지금 치안은 ${city.developmentStats.publicOrder}이고, 병영에 무장 ${officerCount}명이 있습니다.`;
+    const stepGuide = `바깥은 넓으니 다른 도시로도 얼마든지 다닐 수 있지요.`;
+    const text = `${stepGreeting} ${stepStatus} ${stepGuide}`;
+
+    // [이동 화면] ▶ 로 다른 도시 방문을 확정하면 뜬다. 전국 지도에서 목적지를 고른다.
+    const travelPage: DialogueScenePage = {
+        title: `도시 이동 — ${city.name}`,
+        subtitle: faction ? `${faction.name} · ${city.name} 성문` : `${city.name} 성문`,
+        speaker: '성문지기',
+        placeMark: '門',
+        speakerPortrait: true,
+        text: `성문은 열어 두겠소. 다른 도시로 가려거든 지도에서 목적지를 고르시지.`,
+        hideFooter: true,
+        choices: [
+            {
+                id: 'travel',
+                label: '다른 도시로 이동한다',
+                description: '전국 지도에서 목적지 도시를 고른다',
+                onSelect: () => {
+                    // 도시를 떠나므로 대기 중인 다른 창은 열지 않는다.
+                    clearQueuedDialogue();
+                    closeDialogue();
+                    setTimeout(() => openWorldMapForTravel(city.id), 180);
+                    return `${city.name} 성문을 나선다.`;
+                },
+            },
+        ],
+    };
 
     openDialogue({
-        pages: [{
-            title: `성문 — ${city.name}`,
-            subtitle: faction ? `${faction.name} · ${city.name} 성문` : `${city.name} 성문`,
-            speaker: '성문지기',
-            placeMark: '門',
-            speakerPortrait: true,
-            text,
-            choices: [
-                {
-                    id: 'talk',
-                    label: '성문지기와 이야기한다',
-                    description: `치안 ${city.developmentStats.publicOrder} · 무장 ${officerCount}명 · 식량 수입 ${city.foodIncome.toLocaleString()}`,
-                    onSelect: () => `“${city.name}은 지금 크게 번영하고 있소. 무장들 얼굴도 다 알고 있지.”`,
-                },
-                {
-                    id: 'travel',
-                    label: '다른 도시 방문하기',
-                    description: '전국 지도를 열어 다른 도시로 향한다',
-                    onSelect: () => {
-                        // 결과를 창에 보여준 뒤 지도를 연다. 곧바로 닫으면 눌린감이 없다.
-                        closeDialogue();
-                        setTimeout(openWorldMapForTravel, 180);
-                        return `${city.name} 성문을 나선다.`;
+        pages: [
+            {
+                title: `성문 — ${city.name}`,
+                subtitle: faction ? `${faction.name} · ${city.name} 성문` : `${city.name} 성문`,
+                speaker: '성문지기',
+                placeMark: '門',
+                speakerPortrait: true,
+                text,
+                steps: [stepGreeting, stepStatus, stepGuide],
+                selectChoice: true,
+                hideFooter: true,
+                choicePrompt: '성문지기에게 용무를 전하시오',
+                choices: [
+                    {
+                        id: 'talk',
+                        label: '성문지기와 이야기 한다',
+                        description: '',
+                        onSelect: () => `${city.name}은 지금 크게 번영하고 있소. 무장들 얼굴도 다 알고 있지.`,
                     },
-                },
-            ],
-        }],
+                    {
+                        id: 'travel',
+                        label: '다른 도시로 이동한다',
+                        description: '',
+                        // ▶ 확정 뒤 이동 화면(다음 장면)으로 넘어간다.
+                        advanceOnConfirm: true,
+                    },
+                ],
+            },
+            travelPage,
+        ],
         index: 0,
     });
 }
@@ -1509,15 +1644,16 @@ function countCityOfficers(city: import('./core/types.js').City): number {
  * 검증한다. 이동 모드에서는 그 계약과 무관하게 **한 번의 클릭**으로 이동이
  * 성사되도록 별도 분기를 둔다.
  */
-function openWorldMapForTravel(): void {
-    const targets = travelTargetCities();
+function openWorldMapForTravel(originCityId?: string): void {
+    const origin = originCityId ?? citySceneCityId;
+    const targets = travelTargetCities(origin);
     if (targets.length === 0) {
         addLog('이 세계에는 방문할 다른 도시가 없다.');
         return;
     }
     // 도시 화면을 먼저 닫는다 — 닫지 않으면 지도 위에 도시 패널이 겹친다.
     closeCityPanel();
-    travelModeOriginId = citySceneCityId;
+    travelModeOriginId = origin;
     travelModeActive = true;
     travelReturnCityId = travelModeOriginId;
     addLog('어느 도시로 갈까? 지도의 도시를 누르면 이동한다.');
@@ -4598,6 +4734,25 @@ async function startGame(world: BuiltWorld | null = null, selectedOfficerId: str
     // 신규/이어하기 공통: 중국 전도에 도시 배치 (소속/영토 포함) [9][17]
     syncChinaMapCities();
 
+    // [강화] 시작 직후 현재 도시를 지도에서 자동으로 선택/강조한다.
+    //   세력 선택 → 무장 선택 → 게임 시작 직후, 전국지도에서
+    //   - 내 세력 도시가 글로우/영향 링/라벨 색으로 더 잘 보이고
+    //   - 내가 지금 있는 도시(플레이어 세력 수도)가 선택 하이라이트로 뜨게 한다.
+    //   도시 패널까지 열지 않고 지도 강조만 반영한다.
+    try {
+        const gsNow = engine['store'].getGlobalState();
+        const playerCapitalId = gsNow.playerFactionId
+            ? engine['store'].getFaction(gsNow.playerFactionId)?.capitalCityId ?? null
+            : null;
+        if (playerCapitalId) {
+            currentPanelCityId = playerCapitalId;
+            worldCities = worldCities.map(city => ({ ...city, isSelected: city.id === playerCapitalId }));
+            chinaMap.setCities(worldCities);
+        }
+    } catch {
+        // 엔진/지도 미준비 시 조용히 건너뛴다.
+    }
+
     // 정산 증감의 기준선 — 이 시점의 재고로 두어야 첫 턴이 실제 증감으로 표시된다
     prevSettlement = computeSettlement(engine['store']);
     latestSettlement = prevSettlement;
@@ -6956,6 +7111,11 @@ function renderOfficerList(world: BuiltWorld, factionIdx: number): void {
     const roster = faction.officers
         .map(id => byId.get(id))
         .filter((o): o is NonNullable<typeof o> => o !== null && o !== undefined);
+    // 무장 선택 카드용 성향 한글 — 로직 값(영문)은 그대로 두고 표시만 바꾼다.
+    const PERSONALITY_KO: Record<Personality, string> = {
+        AGGRESSIVE: '호전', CALM: '냉정', CAUTIOUS: '신중', TIMID: '소심',
+        LOYAL: '충성', AMBITIOUS: '야심', RIGHTEOUS: '의리', GREEDY: '탐욕',
+    };
     officerList.innerHTML = roster.map(o => {
         const isLeader = o.id === faction.leaderId;
         return `<button class="officer-card" data-officer-id="${o.id}">
@@ -6964,9 +7124,8 @@ function renderOfficerList(world: BuiltWorld, factionIdx: number): void {
                 grade: Math.max(0, Math.min(9, o.rank)),
             })}</span>
             <span class="officer-info">
-                <span class="officer-card-name">${o.name}${isLeader ? '<span class="officer-lord-mark">군주</span>' : ''}</span>
+                <span class="officer-card-name">${o.name}${isLeader ? '<span class="officer-lord-mark">군주</span>' : ''}<span class="officer-card-trait">${PERSONALITY_KO[o.personality]} · ${o.rank}품</span></span>
                 <span class="officer-card-stats">統${o.stats.leadership} 武${o.stats.might} 智${o.stats.intelligence} 政${o.stats.politics} 魅${o.stats.charisma}</span>
-                <span class="officer-card-trait">${o.personality} · ${o.rank}품</span>
             </span>
         </button>`;
     }).join('');

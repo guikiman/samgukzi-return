@@ -24,6 +24,8 @@ export interface DialogueSceneChoice {
     readonly disabled?: boolean;
     /** 고르면 화면에 남길 한 줄을 돌려준다. */
     readonly onSelect?: () => string;
+    /** 선택 확정 모드에서 ▶ 확정 뒤 다음 장면으로 넘어간다. */
+    readonly advanceOnConfirm?: boolean;
 }
 
 /** 대화 한 장면. */
@@ -40,6 +42,21 @@ export interface DialogueScenePage {
     readonly subtitle?: string;
     /** 대사. '\n\n' 뒤는 참고로 따로 그린다. */
     readonly text: string;
+    /**
+     * 단계 표시용 대사 조각들.
+     * 있으면 본문을 한 번에 다 보여주지 않고, 클릭할 때마다 다음 조각을 보여준다.
+     * 마지막 조각까지 shown 이면 선택지/계속 버튼이 활성화된다.
+     */
+    readonly steps?: readonly string[];
+    /**
+     * 선택 확정 모드 — 선택지를 눌러도 바로 실행하지 않고 고르기만 한다.
+     * ▶(계속) 버튼이 확정 역할을 한다. 고른 뒤 ▶ 를 눌러야 onSelect 가 돈다.
+     */
+    readonly selectChoice?: boolean;
+    /** 선택지 위 안내 문장. 있으면 선택지 목록 위에 그린다. */
+    readonly choicePrompt?: string;
+    /** 하단 이동 바(◀ 이전·페이지·다음 ▶)를 숨긴다. 단계 이동은 본문 클릭·키보드로 한다. */
+    readonly hideFooter?: boolean;
     /** 우측(상대편) 무장 id. 없으면 빈 슬롯이 된다. */
     readonly rightOfficerId?: string;
     readonly rightSpeaker?: string;

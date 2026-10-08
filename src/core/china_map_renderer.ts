@@ -874,8 +874,8 @@ export class ChinaMapRenderer {
      *
      * 최소 간격(CITY_MIN_GAP)은 고정하지 않는다 — requiredCityGap() 으로 계산한다.
      */
-    private static readonly CITY_COAST_MAX_MOVE = 0.07;
-    private static readonly CITY_COAST_BIAS = 0.5;
+    private static readonly CITY_COAST_MAX_MOVE = 0.08;
+    private static readonly CITY_COAST_BIAS = 0.55;
 
     /**
      * 도시 아이콘이 겹치지 않기 위해 필요한 최소 정규화 거리.
@@ -907,8 +907,8 @@ export class ChinaMapRenderer {
         return (maxIconPx / base) * ChinaMapRenderer.CITY_GAP_SLACK;
     }
 
-    /** 필요 간격에 곱하는 여유분 — 라벨과 접도로까지 고려해 아이콘 폭보다 조금 띄운다. */
-    private static readonly CITY_GAP_SLACK = 1.25;
+    /** 필요 간격에 곱하는 여유분 — 라벨과 접도로까지 고려해 아이콘 폭보다 조금 더 띈다. */
+    private static readonly CITY_GAP_SLACK = 1.4;
 
     /**
      * 세력명을 붙일 최소 셀 수 — "도시 하나 분량"의 1/4.
@@ -1619,7 +1619,7 @@ export class ChinaMapRenderer {
     }
 
     /** 도시 아이콘이 물에 걸리지 않기 위한 최소 수면 거리(정규화). */
-    private static readonly MIN_SHORE_MARGIN = 0.014;
+    private static readonly MIN_SHORE_MARGIN = 0.018;
 
     private cityMapToPixel(city: MapCityView, width: number, height: number): { px: number; py: number } {
         const n = this.cityNorm(city);
@@ -3178,8 +3178,8 @@ export class ChinaMapRenderer {
         const b = this.landBounds();
         const spanX = Math.max(0.05, b.x1 - b.x0);
         const spanY = Math.max(0.05, b.y1 - b.y0);
-        // 1.06 = 여백. 육지가 화면 끝에 딱 붙으면 답답해 보인다.
-        const base = Math.max(width / spanX, height / spanY) * 1.06;
+        // 1.10 = 기본 여백. 육지가 화면 끝에 딱 붙으면 답답해 보인다.
+        const base = Math.max(width / spanX, height / spanY) * 1.10;
         // 육지 상자에 정확히 맞추면 zoom 1.32 까지 커지는데, 그러면 전보다 지도를 덜 보여
         // 빈 공간은 줄여도 화면에 보이는 범위(overview)를 잃는다. 원래 수준(1.0)을 넘지 않게 제한하고
         // 중심 이동만 하고 확대는 하지 않는다 — 빈 공간은 줄이되 화면 범위는 지키는 쪽.
@@ -3187,8 +3187,11 @@ export class ChinaMapRenderer {
         const cx = (b.x0 + b.x1) / 2;
         const cy = (b.y0 + b.y1) / 2;
         const scale = this.baseScale();
+        // [보정] 상단/하단 끝 도시가 cover 에 의해 화면 밖으로 잘리지 않도록,
+        // 육지 중심 시점을 수직으로 아주 조금 내린다(북쪽 도시를 화면 안에 남기기 위함).
+        const verticalSettle = 0.012; // 정규화 기준, 육지 상자가 화면 상단에서 약간 떨어지게 하는 여유
+        this.offsetY = scale * (0.5 - (cy + verticalSettle));
         this.offsetX = scale * (0.5 - cx);
-        this.offsetY = scale * (0.5 - cy);
     }
 
     private drawCity(
@@ -3217,26 +3220,42 @@ export class ChinaMapRenderer {
         // 아이콘을 절반으로 줄였을 때 링이 아이콘의 두 배가 되어 점 하나가 주황 덩어리로 보인다.
         const reach = slotSize.w * 1.15;
 
-        // [49] 도시 구분선 — 도시 영향 범위를 나타내는 가는 원형 경계다.
+        // 도시 영향 범위 링 — 내 세력 도시/현재 도시는 더 굵고 진하게 그려 구분한다.
         // 방문하지 않은 인접 도시는 점선으로 표시해 실루엣과 구분한다.
         ctx.save();
-        ctx.strokeStyle = this.lightenColor(city.ownerColor || '#888888', 0.25);
-        ctx.globalAlpha = 0.5;
-        ctx.lineWidth = Math.max(0.6, 0.9 * s);
-        ctx.setLineDash([]);
+        const isEmphasized = city.isPlayer || selected;
+        ctx.strokeStyle = isEmphasized ? this.lightenColor(city.ownerColor || '#c8b070', 0.45) : this.lightenColor(city.ownerColor || '#888888', 0.25);
+        ctx.globalAlpha = isEmphasized ? 0.85 : 0.5;
+        ctx.lineWidth = isEmphasized ? Math.max(1.1, 1.4 * s) : Math.max(0.6, 0.9 * s);
+        ctx.setLineDash(selected ? [] : (city.isDiscovered === false && this.discoveredOnly) ? [3 * s, 3 * s] : []);
         ctx.beginPath();
         ctx.arc(px, py, reach, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
 
-        // 도시 반경 글로우 (플레이어/호버 강조)
+        // 도시 반경 글로우 (플레이어 세력 / 현재 도시 / 호버 강조)
         // [2026-09-30] 아이콘이 절반으로 작아지면서 이 글로우가 지도에서 가장 튀는 요소가
         // 됐다 — 0.5 알파의 주황이 성 하나보다 크고 진했다. 중심을 비워 아이콘이 그대로
         // 읽히게 하고, 옅은 후광으로 밀었다. 강조 목적은 같고 시선은 아이콘에 머문다.
-        if (city.isPlayer || selected || hovered) {
-            const glowR = reach * (selected ? 1.3 : hovered ? 1.15 : 1.05);
-            const glow = ctx.createRadialGradient(px, py, glowR * 0.45, px, py, glowR);
-            glow.addColorStop(0, city.isPlayer ? 'rgba(240, 217, 140, 0.30)' : 'rgba(255, 255, 255, 0.22)');
+        //
+        // [강화] 내 세력 도시와 현재 선택 도시를 더 눈에 띄게 한다.
+        const isPlayer = city.isPlayer;
+        const emphasized = isPlayer || selected || hovered;
+        if (emphasized) {
+            const isCurrent = selected;
+            const baseR = isCurrent ? 1.4 : isPlayer ? 1.22 : hovered ? 1.15 : 1.05;
+            const glowR = reach * baseR;
+            const glow = ctx.createRadialGradient(px, py, glowR * 0.4, px, py, glowR);
+            if (isCurrent) {
+                glow.addColorStop(0, 'rgba(255, 240, 160, 0.55)');
+                glow.addColorStop(0.55, 'rgba(255, 210, 90, 0.18)');
+            } else if (isPlayer) {
+                glow.addColorStop(0, 'rgba(245, 225, 150, 0.40)');
+                glow.addColorStop(0.55, 'rgba(255, 225, 130, 0.14)');
+            } else {
+                glow.addColorStop(0, 'rgba(255, 255, 255, 0.30)');
+                glow.addColorStop(0.6, 'rgba(255, 255, 255, 0.10)');
+            }
             glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
             ctx.fillStyle = glow;
             ctx.beginPath();
@@ -3261,11 +3280,13 @@ export class ChinaMapRenderer {
             ctx.restore();
         }
 
-        ctx.fillStyle = selected ? '#ffff88' : '#f0e8d0';
+        // 라벨 색 — 현재 도시/내 세력 도시를 더 뚜렷하게 구분한다.
+        const labelIsEmphasized2 = selected || city.isPlayer;
+        ctx.fillStyle = selected ? '#ffff99' : city.isPlayer ? '#fff3cf' : '#f0e8d0';
         ctx.font = `bold ${Math.max(5, 6 * s)}px "Malgun Gothic", sans-serif`;
         ctx.textAlign = 'center';
         ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-        ctx.lineWidth = Math.max(1.5, 2 * s);
+        ctx.lineWidth = labelIsEmphasized2 ? Math.max(2, 2.4 * s) : Math.max(1.5, 2 * s);
         ctx.strokeText(city.name, slot.nameX, slot.nameY);
         ctx.fillText(city.name, slot.nameX, slot.nameY);
     }
