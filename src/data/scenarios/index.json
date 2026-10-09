@@ -1011,7 +1011,7 @@
     "title_kr": "群雄割拠 — 전장태세",
     "title_en": "All Heroes, All Lands",
     "start_date": "220-01",
-    "description": "특전 시나리오. 어느 한 시기도 따르지 않는 전장태세다. 삼국지 PK장수목록의 실명 무장 342명이 모두 살아 있고, 전국 57개 주요 도시가 모두 세력의 손에 들어와 있다. 관우와 조조가 같은 시대에 서 있고, 장수와 원로가 나이도 신분도 따지지 않고 한 자리에 선다. 누가 어느 시기의 누구인지는 중요하지 않다 — 전원이 이 자리에 서 있는 상황이다.",
+    "description": "특전 시나리오. 어느 한 시기도 따르지 않는 전장태세다. 삼국지 PK장수목록의 실명 무장 337명이 모두 살아 있고, 전국 57개 주요 도시가 모두 세력의 손에 들어와 있다. 관우와 조조가 같은 시대에 서 있고, 장수와 원로가 나이도 신분도 따지지 않고 한 자리에 선다. 누가 어느 시기의 누구인지는 중요하지 않다 — 전원이 이 자리에 서 있는 상황이다.",
     "difficulty": 5,
     "factions": [
       {
@@ -1039,10 +1039,10 @@
         "map_y": 0.1515
       },
       {
-        "name": "고구려",
+        "name": "요",
         "capital": "평양",
-        "leader_id": "off_1201",
-        "color": "#b03030",
+        "leader_id": "off_0844",
+        "color": "#2a8a8a",
         "map_x": 0.7709,
         "map_y": 0.1961
       },
@@ -1085,38 +1085,6 @@
         "color": "#9a6a4a",
         "map_x": 0.4756,
         "map_y": 0.3994
-      },
-      {
-        "name": "백제",
-        "capital": "사비",
-        "leader_id": "off_1202",
-        "color": "#e84393",
-        "map_x": 0.7948,
-        "map_y": 0.324
-      },
-      {
-        "name": "신라",
-        "capital": "경주",
-        "leader_id": "off_1203",
-        "color": "#d4a017",
-        "map_x": 0.8219,
-        "map_y": 0.3457
-      },
-      {
-        "name": "가야",
-        "capital": "가락",
-        "leader_id": "off_1204",
-        "color": "#1abc9c",
-        "map_x": 0.8113,
-        "map_y": 0.361
-      },
-      {
-        "name": "왜",
-        "capital": "야마토",
-        "leader_id": "off_1205",
-        "color": "#7f8c8d",
-        "map_x": 0.9149,
-        "map_y": 0.395
       }
     ],
     "cities": [
@@ -1214,19 +1182,19 @@
       },
       {
         "name": "사비",
-        "faction_index": 9
+        "faction_index": 3
       },
       {
         "name": "한산",
-        "faction_index": 9
+        "faction_index": 3
       },
       {
         "name": "웅진",
-        "faction_index": 9
+        "faction_index": 3
       },
       {
         "name": "경주",
-        "faction_index": 10
+        "faction_index": 3
       },
       {
         "name": "대야성",
@@ -1234,23 +1202,23 @@
       },
       {
         "name": "가락",
-        "faction_index": 11
+        "faction_index": 3
       },
       {
         "name": "안동",
-        "faction_index": 10
+        "faction_index": 3
       },
       {
         "name": "야마토",
-        "faction_index": 12
+        "faction_index": 3
       },
       {
         "name": "구주",
-        "faction_index": 12
+        "faction_index": 6
       },
       {
         "name": "오키나와",
-        "faction_index": 12
+        "faction_index": 6
       },
       {
         "name": "대만",
