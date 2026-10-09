@@ -31,8 +31,8 @@ describe('기준 데이터 규모 (삼국지14PK 13시트)', () => {
         expect(FORMATIONS.size).toBe(16);
     });
 
-    it('지역 46개가 로드되고 인구 338건이 집계된다', () => {
-        expect(REGIONS.size).toBe(46);
+    it('지역 57개가 로드되고 인구가 집계된다', () => {
+        expect(REGIONS.size).toBe(57);
         expect(Object.keys(POPULATION_BY_CITY).length).toBeGreaterThan(0);
     });
 
@@ -114,7 +114,7 @@ describe('정책 · 진형 · 지역', () => {
     it('조회 헬퍼가 정의된 항목을 돌려준다', () => {
         expect(getPolicy('어린강화')).toBeDefined();
         expect(getFormation('어린')).toBeDefined();
-        expect(getRegion('계')).toBeDefined();
+        expect(getRegion('낙양')).toBeDefined();
         expect(getPersonalityEffect('간웅')).toBeDefined();
     });
 });
