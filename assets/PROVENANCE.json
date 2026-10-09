@@ -113,39 +113,39 @@
         },
         {
             "path": "assets/city-icons-src/small.png",
-            "sha256": "792e44ebd04a2acd412cd5961cfadd74540ed695463273ee36c0cdf00a594b09",
-            "bytes": 37598,
+            "sha256": "449744a976c6d7e814e4a977c301b2df919088d538de04e674e8b98d2239b7a5",
+            "bytes": 35994,
             "source": "Local ComfyUI txt2img (2026-10-05): Krea2 turbo krea2_turbo_fp8_scaled + Qwen3-VL-4B, original prompt, 512px, seed 1001",
             "license": "Project-owned original AI asset. Generated locally from original prompts; no copyrighted reference used.",
             "method": "ai-generated",
-            "note": "city-icons.webp 아틀라스 셀 원본 (SMALL 망루). scripts/build_city_icon_atlas.mjs 입력."
+            "note": "city-icons.webp 아틀라스 셀 원본 (SMALL 망루). scripts/build_city_icon_atlas.mjs 입력. [2026-10-09 재인코딩] ffmpeg RGBA 디코드 비교로 픽셀 동일 확인 — 바이트만 축소. 출처·라이선스 변경 없음."
         },
         {
             "path": "assets/city-icons-src/medium.png",
-            "sha256": "ef118938d281e2f55edfa02ce54d6956c41e75f94ecad63edbe16cea9dbcaf7b",
-            "bytes": 47027,
+            "sha256": "e83e2be5a6ef8e192e51621bf3df3c63c2f8b741275638043f05241aa9fab12f",
+            "bytes": 45439,
             "source": "Local ComfyUI txt2img (2026-10-05): Krea2 turbo krea2_turbo_fp8_scaled + Qwen3-VL-4B, original prompt, 512px, seed 1002",
             "license": "Project-owned original AI asset. Generated locally from original prompts; no copyrighted reference used.",
             "method": "ai-generated",
-            "note": "city-icons.webp 아틀라스 셀 원본 (MEDIUM 성곽). scripts/build_city_icon_atlas.mjs 입력."
+            "note": "city-icons.webp 아틀라스 셀 원본 (MEDIUM 성곽). scripts/build_city_icon_atlas.mjs 입력. [2026-10-09 재인코딩] ffmpeg RGBA 디코드 비교로 픽셀 동일 확인 — 바이트만 축소. 출처·라이선스 변경 없음."
         },
         {
             "path": "assets/city-icons-src/large.png",
-            "sha256": "006eb7f27e153e7cc2d5e3b848b334d33271cd55e2b2abe93fd3f5cb7502f66d",
-            "bytes": 64445,
+            "sha256": "f9ddc927420ee79eb38401e4cb8ce83ed9d35508f7497ebd08a01e7e661c9a73",
+            "bytes": 62810,
             "source": "Local ComfyUI txt2img (2026-10-05): Krea2 turbo krea2_turbo_fp8_scaled + Qwen3-VL-4B, original prompt, 512px, seed 1003",
             "license": "Project-owned original AI asset. Generated locally from original prompts; no copyrighted reference used.",
             "method": "ai-generated",
-            "note": "city-icons.webp 아틀라스 셀 원본 (LARGE 대성). scripts/build_city_icon_atlas.mjs 입력."
+            "note": "city-icons.webp 아틀라스 셀 원본 (LARGE 대성). scripts/build_city_icon_atlas.mjs 입력. [2026-10-09 재인코딩] ffmpeg RGBA 디코드 비교로 픽셀 동일 확인 — 바이트만 축소. 출처·라이선스 변경 없음."
         },
         {
             "path": "assets/city-icons-src/capital.png",
-            "sha256": "bc09428b55c16d83f445e20f9f9082e754780834b4f675c161de7507ac394e8e",
-            "bytes": 56663,
+            "sha256": "1c584769694779cd0c4fd99dd47f4813f673eda4809a0319f214c2531cf2d98a",
+            "bytes": 54978,
             "source": "Local ComfyUI txt2img (2026-10-05): Krea2 turbo krea2_turbo_fp8_scaled + Qwen3-VL-4B, original prompt, 512px, seed 1004",
             "license": "Project-owned original AI asset. Generated locally from original prompts; no copyrighted reference used.",
             "method": "ai-generated",
-            "note": "city-icons.webp 아틀라스 셀 원본 (CAPITAL 대성+깃발). scripts/build_city_icon_atlas.mjs 입력."
+            "note": "city-icons.webp 아틀라스 셀 원본 (CAPITAL 대성+깃발). scripts/build_city_icon_atlas.mjs 입력. [2026-10-09 재인코딩] ffmpeg RGBA 디코드 비교로 픽셀 동일 확인 — 바이트만 축소. 출처·라이선스 변경 없음."
         }
     ]
 }
