@@ -20,6 +20,16 @@ export interface AccessibilitySettings {
     readonly screenShake: boolean;
     /** 무장 이름 옆 능력치 숫자 표시 (정보 과잉 민감자용) */
     readonly showStatNumbers: boolean;
+    /**
+     * 대사를 화면에 한 글자씩 띄우는가(타이포그래피).
+     * false 면 한 번에 다 보인다 — 모션 민감자용.
+     */
+    readonly typewriter: boolean;
+    /**
+     * 대사를 음성으로 읽는가(TTS).
+     * 기본 false — 소리를 내는 것은 사용자가 먼저 골라야 한다.
+     */
+    readonly speech: boolean;
 }
 
 export const DEFAULT_ACCESSIBILITY: AccessibilitySettings = {
@@ -27,6 +37,8 @@ export const DEFAULT_ACCESSIBILITY: AccessibilitySettings = {
     textScale: 1.0,
     screenShake: true,
     showStatNumbers: true,
+    typewriter: true,
+    speech: false,
 };
 
 export const FONT_MODE_LABELS: Record<FontMode, string> = {
@@ -42,7 +54,7 @@ export const TEXT_SCALE_LABELS: Record<TextScale, string> = {
     1.3: '아주 크게 130%',
 };
 
-const STORAGE_KEY = 'rtk8_accessibility';
+const STORAGE_KEY = 'samgukzi_return_accessibility';
 
 export function loadAccessibilitySettings(): AccessibilitySettings {
     try {
@@ -56,6 +68,9 @@ export function loadAccessibilitySettings(): AccessibilitySettings {
             textScale,
             screenShake: parsed.screenShake !== false,
             showStatNumbers: parsed.showStatNumbers !== false,
+            // 저장된 값이 없으면 기본값을 쓴다. typewriter/speech 는 새로 늘어난 키다.
+            typewriter: parsed.typewriter !== false,
+            speech: parsed.speech === true,
         };
     } catch {
         return { ...DEFAULT_ACCESSIBILITY };
@@ -77,6 +92,8 @@ export function accessibilityAttributes(s: AccessibilitySettings): Record<string
         'data-text-scale': String(s.textScale),
         'data-screen-shake': s.screenShake ? 'on' : 'off',
         'data-stat-numbers': s.showStatNumbers ? 'on' : 'off',
+        'data-typewriter': s.typewriter ? 'on' : 'off',
+        'data-speech': s.speech ? 'on' : 'off',
     };
 }
 
@@ -98,6 +115,14 @@ export function renderAccessibilityPanel(s: AccessibilitySettings): string {
         `<div class="a11y-row"><span class="a11y-label">능력치 숫자</span><span class="a11y-opts">` +
         `<button class="a11y-option${s.showStatNumbers ? ' active' : ''}" data-stat="on">표시</button>` +
         `<button class="a11y-option${!s.showStatNumbers ? ' active' : ''}" data-stat="off">숨김</button>` +
+        `</span></div>` +
+        `<div class="a11y-row"><span class="a11y-label">대사 표시</span><span class="a11y-opts">` +
+        `<button class="a11y-option${s.typewriter ? ' active' : ''}" data-typewriter="on">한 글자씩</button>` +
+        `<button class="a11y-option${!s.typewriter ? ' active' : ''}" data-typewriter="off">한 번에</button>` +
+        `</span></div>` +
+        `<div class="a11y-row"><span class="a11y-label">대사 읽기</span><span class="a11y-opts">` +
+        `<button class="a11y-option${s.speech ? ' active' : ''}" data-speech="on">듣기</button>` +
+        `<button class="a11y-option${!s.speech ? ' active' : ''}" data-speech="off">끄기</button>` +
         `</span></div>` +
         `<div class="ss-hint">설정은 즉시 적용되며 자동 저장됩니다</div>`
     );

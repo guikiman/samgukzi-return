@@ -86,9 +86,14 @@ describe('[461-480] 세력 라벨 안티오버랩', () => {
         const c = makeCounters();
         const { makeMockCanvas } = setupRendererEnv(c);
         const r = new ChinaMapRenderer(makeMockCanvas() as unknown as HTMLCanvasElement);
+        // [2026-09-30] 두 도시를 0.80/0.70 → 0.25/0.20 으로 바꿨다.
+        // 영토에 반경 상한이 생기며 세력명 위치가 "세력 전체 무게중심" 에서 "소유 셀의 중심" 으로
+        // 바뀌었고, 그 결과 이전 좌표는 줌 0.05 에서 37.5px 떨어져 겹침이 아예 발생하지 않았다
+        // (라벨 폭은 20px). 겹침 우선순위 로직이 검증되지 않는 케이스였다.
+        // 검증 대상은 "겹치면 플레이어가 우선한다" 이므로, 이번 좌표는 5.8px 로 확실히 겹친다.
         r.setCities([
             city('A', 0.15, 0.20, '#e69f00', true),
-            city('B', 0.80, 0.70, '#0072b2', false),
+            city('B', 0.25, 0.20, '#0072b2', false),
         ]);
         r.setShowWeatherOverlay(false);
         // 줌 0.05 — 두 라벨이 화면 중심으로 수축해 AABB가 겹침

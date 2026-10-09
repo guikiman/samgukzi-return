@@ -14,7 +14,7 @@ import {
     type TacticModifier,
     type TacticStat,
 } from '../src/core/tactic_effects';
-import { TACTICS, UNDEFINED_TACTICS } from '../src/core/rtk14_reference_data';
+import { TACTICS, UNDEFINED_TACTICS } from '../src/core/tactic_reference_data';
 import { OFFICER_PROFILES } from '../src/core/officer_profile_schema';
 
 const ALL = allResolvedTactics();

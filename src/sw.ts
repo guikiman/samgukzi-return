@@ -8,7 +8,7 @@
  *   4. 오프라인 폴백: 네트워크 불가 시 캐시에서 제공
  */
 
-const CACHE_NAME = 'rtk8-v1';
+const CACHE_NAME = 'samgukzi-return-v1';
 const PRECACHE_URLS = [
     '/',
     '/index.html',

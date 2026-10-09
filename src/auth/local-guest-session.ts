@@ -30,7 +30,7 @@ export interface LocalGuestSessionOptions {
     readonly now?: () => number;
 }
 
-const DEFAULT_GUEST_STORAGE_KEY = 'rtk8_guest_session';
+const DEFAULT_GUEST_STORAGE_KEY = 'samgukzi_return_guest_session';
 const DEFAULT_GUEST_TTL_SECONDS = 7 * 24 * 3600; // 7 days
 
 function getMemoryStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {

@@ -1,6 +1,29 @@
-# 🤖 OpenCode Autonomous Agents Guide for RTK8 Remake Web Project
+# 🤖 OpenCode Autonomous Agents Guide for 삼국지리턴 Web Project
 
-이 문서는 AI 자율주행 개발 에이전트(Autonomous Agents)가 '삼국지 8 리메이크 웹 완벽 복제 프로젝트'의 핵심 아키텍처와 320개 기능 체크리스트를 오차 없이 구현하도록 자율 조종하는 마스터 프롬프트이자 가이드라인입니다.
+이 문서는 AI 자율주행 개발 에이전트(Autonomous Agents)가 '삼국지리턴 웹 프로젝트'의 핵심 아키텍처와 320개 기능 체크리스트를 오차 없이 구현하도록 자율 조종하는 마스터 프롬프트이자 가이드라인입니다.
+
+---
+
+## 🚫 0. 금지 사항 (가장 먼저 읽을 것)
+
+### ⛔ 배포하지 않는다
+
+**게임 완성도가 낮아 공개 배포 단계가 아니다. 배포는 만들지 않는다.**
+
+* 자동 배포 통로는 2026-09-30 에 제거했다. `.github/workflows/ci.yml` 의 `deploy` 잡은
+  `workflow_dispatch`(수동 실행)에서만 돌아간다. `push` 로는 절대 배포되지 않는다.
+* **`master` 에 push 하지 않는다.** 예전엔 push 가 곧 배포였다. 이 프로젝트에서
+  master 푸시는 아래 규칙을 함께 깬다:
+
+  | 금지 | 대신 |
+  |---|---|
+  | `git push origin master` | feature 브랜치에 push → PR |
+  | PR 병합 | 병합 전 반드시 사용자 명시 승인을 받는다 |
+  | 배포 실행 | 하지 않는다 |
+
+* 이유: 완성도 20% 미만인 상태가 공개되면 검증되지 않은 빌드가 사용자에게 노출되고,
+  개발 시간만 소모된다. 사용자가 2026-09-30 에 명시적으로 금지했다.
+* 이 규칙은 세션이 바뀌어도 유지된다. 기억이 끊겨도 배포 금지다.
 
 ---
 
@@ -58,12 +81,12 @@ master                ← 통합 전용. 직접 개발 금지
 **세션이 끝나면 에이전트는 기억을 잃습니다.** 새 세션을 시작하면 그 파일을 먼저
 읽고, 기한이 지났으면 정리한 뒤 체크를 갱신하십시오.
 
-- `D:\samgukzi8-pre-rewrite.bundle` (85.8 MB) — **2026-10-11 삭제 예정**
+- `D:\samgukzi-return-pre-rewrite.bundle` (85.8 MB) — **2026-10-11 삭제 예정**
   히스토리 재작성 전 유일한 복구 지점. 되돌릴 방법이 문서에 적혀 있습니다.
 
 ### 🚫 저작권 자산 게이트 (2026-09-27 도입)
 
-`assets/china-national-map.png` 은 Total War: Three Kingdoms(Creative Assembly/Sega)
+`assets/china-national-map.png` 은 상용 전략 게임의 파생 지도
 파생 지도였습니다. 렌더러에서 제거하고 untrack 했고, `git filter-repo` 로
 히스토리 136커밋에서도 제거했습니다. 대체본은 `assets/map-china-4096.webp`
 (Natural Earth 퍼블릭 도메인)입니다.

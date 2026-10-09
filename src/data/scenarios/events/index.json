@@ -956,6 +956,51 @@
           }
         }
       ]
+    },
+    {
+      "scenarioId": "08",
+      "chainId": "chain_08_allstar",
+      "chainName": "群雄割拠 — 전장태세",
+      "nodes": [
+        {
+          "eventId": "ev_08_forced_march",
+          "eventName": "전원 호집",
+          "priority": 10,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 190,
+              "maxValue": 299
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "문서관: 어느 해의 일인지조차 정할 수 없다.",
+              "살아 있는 모든 무장이 각자의 진영으로 모였다."
+            ]
+          }
+        },
+        {
+          "eventId": "ev_08_cities_contested",
+          "eventName": "전 도시 쟁탈전",
+          "priority": 9,
+          "conditions": [
+            {
+              "type": "year",
+              "minValue": 190,
+              "maxValue": 299
+            }
+          ],
+          "result": {
+            "eventType": "SCENE",
+            "dialogueLines": [
+              "문서관: 일순 간에 백 개의 성이 서로를 향해 문을 열었다.",
+              "도로가 끊기고 장로가 길 위에 세워졌다."
+            ]
+          }
+        }
+      ]
     }
   ]
 }

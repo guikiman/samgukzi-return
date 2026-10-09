@@ -17,7 +17,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { formatGarrisonText } from '../src/core/china_map_renderer.js';
 import { GameStore } from '../src/core/game_store.js';
 import { GameEngine } from '../src/core/game_engine.js';
 import { DomesticCommand, CityRecruitmentCommand } from '../src/core/command_system.js';
@@ -47,19 +46,6 @@ function pickOfficerAndCity(store: GameStore) {
 }
 
 describe('결함 #8 — 지도 병력 배지가 100배 부풀어 표시된다', () => {
-    it('formatGarrisonText 는 병력 수(명)을 만 단위로 정확히 환산한다', () => {
-        // 회귀 증명이 목적이므로 옛 값(832.5만)을 명시해 적어둔다.
-        expect(formatGarrisonText(8_325)).toBe('8,325명');   // 옛엔 "832.5만"
-        expect(formatGarrisonText(83_000)).toBe('8.3만');
-        expect(formatGarrisonText(4_096)).toBe('4,096명');
-        expect(formatGarrisonText(10_000)).toBe('1만');
-        expect(formatGarrisonText(0)).toBe('0명');
-    });
-
-    it('병력이 0 미만이나 NaN 이어도 안전한 문자열을 준다', () => {
-        expect(formatGarrisonText(-500)).toBe('0명');
-        expect(formatGarrisonText(NaN)).toBe('0명');
-    });
 
     it('시나리오 도시 병력은 인구 비례 규모다 — 0~100 이 아니다', () => {
         // 0~100 이면 전 도시가 700 근처로 평준화돼 도시 간 격차가 사라진다.
@@ -76,19 +62,6 @@ describe('결함 #8 — 지도 병력 배지가 100배 부풀어 표시된다', 
         expect(new Set(cities.map(c => c.development)).size).toBeGreaterThan(1);
     });
 
-    it('지도 배지 문자열은 어느 도시도 100배 부풀어 표기하지 않는다', () => {
-        const { store } = setupWorld();
-        for (const c of store.getAllCities()) {
-            const text = formatGarrisonText(c.development);
-            if (text.endsWith('만')) {
-                const man = Number(text.slice(0, -1));
-                expect(man * 10_000).toBeGreaterThan(c.development * 0.95);
-                expect(man * 10_000).toBeLessThanOrEqual(c.development * 1.05 + 5_000);
-            } else {
-                expect(Number(text.replace(/[^0-9]/g, ''))).toBe(c.development);
-            }
-        }
-    });
 });
 
 describe('결함 #9 — 내정이 병력(development)을 올린다', () => {

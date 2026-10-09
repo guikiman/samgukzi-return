@@ -1,5 +1,5 @@
 ## Objective
-- 삼국지 8 리메이크 웹 프로젝트 — 50개 고도화 로드맵 전면 구현 완료 + tsc --noEmit 0 errors
+- 삼국지리턴 웹 프로젝트 — 50개 고도화 로드맵 전면 구현 완료 + tsc --noEmit 0 errors
 
 ## Important Details
 - 모든 TypeScript 소스는 `src/core/` 디렉토리 내 위치 (380+ 파일)

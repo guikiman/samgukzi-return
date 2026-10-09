@@ -91,7 +91,7 @@ describe('composeDialogue', () => {
         expect(text).not.toContain('{S}');
     });
 
-    it('장문장이 아니다 (San8 계열은 2~3문장)', () => {
+    it('장문장이 아니다 (2~3문장)', () => {
         const text = composeDialogue(ctx({ topic: 'strategy', affinity: 50 }));
         const sentences = (text.match(/[.。]/g) ?? []).length;
         expect(sentences).toBeLessThanOrEqual(5);

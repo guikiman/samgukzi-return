@@ -30,9 +30,17 @@ describe('재야 무장 방문 시스템 [24][421-440]', () => {
         expect(names).toContain('황충');
         expect(names).toContain('방통');
         expect(names).toContain('위연');
+        // 신야 3인방은 신야·유비에서 방문한다
+        for (const id of ['huang_zhong', 'pang_tong', 'wei_yan']) {
+            const visit = visits.find(v => v.officerId === id)!;
+            expect(visit.cityName).toBe('신야');
+            expect(visit.factionName).toBe('유비');
+        }
+        // 모든 방문은 표기 도시·세력과 실제 스토어가 일치한다
         for (const v of visits) {
-            expect(v.cityName).toBe('신야');
-            expect(v.factionName).toBe('유비');
+            expect(store.getCity(v.cityId)?.name).toBe(v.cityName);
+            expect(v.factionId).not.toBeNull();
+            expect(store.getFaction(v.factionId!)?.name).toBe(v.factionName);
         }
     });
 
@@ -46,12 +54,19 @@ describe('재야 무장 방문 시스템 [24][421-440]', () => {
     it('AI 세력은 자동 판정 — 난수 0이면 전원 수락으로 입사한다', () => {
         const { store } = setupWorld(0);
         const visits = processMonthlyFreeOfficerVisits(store, () => 0);
-        for (const v of visits) {
+        // AI 세력 도시 방문만 자동 입사 — 플레이어(fac_0) 도시(하비의 장연)는 선택지 대기
+        const aiVisits = visits.filter(v => v.factionId !== 'fac_0');
+        expect(aiVisits.length).toBeGreaterThan(0);
+        for (const v of aiVisits) {
             expect(v.needsPlayerChoice).toBe(false);
             expect(v.joined).toBe(true);
             const officer = store.getOfficer(v.officerId)!;
-            expect(officer.factionId).toBe('fac_2'); // 신야 소유 세력
+            expect(officer.factionId).toBe(v.factionId); // 방문 도시 소유 세력에 입사
             expect(officer.status).toBe(OfficerStatus.OFFICER);
+        }
+        for (const v of visits.filter(v => v.factionId === 'fac_0')) {
+            expect(v.needsPlayerChoice).toBe(true);
+            expect(v.joined).toBe(false);
         }
     });
 
@@ -72,7 +87,10 @@ describe('재야 무장 방문 시스템 [24][421-440]', () => {
         const { store } = setupWorld(2); // 유비 — 신야가 플레이어 도시
         const visits = processMonthlyFreeOfficerVisits(store, () => 0);
         expect(visits.length).toBeGreaterThan(0);
-        for (const v of visits) {
+        // 플레이어 세력(fac_2) 도시 방문만 선택지 대기 — AI 세력 도시는 자동 입사
+        const playerVisits = visits.filter(v => v.factionId === 'fac_2');
+        expect(playerVisits.length).toBeGreaterThan(0);
+        for (const v of playerVisits) {
             expect(v.needsPlayerChoice).toBe(true);
             expect(v.joined).toBe(false);
             // 스토어에는 아직 반영되지 않음

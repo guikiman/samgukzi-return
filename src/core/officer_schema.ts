@@ -1,7 +1,9 @@
 import { Officer } from './types.js';
 
 export function sanitizeAndValidateOfficer(raw: any): Officer | null {
-    if (typeof raw.id !== 'string' || !raw.id.startsWith('KOEI_')) return null;
+    // id 스킴은 실제 데이터(officers_full.json 의 off_NNNN)와 일치해야 한다.
+    // 이전에 상표에서 파생된 접두사를 검사하고 있어, 현재 데이터 전량이 통과하지 못했다.
+    if (typeof raw.id !== 'string' || !raw.id.startsWith('off_')) return null;
     if (typeof raw.name !== 'string') return null;
     if (typeof raw.affinity !== 'number' || raw.affinity < 0 || raw.affinity > 149) return null;
 

@@ -35,7 +35,7 @@ export class CloudSaveSync {
     private slots: Map<string, SaveSlot> = new Map();
     private lastSync = 0;
     private readonly MAX_SLOTS = 20;
-    private readonly STORAGE_KEY = 'rtk8_cloud_save_manifest';
+    private readonly STORAGE_KEY = 'samgukzi_return_cloud_save_manifest';
 
     constructor() {
         this.loadFromStorage();

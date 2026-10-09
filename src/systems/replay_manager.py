@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Any
 
 class ReplayManager:
     """
-    삼국지 8 리메이크 웹 완벽 복제 프로젝트 - 초고속 100-kB 리플레이 압축 및 복원 매니저
+    삼국지리턴 웹 프로젝트 - 초고속 100-kB 리플레이 압축 및 복원 매니저
     방대한 전투 로그를 zlib 및 Base64로 압축하여 URL 공유 파라미터 크기를 극한으로 줄입니다.
     """
     def __init__(self):

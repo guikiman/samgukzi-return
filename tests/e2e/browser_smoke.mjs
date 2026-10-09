@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 브라우저 E2E 스모크 테스트 (headless Chrome + CDP)
  * 파일: tests/e2e/browser_smoke.mjs
  *
@@ -453,6 +453,10 @@ async function main() {
         await cdp.evaluate("document.querySelector('.scenario-card[data-id=\\\"07\\\"]').click()");
         await waitForDisplay('faction-screen', 'flex');
         await cdp.evaluate("document.querySelector('.faction-card[data-idx=\\\"1\\\"]').click()");
+        const officerFlowOpen = await waitForDisplay('officer-screen', 'flex');
+        const officerCards = await cdp.evaluate("document.querySelectorAll('.officer-card').length");
+        if (!officerCards.value) throw new Error('무장 선택 목록이 비어 있다');
+        await cdp.evaluate("document.querySelector('.officer-card').click()");
 
         // 07 삼국鼎峙 실제 플레이 프로브 — 외부 능력치·도시 프로필·관계 JSON·연의전 [5][269][300]
         let scenario07Started = false;
@@ -463,7 +467,7 @@ async function main() {
             await delay(500);
         }
         if (!scenario07Started) throw new Error('scenario 07 start failed');
-        const flowProbe = { scenarioFlowOpen, titleBackVisible: titleBackVisible.value, factionFlowOpen, scenarioBackAgain, recruitProbe };
+        const flowProbe = { scenarioFlowOpen, titleBackVisible: titleBackVisible.value, factionFlowOpen, scenarioBackAgain, officerFlowOpen, officerCards: officerCards.value, recruitProbe };
         await cdp.evaluate("document.getElementById('btn-next-month').click()");
         for (let i = 0; i < 75; i++) {
             const r = await cdp.evaluate("!document.getElementById('btn-next-month').disabled");
@@ -524,36 +528,63 @@ async function main() {
         // 중국 전도 실제 캔버스 클릭 — 모든 도시가 pointerup에서 선택되는지 검증 [461-480]
         const mapClickPoints = await cdp.evalJson(
             "(function(){var g=window.__game,s=g.getStore(),c=document.getElementById('game-canvas'),r=c.getBoundingClientRect();" +
-            "document.getElementById('tutorial-panel').style.display='none';" +
             "return s.getAllCities().map(function(city){var p=g.getCityScreenPosition(city.id);" +
             "return {id:city.id,name:city.name,x:r.left+p.x*r.width/c.width,y:r.top+p.y*r.height/c.height};});})()");
+        // 성문 검문 대비: 플레이어 국고를 채워 뇌물 선택지가 항상 활성화되게 한다
+        await cdp.evaluate("(function(){var s=window.__game.getStore(),gs=s.getGlobalState(),f=s.getFaction(gs.playerFactionId);s.updateFaction(f.id,{gold:f.gold+1000000});return true;})()");
         const mapClickResults = [];
         for (const point of mapClickPoints) {
             await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1 });
             await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1 });
             await delay(40);
+            // 2026-09-30 — 지도 클릭은 두 번 클릭 규칙이다.
+            // 1회: 좌측 정보 단(도시 정보)에 그 도시가 실린다. 2회: 도시 진입.
+            // 한 번만 눌렀다가 진입을 기대하면 이 규칙을 못 잡는다.
+            const sidebarCity = await cdp.evaluate("(document.getElementById('city-detail')||{}).textContent||''");
+            const sidebarListed = sidebarCity.value.indexOf(point.name) >= 0;
+            await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1 });
+            await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1 });
+            await delay(40);
+            // 성문 검문이 뜨면 뇌물 선택지로 통과한 뒤 도시명을 읽는다
+            const gated = await cdp.evaluate("document.getElementById('dialogue-modal').style.display==='flex'&&!!document.querySelector('.dlg-choice[data-choice=\"bribe\"]:not([disabled])')");
+            if (gated.value) {
+                await cdp.evaluate("document.querySelector('.dlg-choice[data-choice=\"bribe\"]').click()");
+                await delay(120);
+            }
+            // 황제 알현 창은 성문 검문 다음에 열린다(enterCity 훅). 선택을 눌러도 결과만
+            // 갱신될 뿐 창은 스스로 닫히지 않으므로, 닫기 버튼을 눌러 명시적으로 닫는다.
+            // 부족 교섭 창이 이어서 뜰 수 있어 최대 몇 번까지 정리한다.
+            for (let d = 0; d < 3; d++) {
+                const audienceOpen = await cdp.evaluate("document.getElementById('dialogue-modal').style.display==='flex'");
+                if (!audienceOpen.value) break;
+                await cdp.evaluate("(function(){var c=document.getElementById('dialogue-close')||document.querySelector('#dialogue-modal [data-close]')||document.querySelector('.dlg-close');if(c)c.click();else document.getElementById('dialogue-modal').style.display='none';return true;})()");
+                await delay(120);
+            }
             const selected = await cdp.evaluate("document.getElementById('cdp-city-name').textContent");
-            mapClickResults.push({ id: point.id, expected: point.name, actual: selected.value });
+            mapClickResults.push({ id: point.id, expected: point.name, actual: selected.value, gated: gated.value, sidebarListed: sidebarListed });
             // 도시 진입 전체 화면을 닫아 다음 도시 좌표도 지도에서 계속 검증한다.
             await cdp.evaluate("document.getElementById('cdp-close').click()");
+            await delay(40);
         }
         const mapClickProbe = { points: mapClickPoints.length, results: mapClickResults, coordinates: mapClickPoints };
 
         // 도시 시설·무장 선택형 대화와 이전/다음 탐색 프로브 [24][49][441-460]
+        // 타이포그래피는 창을 연 직후에도 글자가 0 자일 수 있다. 이 프로브는
+        // 완성된 대사를 읽어야 하므로, 검사 동안에만 즉시 표시로 고정한다.
+        await cdp.evaluate("window.__game.setDialogueInstant(true)");
         const dialogueProbe = await cdp.evalJson(
             "(function(){var g=window.__game,s=g.getStore();" +
-            "document.getElementById('tutorial-panel').style.display='none';" +
             "var city=s.getAllCities()[0];g.openCity(city.id);" +
             "var scene=document.getElementById('city-scene-canvas'),sr=scene.getBoundingClientRect();" +
             "scene.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:sr.left+sr.width/2,clientY:sr.top+sr.height*0.45}));" +
-            "var buildingDetail=document.getElementById('city-building-detail').textContent;" +
             "var facilities=document.querySelectorAll('.cdp-facility');" +
             "var facilityNames=Array.prototype.map.call(facilities,function(el){return el.textContent.trim();});" +
             "var facility=facilities[0];if(facility)facility.click();" +
             "var facilityOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
             "var facilityTitle=document.getElementById('dialogue-title').textContent;" +
             "document.getElementById('dialogue-close').click();" +
-            "var officer=document.querySelector('.cdp-officer-clickable');if(officer)officer.click();" +
+            "var _ob=document.querySelector('#city-scene-badges .city-badge');if(_ob)_ob.click();" +
+            "var officer=document.querySelector('#cdp-officers .cdp-officer-clickable');if(officer)officer.click();" +
             "var officerOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
             "var officerTitle=document.getElementById('dialogue-title').textContent;" +
             "var choices=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
@@ -571,8 +602,8 @@ async function main() {
             "document.getElementById('dialogue-next').click();var nextPage=document.getElementById('dialogue-page').textContent;" +
             "document.getElementById('dialogue-prev').click();var prevPage=document.getElementById('dialogue-page').textContent;" +
             "document.getElementById('dialogue-close').click();" +
-            // San8/San14 대화창 개편: 좌측 화자 열 + 번호 선택지 [신규 기능]
-            "var o2=document.querySelector('.cdp-officer-clickable');if(o2)o2.click();" +
+            // 대화창 개편: 좌측 화자 열 + 번호 선택지 [신규 기능]
+            "var o2=document.querySelector('#cdp-officers .cdp-officer-clickable');if(o2)o2.click();" +
             "var dlgFrame=document.querySelector('#dialogue-modal .dlg-stage');" +
             "var dlgPortraitSvg=!!document.querySelector('#dlg-left-figure svg');" +
             "var dlgSpeakerText=document.getElementById('dlg-left-name').textContent.trim();" +
@@ -604,15 +635,15 @@ async function main() {
             "document.getElementById('dialogue-close').click();" +
             "var city2=s.getAllCities().find(function(c){return c.ownerId===s.getGlobalState().playerFactionId;})||s.getAllCities()[0];" +
             "city2.developmentStats.publicOrder=8;city2.developmentStats.commerce=12;g.openCity(city2.id);" +
+            "s.getAllOfficers().forEach(function(o){try{s.updateOfficer(o.id,{actionPoints:100});}catch(e){}});" +
             "var mk=document.querySelector('[data-facility=MARKET]');if(mk)mk.click();" +
             "var mktOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
-            "var mktVisit1=document.getElementById('dialogue-page').textContent;" +
+            "var mktTitle=document.getElementById('dialogue-title').textContent;" +
             "var mktCh1=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
             "var mktFirst=document.querySelectorAll('#dialogue-choices .dlg-choice')[0]||{disabled:true};" +
             "if(!mktFirst.disabled)mktFirst.click();" +
-            "var mktVisit2=document.getElementById('dialogue-page').textContent;" +
-            "var mktText2=document.getElementById('dialogue-text').textContent;" +
-            "var mktCh2=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
+            "var mktResult=document.getElementById('dialogue-result').textContent;" +
+            "var mktResultShown=document.getElementById('dialogue-result').style.display!=='none';" +
             "document.getElementById('dialogue-close').click();" +
             "g.openTradeDialogue(city2.id);" +
             "var trOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
@@ -624,36 +655,98 @@ async function main() {
             "var trGold1=s.getFaction(s.getGlobalState().playerFactionId).gold;" +
             "var trNote=document.getElementById('dialogue-result').textContent;" +
             "document.getElementById('dialogue-close').click();" +
-            "var scene=document.getElementById('city-scene-canvas'),chips=document.querySelectorAll('#city-scene-summary .city-building-chip');" +
+            "var scene=document.getElementById('city-scene-canvas');" +
+            // 2026-09-30 개편 — 건물 상세·추천 힌트·건물 칩 블록은 삭제됐다. 요소가 아예 없는 것이
+            // 맞으므로 "없음"을 확인한다. 남겨두면 HUD 가 그림 위로 되살아난다.
+            "var removedBlock={hint:!document.getElementById('city-hint-bar'),summary:!document.getElementById('city-scene-summary'),detail:!document.getElementById('city-building-detail'),stats:!document.getElementById('cdp-stats'),infoPane:!document.querySelector('#city-detail-panel .cdp-info-pane'),loyaltyChip:!Array.prototype.some.call(document.querySelectorAll('#cdp-summary .cdp-chip'),function(c){return c.textContent.indexOf('충성')>=0;})};" +
             "return {facilityOpen:facilityOpen,facilityTitle:facilityTitle,facilityCount:facilities.length,facilityNames:facilityNames,officerOpen:officerOpen," +
             "officerTitle:officerTitle,choices:choices,giftBeforeGold:giftBeforeGold,giftBeforeAffinity:giftBeforeAffinity,giftPreview:giftPreview,giftResult:giftResult,giftAfterGold:giftAfterGold,giftAfterAffinity:giftAfterAffinity,page:page,nextPage:nextPage,prevPage:prevPage," +
             "dlgPortraitSvg:dlgPortraitSvg,dlgRightHidden:dlgRightHidden,dlgSpeakerText:dlgSpeakerText,dlgOrgText:dlgOrgText,dlgRankText:dlgRankText," +
             "dlgBodyText:dlgBodyText,dlgChoiceIdx:dlgChoiceIdx,dlgStepText:dlgStepText,dlgPrevDisabled:dlgPrevDisabled," +
             "kbdBefore:kbdBefore,kbdNext:kbdNext,kbdPrev:kbdPrev,kbdChoiceShown:kbdChoiceShown,kbdChoiceResult:kbdChoiceResult," +
             "accent:accent,placeGlyph:placeGlyph,placeIsGlyph:placeIsGlyph,dlgRightHidden:dlgRightHidden," +
-            "mktOpen:mktOpen,mktVisit1:mktVisit1,mktVisit2:mktVisit2,mktCh1:mktCh1,mktCh2:mktCh2,mktText2:mktText2," +
+            "mktOpen:mktOpen,mktTitle:mktTitle,mktCh1:mktCh1,mktResult:mktResult,mktResultShown:mktResultShown," +
             "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice," +
             "accent:accent,placeGlyph:placeGlyph,placeIsGlyph:placeIsGlyph,dlgRightHidden:dlgRightHidden," +
-            "mktOpen:mktOpen,mktVisit1:mktVisit1,mktVisit2:mktVisit2,mktCh1:mktCh1,mktCh2:mktCh2,mktText2:mktText2," +
+            "mktOpen:mktOpen,mktTitle:mktTitle,mktCh1:mktCh1,mktResult:mktResult,mktResultShown:mktResultShown," +
             "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice," +
-            "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice,citySceneWidth:scene.width,citySceneHeight:scene.height,buildingChips:chips.length,buildingDetail:buildingDetail,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode')};})()");
+            "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice,removedBlock:removedBlock,citySceneWidth:scene.width,citySceneHeight:scene.height,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode'),"
+            // 배경 그림이 실제로 로드됐는지 — 조용히 절차 렌더로 물러나면 검증이 통과해 버린다.
+            + "artReady:document.getElementById('city-scene-stage').classList.contains('art-ready'),"
+            + "artComplete:(function(){var i=document.getElementById('city-scene-art');return !!(i&&i.complete&&i.naturalWidth>0);})(),"
+            + "artSrc:(function(){var i=document.getElementById('city-scene-art');return i?i.getAttribute('src'):null;})(),"
+            + "bleedMode:document.getElementById('city-detail-panel').classList.contains('city-bleed'),"
+            // 모드 전환 버튼(🏛 도시 관리)이 더 이상 없는지 + 반투명 HUD 가 실제로 보이는지.
+            + "backButton:!!document.querySelector('.city-bleed-toggle'),"
+            + "layoutPanes:(function(){document.getAnimations().forEach(function(a){try{a.finish();}catch(e){}});function vis(e){if(!e)return false;var r=e.getBoundingClientRect();return r.width>40&&r.height>20;}return {"
+            + "side:!document.querySelector('#city-detail-panel .cdp-side-pane'),"
+            + "head:vis(document.querySelector('#city-detail-panel .cdp-header')),"
+            // [2026-10-03] 좌·우 레일을 걷어내 그림 위 시트로 대체했다. 레일 내용은 시트 안에
+            //   있으므로 **배지를 눌러 시트를 연 뒤에** 재야 한다. 닫힌 채로 재면 아무것도
+            //   존재하지 않아 통과도 실패도 하지 않는다(조용한 빈 검사).
+            + "hudBottom:vis(document.querySelector('#city-scene-stage .cdp-stage-hud-bottom')),"
+            + "headerInStage:!!document.querySelector('#city-scene-stage .cdp-header'),"
+            + "sheetOpen:(function(){var b=document.querySelector('#city-scene-badges .city-badge');if(b)b.click();"
+            + "var e=document.getElementById('cdp-scene-sheet');return !!(e&&!e.hidden);})(),"
+            + "commander:vis(document.querySelector('#cdp-sheet-body #city-commander')),"
+            + "commandsInSheet:!!document.querySelector('#cdp-scene-sheet #cdp-command-groups'),"
+            + "factionsInSheet:!!document.querySelector('#cdp-scene-sheet #cdp-factions'),"
+            + "officersInSheet:!!document.querySelector('#cdp-scene-sheet #cdp-officers'),"
+            + "facilitiesInStage:!!document.querySelector('#city-scene-stage #cdp-facilities'),"
+            // 2026-09-30 개편 — 출진·등용·습격 은 좌측 목록의 대화창으로 되살렸다.
+            + "expeditionGone:!document.getElementById('cdp-expedition-section'),"
+            + "recruitGone:!document.getElementById('cdp-recruit-section'),"
+            + "raidGone:!document.getElementById('cdp-raid-section'),"
+            + "tabsGone:!document.getElementById('cdp-side-tabs'),"
+            + "commandGroups:document.querySelectorAll('#cdp-command-groups .cdp-command-group').length,"
+            + "commandLabels:Array.prototype.map.call(document.querySelectorAll('#cdp-command-groups .cdp-action-btn'),function(b){return b.textContent;}),"
+            + "factionRows:document.querySelectorAll('#cdp-factions .cdp-faction-row').length,"
+            + "freeOfficers:document.querySelectorAll('#cdp-officers .cdp-officer-row.is-free').length,"
+            // 명령은 그룹별로 세로 1열 — 그룹 안에서 같은 x, 아래로 내려가는지 + 글자 잘림 없음.
+            + "commandCol:(()=>{var gs=document.querySelectorAll('#cdp-command-groups .cdp-command-group');if(gs.length<2)return false;"
+            + "for(var i=0;i<gs.length;i++){var b=gs[i].querySelectorAll('.cdp-action-btn');if(!b.length)continue;"
+            + "var xs=Array.prototype.map.call(b,function(c){return Math.round(c.getBoundingClientRect().left);});"
+            + "var ys=Array.prototype.map.call(b,function(c){return Math.round(c.getBoundingClientRect().top);});"
+            + "if(!xs.every(function(x){return Math.abs(x-xs[0])<=2;}))return false;"
+            + "if(!ys.every(function(y,k){return k===0||y>ys[k-1];}))return false;}"
+            + "return Array.prototype.every.call(document.querySelectorAll('#cdp-command-groups .cdp-action-btn'),function(c){return c.scrollWidth<=c.clientWidth+1;});})(),"
+            + "facilityRow:(()=>{var f=document.getElementById('cdp-facilities');if(!f)return false;"
+            + "var ys=Array.prototype.map.call(f.children,function(c){return Math.round(c.getBoundingClientRect().top);});"
+            + "return ys.length>1&&ys.every(function(y){return Math.abs(y-ys[0])<=2;});})(),"
+            + "actions:document.querySelectorAll('#cdp-actions .cdp-action-btn').length,"
+            + "groupedActions:document.querySelectorAll('#cdp-command-groups .cdp-action-btn').length,"
+            + "officers:document.querySelectorAll('#cdp-officers .cdp-officer-row').length,"
+            // 그림이 화면을 가득 채우는지 — 창 비율 그대로여야 한다(2026-10-02: 16:9 고정 해제).
+            + "fullBleed:(function(){var st=document.getElementById('city-scene-stage').getBoundingClientRect();"
+            + "return Math.abs(st.width-window.innerWidth)<=2&&Math.abs(st.height-window.innerHeight)<=2"
+            + "&&Math.abs(st.left)<=2&&Math.abs(st.top)<=2;})()};})(),"
+            // fits: 그림이 창 안에 들어 있는가. 진입 페이드(fadeUp)가 0.3초 동안 18px
+            // 아래로 미끄러지므로 그만큼의 여유를 둔다 — 안정 후에는 정확히 맞아야 한다.
+            + "stageBox:(function(){var r=document.getElementById('city-scene-stage').getBoundingClientRect();var tol=24;return {w:Math.round(r.width),h:Math.round(r.height),ratio:+(r.width/Math.max(1,r.height)).toFixed(3),fits:r.top>=-tol&&r.bottom<=window.innerHeight+tol&&r.left>=-tol&&r.right<=window.innerWidth+tol,top:Math.round(r.top),bottom:Math.round(r.bottom),left:Math.round(r.left),right:Math.round(r.right),vw:window.innerWidth,vh:window.innerHeight};})(),"
+            + "badges:Array.prototype.map.call(document.querySelectorAll('#city-scene-badges .city-badge'),function(b){return b.style.left+','+b.style.top;})"
+            +"};})()");
 
         // 도시 건물 투자·운영 상태와 지도 카메라 보존 [49][D32]
+        // 2026-09-30 개편 — 건물 상세 DOM(#city-building-detail)이 삭제돼 문자열을 못 읽는다.
+        // 투자 로직 자체는 그대로 살아 있으므로 API 로만 확인한다(마우스 UI 는 없음).
         const buildingProbe = await cdp.evalJson(
             "(function(){var g=window.__game,s=g.getStore(),gs=s.getGlobalState();" +
             "var city=s.getAllCities().find(function(c){return c.ownerId===gs.playerFactionId;});" +
             "g.openCity(city.id);var before=g.getCitySceneBuildings();g.selectCitySceneBuildingByIndex(0);" +
-            "var selected=document.getElementById('city-building-detail').textContent;g.investSelectedCityBuilding();" +
+            "var selected=g.getCitySceneBuildings()[0];g.investSelectedCityBuilding();" +
             "var after=g.getCitySceneBuildings();var state=g.getCityBuildingStates()[city.id]||{};" +
-            "var view=g.getMapView();g.closeCity();return {count:before.length,selected:selected,invested:after[0].investment>before[0].investment," +
+            "var view=g.getMapView();g.closeCity();return {count:before.length,selected:!!selected,invested:after[0].investment>before[0].investment," +
             "stateCount:Object.keys(state).length,view:view};})()");
 
         // 내정 자동 배정: 플레이어 도시에서 능력치 기반 임무를 등록하는지 확인 [49][76-85]
         const domesticProbe = await cdp.evalJson(
             "(function(){var g=window.__game,s=g.getStore(),gs=s.getGlobalState(),e=g.getEngine();" +
             "var city=s.getAllCities().find(function(c){return c.ownerId===gs.playerFactionId;});" +
-            "g.openCity(city.id);document.querySelector('[data-action=auto-domestic]').click();" +
-            "return {pending:e.domesticScheduler.pendingCount,result:document.getElementById('cdp-action-result').textContent};})()");
+            "g.openCity(city.id);" +
+            "var _bdg=document.querySelector('#city-scene-badges .city-badge');if(_bdg)_bdg.click();" +
+            "var _btn=document.querySelector('[data-action=auto-domestic]');if(_btn)_btn.click();" +
+            "var _res=document.getElementById('cdp-action-result');" +
+            "return {pending:e.domesticScheduler.pendingCount,result:_res?_res.textContent:''};})()");
 
         // 시나리오별 검증 후 기존 05 회귀 흐름을 위해 페이지 초기화
         await cdp.call('Page.reload');
@@ -720,17 +813,33 @@ async function main() {
             "document.getElementById('a11y-close').click();return out;})()");
 
         // (c) 키보드 단축키 — H/Escape/P [461-480]
+        // Escape 는 "가장 위 오버레이" 하나만 닫는다(closeTopOverlay 순서). 앞선 프로브가
+        // 패널을 열어 둔 채면 Escape 가 그 패널을 닫아 도움말이 닫히지 않으므로,
+        // 측정 전제로 열린 오버레이를 먼저 모두 닫는다.
         const keyboardProbe = await cdp.evalJson(
-            "(function(){var out={};var tutorial=document.getElementById('tutorial-panel');tutorial.style.display='none';" +
-            "document.dispatchEvent(new KeyboardEvent('keydown',{key:'h',bubbles:true}));" +
-            "out.helpOpen=document.getElementById('tutorial-panel').style.display==='block';" +
+            "(function(){var out={};" +
+            "['dialogue-modal','roaming-modal','replay-panel','vengeance-modal','a11y-panel','graph-panel','trace-panel','save-slots-panel','diplomacy-panel','monthly-report-panel','city-detail-panel'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display='none';});" +
+            // [2026-10-03 제거] 튜토리얼 안내(#tutorial-panel)와 H 단축키를 삭제했다.
+            //   대상이 없어 조용히 통과하는 검증은 검증이 아니다 — 아래는 살아있는
+            //   패널(G 관계망)로 같은 경로(Escape 로 닫기)를 검증한다.
+            "document.dispatchEvent(new KeyboardEvent('keydown',{key:'g',bubbles:true}));" +
+            "out.helpOpen=document.getElementById('graph-panel').style.display==='block';" +
             "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));" +
-            "out.helpClosed=document.getElementById('tutorial-panel').style.display==='none';" +
+            "out.helpClosed=document.getElementById('graph-panel').style.display==='none';" +
             "var p=document.getElementById('btn-pause');" +
+            // 2026-09-30 상단 바가 아이콘 전용으로 바뀌어 textContent 는 더 이상 상태를
+            // 말하지 않는다(라벨은 CSS 로 숨겨진 채 남아 있다). 접근 가능한 이름(aria-label)과
+            // 아이콘 속성을 함께 본다 — 아이콘 전용 버튼이라면 이 둘이 상태의 유일한 신호다.
             "document.dispatchEvent(new KeyboardEvent('keydown',{key:'p',bubbles:true}));" +
-            "out.paused=p.textContent==='재개';" +
+            "out.paused=p.getAttribute('aria-label')==='재개'&&p.dataset.icon==='▶';" +
             "document.dispatchEvent(new KeyboardEvent('keydown',{key:'p',bubbles:true}));" +
-            "out.resumed=p.textContent==='일시정지';return out;})()");
+            "out.resumed=p.getAttribute('aria-label')==='일시정지'&&p.dataset.icon==='⏸';" +
+            // 아이콘이 실제로 렌더되는지도 확인한다 — data-icon 만 있고 ::before 가 없으면 조용히 빈 버튼이다.
+            "out.iconsRendered=(function(){var cs=getComputedStyle(document.getElementById('btn-pause'),'::before');"
+            + "return cs&&cs.content&&cs.content!=='none'&&cs.content.indexOf('attr')===-1;})();" +
+            "out.labelsHidden=(function(){var l=document.querySelector('#btn-pause .btn-label');"
+            + "return !!l&&getComputedStyle(l).display==='none';})();" +
+            "return out;})()");
 
         // (d) 모바일 반응형 + 실제 터치 이벤트 [461-480]
         await cdp.call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -751,7 +860,12 @@ async function main() {
             "var x=r.left+p.x*r.width/c.width,y=r.top+p.y*r.height/c.height;" +
             "c.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,clientX:x,clientY:y,pointerId:71,pointerType:'mouse',button:0,buttons:1}));" +
             "c.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,clientX:x,clientY:y,pointerId:71,pointerType:'mouse',button:0,buttons:0}));" +
+            // 2026-09-30 두 번 클릭 규칙 — 첫 클릭은 좌측 정보 단만 채우고, 방문 처리는
+            // "같은 도시 재클릭 → 진입" 에서 이뤄진다. 한 번만 눌러서는 방문되지 않는다.
+            "c.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,clientX:x,clientY:y,pointerId:71,pointerType:'mouse',button:0,buttons:1}));" +
+            "c.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,clientX:x,clientY:y,pointerId:71,pointerType:'mouse',button:0,buttons:0}));" +
             "out.visitedAfterClick=(s.getGlobalState().visitedCityIds||[]).indexOf(city.id)>=0;" +
+            "if(document.getElementById('cdp-close'))document.getElementById('cdp-close').click();" +
             "var playerCity=s.getAllCities().find(function(c){return c.ownerId===s.getGlobalState().playerFactionId;});" +
             "g.openCity(playerCity.id);g.selectCitySceneBuildingByIndex(0);g.investSelectedCityBuilding();g.closeCity();" +
             "document.getElementById('btn-slots').click();" +
@@ -855,6 +969,49 @@ async function main() {
         Object.assign(replayUiProbe, afterClickProbe, afterKeyProbe, touchProbe, recoveryProbe);
         await cdp.call('Emulation.clearDeviceMetricsOverride');
 
+        // ===== [49] 도시 진입 화면 — 뷰포트별 배경 채움 실측 ==========================
+        // 위의 dialogueProbe 는 1600x1000 창 *하나* 만 본다(그 창이 16:1.x 여서
+        // 여백이 10% 로 작게 보인다). 사용자 스크린샷은 ~970x1200 였고, 거기서는
+        // @media (max-width:1000px) 분기 + 세로 창이 겹쳐 하단 검정 띠가 57% 까지 찼다.
+        // 그래서 아래 7개 뷰포트를 실제로 돌려 "그림이 시야를 다 덮는가" 를 잰다.
+        const cityViewportProbe = await (async () => {
+            const VIEWS = [[1920, 1080], [1600, 1000], [1440, 900], [1280, 800], [1000, 900], [960, 1200], [800, 600]];
+            const rows = [];
+            for (const [w, h] of VIEWS) {
+                await cdp.call('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+                await delay(350);
+                // 무대 rect 는 리사이즈 직후 한 프레임 늦게 확정된다.
+                await cdp.evalJson("(async function(){return new Promise(function(r){requestAnimationFrame(function(){requestAnimationFrame(r);});});})()");
+                rows.push(await cdp.evalJson(
+                    "(function(){var q=function(s){return document.querySelector(s);};" +
+                    "var st=q('#city-scene-stage'),sr=st.getBoundingClientRect();" +
+                    // 여백이 남아 있는가: 무대 rect 가 창을 그대로 덮는가.
+                    // 2026-10-02 에 여백 백드롭을 걷어냈으므로 이제 무대 하나가 곧 화면이다.
+                    "var cw=sr.width,ch=sr.height;" +
+                    "var rel=function(sel){var e=q(sel);if(!e)return null;var r=e.getBoundingClientRect();" +
+                    "if(r.width<=0&&r.height<=0)return null;" +
+                    "return {x:+(r.left-sr.left).toFixed(1),y:+(r.top-sr.top).toFixed(1),w:+r.width.toFixed(1),h:+r.height.toFixed(1)," +
+                    "right:+(r.right-sr.left).toFixed(1),bottom:+(r.bottom-sr.top).toFixed(1)};};return {" +
+                    "vw:innerWidth,vh:innerHeight,media1000:matchMedia('(max-width: 1000px)').matches," +
+                    "stage:{x:+sr.left.toFixed(1),y:+sr.top.toFixed(1),w:+sr.width.toFixed(1),h:+sr.height.toFixed(1)," +
+                    "ratio:+(sr.width/Math.max(1,sr.height)).toFixed(4)}," +
+                    "pane:{w:+q('#city-detail-panel .cdp-stage-pane').getBoundingClientRect().width.toFixed(1)," +
+                    "h:+q('#city-detail-panel .cdp-stage-pane').getBoundingClientRect().height.toFixed(1)}," +
+                    // 무대가 창 밖으로 넘쳤는지 — 앵커가 잘려 나가는 경향의 지표.
+                    "overflowPx:+(((Math.max(0,sr.right-innerWidth))+Math.max(0,sr.bottom-innerHeight)"
+                    +"+Math.max(0,-sr.left)+Math.max(0,-sr.top))).toFixed(1)," +
+                    "uncoveredPct:+(((innerWidth*innerHeight)-(cw*ch))/(innerWidth*innerHeight)*100).toFixed(1)," +
+                    "hud:{header:rel('.cdp-header'),sheet:rel('.cdp-scene-sheet'),bottom:rel('.cdp-stage-hud-bottom')}," +
+                    "badges:Array.prototype.map.call(document.querySelectorAll('#city-scene-badges .city-badge'),function(b){return b.style.left+','+b.style.top;})};})()"));
+            }
+            await cdp.call('Emulation.clearDeviceMetricsOverride');
+            return rows;
+        })();
+
+        // 대화가 모두 끝났으므로 타이포그래피를 돌려놓는다.
+        // 이후 프로브는 사람이 보는 그대로의 화면을 검사해야 한다.
+        await cdp.evaluate("window.__game.setDialogueInstant(false)");
+
         const result = { flowProbe, scenario07Probe, captiveBattleProbe, monthlyReportProbe, cityChronicleProbe, chronicleFilterProbe, mapVisibilityProbe, mapScreenshotProbe, mapClickProbe, dialogueProbe, buildingProbe, domesticProbe, progress, graphProbe, a11yProbe, keyboardProbe, mobileProbe, saveLoadProbe, replayProbe, replayUiProbe, authProbe, forced, ending, consoleErrors: consoleErrors.slice(0, 10), notFound: notFound.slice(0, 5), pageErrors: pageErrors.slice(0, 10) };
         console.log(JSON.stringify(result, null, 2));
 
@@ -862,7 +1019,7 @@ async function main() {
         const otherConsole = consoleErrors.filter((e) => !e.includes('Failed to load resource'));
         const onlyFavicon404 = notFound.length === 0 || notFound.every((u) => u.includes('favicon') || u.endsWith('.ico'));
         const regressionChecks = {
-            flow: flowProbe.scenarioFlowOpen && flowProbe.titleBackVisible && flowProbe.factionFlowOpen && flowProbe.scenarioBackAgain,
+            flow: flowProbe.scenarioFlowOpen && flowProbe.titleBackVisible && flowProbe.factionFlowOpen && flowProbe.scenarioBackAgain && flowProbe.officerFlowOpen && flowProbe.officerCards > 0,
             recruit: flowProbe.recruitProbe?.titleLabels?.length === 3
                 && flowProbe.recruitProbe.titleLabels[0] === '시작하기'
                 && flowProbe.recruitProbe.titleLabels[1] === '이어하기'
@@ -885,7 +1042,7 @@ async function main() {
                 && flowProbe.recruitProbe.recruitStarted,
             // [결함 수정] length === 6 은 2차도시가 3개뿐이던 옛 스텁 데이터 기준이다.
             // 07 시나리오를 위 4·촉 3·오 3 = 9도시로 보강하면서 깨졌다.
-            scenario: scenario07Probe.cityNames.includes('청두') && scenario07Probe.cityNames.length === 9 && scenario07Probe.qingdu === 70 && scenario07Probe.caoPi === 76 && scenario07Probe.relationships === 8 && scenario07Probe.eventProcessed && scenario07Probe.eventText.includes('강완의 안정'),
+            scenario: scenario07Probe.cityNames.includes('청두') && scenario07Probe.cityNames.length === 24 && scenario07Probe.qingdu === 70 && scenario07Probe.caoPi === 76 && scenario07Probe.relationships === 8 && scenario07Probe.eventProcessed && scenario07Probe.eventText.includes('강완의 안정'),
             captiveBattle: captiveBattleProbe.success === true && captiveBattleProbe.commandType === 'BATTLE' && captiveBattleProbe.captiveOutcomes.length > 0 && captiveBattleProbe.logMessages.some(message => message.includes('포획')) && captiveBattleProbe.chronicleText.some(text => text.includes('포로')),
             monthlyReport: monthlyReportProbe.visible === true && monthlyReportProbe.hasCaptive === true,
             cityChronicle: cityChronicleProbe.hasHistory === true,
@@ -894,9 +1051,9 @@ async function main() {
             // 클릭 대상 도시 수를 전역 도시 수에 맞춰 검증한다.
             map: mapClickProbe.points === mapVisibilityProbe.initial.all && mapVisibilityProbe.initial.mode === 'all' && mapVisibilityProbe.initial.visible === mapVisibilityProbe.initial.all && mapVisibilityProbe.discovered.mode === 'discovered' && mapVisibilityProbe.discovered.visible > 0 && mapVisibilityProbe.discovered.visible < mapVisibilityProbe.discovered.all && mapVisibilityProbe.discovered.factions.length >= 3 && mapVisibilityProbe.restored === 'all',
             screenshot: mapScreenshotProbe.width > 0 && mapScreenshotProbe.height > 0 && mapScreenshotProbe.pngLength > 1000 && mapScreenshotProbe.hashStable && mapScreenshotProbe.corner.length === 4 && mapScreenshotProbe.hasBitmapApi === false && !mapScreenshotProbe.imageRequests.some(url => url.includes('china-national-map')),
-            mapClicks: mapClickProbe.results.every(item => item.actual === item.expected),
-            dialogue: dialogueProbe.facilityOpen && dialogueProbe.facilityCount === 8 && dialogueProbe.facilityNames.some(name => name.includes('훈련장')) && dialogueProbe.officerOpen && dialogueProbe.choices >= 2 && dialogueProbe.giftPreview.includes('옥비') && dialogueProbe.giftPreview.includes('희귀') && dialogueProbe.giftPreview.includes('+14') && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500 && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity && dialogueProbe.page === '1 / 3' && dialogueProbe.nextPage === '2 / 3' && dialogueProbe.prevPage === '1 / 3',
-            buildings: buildingProbe.count >= 5 && buildingProbe.selected.includes('누적 투자') && buildingProbe.invested && buildingProbe.stateCount >= 1,
+            mapClicks: mapClickProbe.results.every(item => item.actual === item.expected && item.sidebarListed === true),
+            dialogue: dialogueProbe.facilityOpen && dialogueProbe.facilityCount === 8 && dialogueProbe.facilityNames.some(name => name.includes('훈련장')) && dialogueProbe.officerOpen && dialogueProbe.choices >= 2 && dialogueProbe.giftPreview.includes('옥비') && dialogueProbe.giftPreview.includes('희귀') && dialogueProbe.giftPreview.includes('+14') && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500 && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity,
+            buildings: buildingProbe.count >= 5 && buildingProbe.selected === true && buildingProbe.invested && buildingProbe.stateCount >= 1,
             domestic: domesticProbe.pending >= 1 && domesticProbe.result.includes('자동 내정'),
             ui: graphProbe.open === 'block' && graphProbe.closed && (graphProbe.rows > 0 || graphProbe.hint === true) && a11yProbe.open === 'block' && a11yProbe.cbActive && keyboardProbe.helpOpen && keyboardProbe.helpClosed && keyboardProbe.paused && keyboardProbe.resumed && mobileProbe.touchAction === 'none' && mobileProbe.canvasWidth > 0 && mobileProbe.viewport === 390,
             persistence: saveLoadProbe.saved && saveLoadProbe.uiInSave && saveLoadProbe.visitedAfterClick && saveLoadProbe.visitedInCompressedSave && saveLoadProbe.buildingStateInCompressedSave,
@@ -946,10 +1103,57 @@ async function main() {
         };
         console.log('REGRESSION_CHECKS:', JSON.stringify(regressionChecks));
         const cityChecks = {
-            sceneSize: dialogueProbe.citySceneWidth === 480 && dialogueProbe.citySceneHeight === 240,
-            buildingChips: dialogueProbe.buildingChips >= 4,
-            buildingDetail: dialogueProbe.buildingDetail.includes('· Lv.'),
+            sceneSize: dialogueProbe.citySceneWidth === dialogueProbe.stageBox.w && dialogueProbe.citySceneHeight === dialogueProbe.stageBox.h,
+            // 진입 화면 단일 구성: 모드 전환 버튼이 없고, 배경 그림이 실제로 로드됐으며,
+            // 16:9 무대가 화면 안에 들어가며, 유리 패널(상단 바·우측 통제 열·하단 무장
+            // 스트립)이 그림 위에 겹쳐 보인다. artReady 를 확인하지 않으면 그림이 404
+            // 나서 조용히 절차 렌더로 물러나도 테스트는 통과한다 — 실제로 그랬다.
+            entryLayout: dialogueProbe.backButton === false
+                && dialogueProbe.bleedMode === false
+                && dialogueProbe.artReady === true
+                && dialogueProbe.artComplete === true
+                && /city-scene-base\.webp$/.test(dialogueProbe.artSrc ?? '')
+                // 2026-10-02 — 무대는 16:9 고정이 아니라 창 크기 그대로다.
+                // 비율은 창 비율이어야 하고, 창 안에 딱 들어 있어야 한다.
+                && Math.abs(dialogueProbe.stageBox.ratio - dialogueProbe.stageBox.vw / dialogueProbe.stageBox.vh) < 0.02
+                && dialogueProbe.stageBox.fits === true
+            && dialogueProbe.layoutPanes.head === true
+            && dialogueProbe.layoutPanes.side === true
+            // [2026-10-03] 좌·우 레일을 걷어내 그림 위 시트로 대체했다. hudLeft/hudRight 는
+            //   검사 대상이 사라졌으므로, 대신 "배지를 누르면 시트가 열리고 내용이 차 있는가"
+            //   를 본다 — 닫힌 채로 재면 없는 걸 재는 셈이라 아무것도 검증 못 한다.
+            && dialogueProbe.layoutPanes.hudBottom === true
+            && dialogueProbe.layoutPanes.sheetOpen === true
+            && dialogueProbe.layoutPanes.commander === true
+            && dialogueProbe.layoutPanes.commandsInSheet === true
+            && dialogueProbe.layoutPanes.factionsInSheet === true
+            && dialogueProbe.layoutPanes.officersInSheet === true
+            && dialogueProbe.layoutPanes.headerInStage === true
+            && dialogueProbe.layoutPanes.commandGroups === 4
+            // 사용자가 "5개밖에 없다"고 지적한 목록 — 内政 5 + 支配 2 + 人事 1 + 外交 2 = 10
+            && dialogueProbe.layoutPanes.commandLabels.length >= 10
+            && dialogueProbe.layoutPanes.commandLabels.some(l => l.indexOf('出征') >= 0)
+            && dialogueProbe.layoutPanes.commandLabels.some(l => l.indexOf('登用') >= 0)
+            && dialogueProbe.layoutPanes.commandLabels.some(l => l.indexOf('外交') >= 0)
+            && dialogueProbe.layoutPanes.facilitiesInStage === true
+            && dialogueProbe.layoutPanes.expeditionGone === true
+            && dialogueProbe.layoutPanes.recruitGone === true
+            && dialogueProbe.layoutPanes.raidGone === true
+            && dialogueProbe.layoutPanes.tabsGone === true
+            && dialogueProbe.layoutPanes.factionRows === 1
+            // 재야 무장 수는 월드 상태에 달려 있다( probed 도시에 재야가 없을 수도 있다).
+            // "있을 때 목록에 합쳐진다" 는 성질을 여기서 못 재므로 원래 병합을 단위 테스트로
+            // 보장한다( tests/city_officer_roster.test.ts ). 여긴 개수를 보고만 한다.
+            && dialogueProbe.layoutPanes.commandCol === true
+            && dialogueProbe.layoutPanes.facilityRow === true
+            && dialogueProbe.layoutPanes.actions === 0
+                && dialogueProbe.layoutPanes.officers >= 1
+                && dialogueProbe.layoutPanes.fullBleed === true
+                && dialogueProbe.badges.length >= 5,
             entryMode: dialogueProbe.entryMode === true,
+            layoutPanes: dialogueProbe.layoutPanes,
+            stageBox: dialogueProbe.stageBox,
+            removedBlock: dialogueProbe.removedBlock,
         };
         console.log('CITY_CHECKS:', JSON.stringify(cityChecks));
         const ok = pageErrors.length === 0
@@ -960,7 +1164,7 @@ async function main() {
             && flowProbe.scenarioBackAgain === true
             && scenario07Probe.cityNames.includes('청두')
             // [결함 수정] 2차도시 보강으로 6 → 9 (위 4 + 촉 3 + 오 3)
-            && scenario07Probe.cityNames.length === 9
+            && scenario07Probe.cityNames.length === 24
             && scenario07Probe.qingdu === 70
             && scenario07Probe.caoPi === 76
             && scenario07Probe.relationships === 8
@@ -1002,15 +1206,18 @@ async function main() {
             && dialogueProbe.giftPreview.includes('+14')
             && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500
             && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity
-            && dialogueProbe.page === '1 / 3'
-            && dialogueProbe.nextPage === '2 / 3'
-            && dialogueProbe.prevPage === '1 / 3'
-            && dialogueProbe.citySceneWidth === 480
-            && dialogueProbe.citySceneHeight === 240
-            && dialogueProbe.buildingChips >= 4
-            && dialogueProbe.buildingDetail.includes('· Lv.')
+            && dialogueProbe.citySceneWidth === dialogueProbe.stageBox.w
+            && dialogueProbe.citySceneHeight === dialogueProbe.stageBox.h
+            && dialogueProbe.removedBlock.hint === true
+            && dialogueProbe.removedBlock.summary === true
+            && dialogueProbe.removedBlock.detail === true
+            && dialogueProbe.removedBlock.stats === true
+            && dialogueProbe.removedBlock.infoPane === true
+            && dialogueProbe.removedBlock.loyaltyChip === true
             && dialogueProbe.entryMode === true
-            // San8/San14 대화창 개편 회귀 [신규 기능]
+            // 진입 화면 단일 구성과 배경 그림 로드를 실제로 판정한다.
+            && cityChecks.entryLayout === true
+            // 대화창 개편 회귀 [신규 기능]
             && dialogueProbe.dlgPortraitSvg === true
             && dialogueProbe.dlgSpeakerText.length > 0
             && dialogueProbe.dlgOrgText.length > 0
@@ -1022,27 +1229,26 @@ async function main() {
             && dialogueProbe.placeIsGlyph === true
             && dialogueProbe.placeGlyph.length > 0
             // 키보드만으로 다음/이전 이동과 선택지 실행이 된다
-            && dialogueProbe.kbdNext === '2 / 3'
+            && dialogueProbe.kbdNext !== dialogueProbe.kbdBefore
             && dialogueProbe.kbdPrev === dialogueProbe.kbdBefore
             && dialogueProbe.kbdChoiceShown === true
             && dialogueProbe.kbdChoiceResult.length > 0
             // 상대 슬롯이 비어 있으면 숨겨진다
             && dialogueProbe.dlgRightHidden === true
-            // 시장 클릭 -> 불량배 사건 대화가 열린다
+            // 시장 클릭 -> 명령 패널이 열린다 (민심·상업 + 견문·인재탐색·매매)
             && dialogueProbe.mktOpen === true
-            && dialogueProbe.mktCh1 >= 2
-            // 선택하면 이어지는 장면으로 넘어간다 (방문 수 증가 + 새 대사)
-            && dialogueProbe.mktVisit2 !== dialogueProbe.mktVisit1
-            && dialogueProbe.mktText2.length > 0
-            // 그 장면에서 다시 선택할 수 있다
-            && dialogueProbe.mktCh2 >= 1
+            && dialogueProbe.mktTitle.indexOf('시장') >= 0
+            && dialogueProbe.mktCh1 === 3
+            // 첫 명령(견문)을 고르면 결과가 표시된다
+            && dialogueProbe.mktResultShown === true
+            && dialogueProbe.mktResult.length > 0
             // 교역소는 물자 5종을 사고팔 수 있다
             && dialogueProbe.trOpen === true
             && dialogueProbe.trRows >= 3
             && dialogueProbe.trGold0 - dialogueProbe.trGold1 === dialogueProbe.trPrice * 10
             && dialogueProbe.trNote.length > 0
             && buildingProbe.count >= 5
-            && buildingProbe.selected.includes('누적 투자')
+            && buildingProbe.selected === true
             && buildingProbe.invested
             && buildingProbe.stateCount >= 1
             && domesticProbe.pending >= 1
@@ -1062,6 +1268,8 @@ async function main() {
             && keyboardProbe.helpClosed === true
             && keyboardProbe.paused === true
             && keyboardProbe.resumed === true
+            && keyboardProbe.iconsRendered === true
+            && keyboardProbe.labelsHidden === true
             && mobileProbe.touchAction === 'none'
             && mobileProbe.canvasWidth > 0
             && mobileProbe.viewport === 390

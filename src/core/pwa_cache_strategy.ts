@@ -20,7 +20,7 @@ export interface CacheEntry {
 }
 
 export class PWACacheManager {
-    private cacheName: string = 'rtk8-cache-v1';
+    private cacheName: string = 'samgukzi-return-cache-v1';
     private entries: Map<string, CacheEntry> = new Map();
 
     constructor(cacheName?: string) {

@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 SIZE = 4096
 FONT_PATH = r'C:\Windows\Fonts\malgunbd.ttf'
 FONT_REG = r'C:\Windows\Fonts\malgun.ttf'
-TMP = os.path.join(tempfile.gettempdir(), 'rtk8-mapgen')
+TMP = os.path.join(tempfile.gettempdir(), 'samgukzi-return-mapgen')
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets')
 os.makedirs(TMP, exist_ok=True)
 os.makedirs(OUT, exist_ok=True)

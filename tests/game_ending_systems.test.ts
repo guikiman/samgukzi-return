@@ -139,7 +139,7 @@ describe('월간 보고서 [E1-361]', () => {
 
         const report = new MonthlyReportSystem(store).generate();
         expect(report.cities.length).toBeGreaterThan(0);
-        expect(report.factions.length).toBe(2); // 조오 + 손권
+        expect(report.factions.length).toBe(3); // 조조 + 손권 + 유장
         expect(report.playerGold).toBeGreaterThanOrEqual(0);
         expect(report.cities[0].name).toBeTruthy();
     });

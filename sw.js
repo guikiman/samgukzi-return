@@ -13,7 +13,9 @@
  */
 
 // [E43] 배포 후 이전 Tauri/WebView 자산이 남지 않도록 캐시 버전 관리
-const CACHE_NAME = 'rtk8-v6';
+// v7: 지도 비트맵이 map-china-4096.webp → map-china-ai-4096.webp 로 교체됨.
+//     프리캐시 목록이 바뀌었으므로 버전을 올려야 기존 설치본이 갱신된다.
+const CACHE_NAME = 'samgukzi-return-v8';
 
 /** 스코프 기준 상대 경로 → 절대 URL (서브경로 배포 호환) */
 function scoped(path) {
@@ -25,8 +27,14 @@ const PRECACHE_PATHS = [
     '.',
     'index.html',
     'style.css',
-    'assets/map-china-4096.webp',
-    'assets/map-parchment-1024.webp',
+    // 렌더러(ChinaMapRenderer)가 로드하는 실제 지형 비트맵.
+    // 경로가 어긋나면 오프라인에서 503 → 스케치 지도로 폴백한다.
+    'assets/map-china-ai-4096.webp',
+    // 도시 진입 화면 배경(AI 생성, txt2img). 없으면 오프라인에서 도시 화면이
+    // 절차 렌더로 물러난다 — 조용히 바뀌므로 프리캐시에 넣어야 한다.
+    'assets/city-scene-base.webp',
+    // 확대 구간 도시 아이콘 아틀라스(AI 생성). 없으면 오프라인에서 벡터로 조용히 폴백한다.
+    'assets/city-icons.webp',
     'src/data/scenarios/index.json',
 ];
 
@@ -83,8 +91,9 @@ self.addEventListener('fetch', (event) => {
         const underDist = url.pathname.startsWith(
             new URL(self.registration.scope).pathname + 'dist/',
         ) || url.pathname.startsWith('/dist/');
-        if (underDist || /\.(js|css|png|jpg|jpeg|svg|woff2?|json)$/.test(url.pathname)) {
-            // [E43] 최신 배포 자산을 우선하되, 오프라인에서는 v6 캐시로 부트스트랩한다.
+        // [E43] webp 포함 — 지도 비트맵이 webp 이므로 누락하면 오프라인에서 캐시 폴백을 타지 못한다.
+        if (underDist || /\.(js|css|png|jpe?g|webp|svg|woff2?|json)$/.test(url.pathname)) {
+            // [E43] 최신 배포 자산을 우선하되, 오프라인에서는 현재 버전 캐시로 부트스트랩한다.
             event.respondWith(networkFirstWithCache(event.request));
             return;
         }

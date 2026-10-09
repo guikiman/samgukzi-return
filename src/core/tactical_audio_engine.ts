@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — Web Audio 기반 3D 바이노럴 전술 사운드 엔진
+ * 삼국지리턴 — Web Audio 기반 3D 바이노럴 전술 사운드 엔진
  * 파일: src/core/tactical_audio_engine.ts
  *
  * [492] PannerNode HRTF 3D 입체 음향

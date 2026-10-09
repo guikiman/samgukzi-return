@@ -2533,7 +2533,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "samgukzi8-re"
+name = "samgukzi-return"
 version = "1.0.1"
 dependencies = [
  "serde",

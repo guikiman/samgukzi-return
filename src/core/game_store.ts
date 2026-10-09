@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — 싱글톤 중앙 상태 저장소
+ * 삼국지리턴 — 싱글톤 중앙 상태 저장소
  * 파일: src/core/game_store.ts
  *
  * 정규화 상태 트리 (Normalized State Tree)
@@ -9,7 +9,8 @@
 
 import {
     IGameStore, NormalizedState, GlobalState,
-    Officer, Faction, City, Army, RelationshipEdge,
+    Officer, Faction, City, Army, RelationshipEdge, MapFeature,
+    TribeState, InvasionDemand, ImperialCourt, ImperialMission, SiegeOperation,
     OfficerID, FactionID, CityID, ArmyID,
     ICommand, CommandContext, GamePhase, GameTime, monthToSeason, Weather, Season,
 } from './types.js';
@@ -32,9 +33,14 @@ class GameStore implements IGameStore {
             factions: {},
             cities: {},
             armies: {},
+            mapFeatures: {},
+            sieges: {},
+            migrationTribes: {},
+            invasionDemands: {},
+            imperialCourt: null,
             relationships: {},
-            byFaction: { officers: {}, cities: {}, armies: {} },
-            byCity: { officers: {} },
+            byFaction: { officers: {}, cities: {}, armies: {}, mapFeatures: {} },
+            byCity: { officers: {}, tribes: {} },
             byOfficer: { relationships: {} },
         };
         this.globalState = {
@@ -155,6 +161,192 @@ class GameStore implements IGameStore {
         this.state.armies[id] = { ...existing, ...updates, id };
         this.notify();
     }
+
+    // ============================================================
+    // 전략 요충지 (MapFeature) — 점령 가능한 지형
+    // ============================================================
+
+    getMapFeature(id: string): MapFeature | null {
+        return this.state.mapFeatures[id] ?? null;
+    }
+
+    getAllMapFeatures(): MapFeature[] {
+        return Object.values(this.state.mapFeatures);
+    }
+
+    getMapFeaturesByFaction(factionId: FactionID): MapFeature[] {
+        return this.state.byFaction.mapFeatures[factionId]
+            ?.map(id => this.state.mapFeatures[id])
+            .filter((f): f is MapFeature => f !== undefined) ?? [];
+    }
+
+    /** 초기 로드용 — 전체 요충지를 한 번에 넣고 인덱스를 세운다. */
+    setMapFeatures(features: MapFeature[]): void {
+        this.state.mapFeatures = {};
+        this.state.byFaction.mapFeatures = {};
+        for (const f of features) {
+            this.state.mapFeatures[f.id] = f;
+            if (f.ownerId) addToIndex(this.state.byFaction.mapFeatures, f.ownerId, f.id);
+        }
+        this.notify();
+    }
+
+    addMapFeature(feature: MapFeature): void {
+        this.state.mapFeatures[feature.id] = feature;
+        if (feature.ownerId) addToIndex(this.state.byFaction.mapFeatures, feature.ownerId, feature.id);
+        this.notify();
+    }
+
+    getSiege(factionId: FactionID): SiegeOperation | null {
+        return this.state.sieges[factionId] ?? null;
+    }
+
+    getAllSieges(): SiegeOperation[] {
+        return Object.values(this.state.sieges);
+    }
+
+    setSiege(operation: SiegeOperation): void {
+        this.state.sieges[operation.factionId] = operation;
+        this.notify();
+    }
+
+    clearSiege(factionId: FactionID): void {
+        delete this.state.sieges[factionId];
+        this.notify();
+    }
+
+    /**
+     * 요충지 갱신 — 소유권이 바뀌면 byFaction 인덱스를 함께 고친다.
+     * updateCity 와 같은 규칙이다. 인덱스를 안 맞추면 getMapFeaturesByFaction 가
+     * 이미 점령당한 요충지를 여전히 "우리 것" 으로 돌려준다.
+     */
+    updateMapFeature(id: string, updates: Partial<MapFeature>): void {
+        const existing = this.state.mapFeatures[id];
+        if (!existing) return;
+        const oldOwner = existing.ownerId;
+        this.state.mapFeatures[id] = { ...existing, ...updates, id };
+        const newOwner = this.state.mapFeatures[id].ownerId;
+        if (oldOwner === newOwner) { this.notify(); return; }
+        if (oldOwner) {
+            const idx = this.state.byFaction.mapFeatures[oldOwner];
+            if (idx) this.state.byFaction.mapFeatures[oldOwner] = idx.filter(f => f !== id);
+        }
+        if (newOwner) {
+            const idx = this.state.byFaction.mapFeatures[newOwner];
+            if (!idx) this.state.byFaction.mapFeatures[newOwner] = [id];
+            else if (!idx.includes(id)) this.state.byFaction.mapFeatures[newOwner] = [...idx, id];
+        }
+        this.notify();
+    }
+
+    // ============================================================
+    // 이민족(MigrationTribe) — 세력이 아닌 별개 교섭 주체
+    // ============================================================
+
+    getMigrationTribe(id: string): TribeState | null {
+        return this.state.migrationTribes[id] ?? null;
+    }
+
+    getAllMigrationTribes(): TribeState[] {
+        return Object.values(this.state.migrationTribes);
+    }
+
+    getTribesByCity(cityId: CityID): TribeState[] {
+        return this.state.byCity.tribes[cityId]
+            ?.map(id => this.state.migrationTribes[id])
+            .filter((t): t is TribeState => t !== undefined) ?? [];
+    }
+
+    /** 초기 로드용 — 부족을 한 번에 넣고 도시 인덱스를 세운다. */
+    setMigrationTribes(tribes: TribeState[]): void {
+        this.state.migrationTribes = {};
+        this.state.byCity.tribes = {};
+        for (const t of tribes) this.putTribe(t);
+        this.notify();
+    }
+
+    /**
+     * 부족 갱신 — 이주하면 도시 인덱스를 함께 옮긴다.
+     * 인덱스를 안 맞추면 getTribesByCity 가 떠나간 부족을 여전히 "그 도시에 있다" 고
+     * 돌려주어 교섭 창이 잘못 열린다.
+     */
+    updateMigrationTribe(id: string, updates: Partial<TribeState>): void {
+        const existing = this.state.migrationTribes[id];
+        if (!existing) return;
+        const oldCityId = existing.settlement.kind === 'CITY' ? existing.settlement.cityId : null;
+        this.state.migrationTribes[id] = { ...existing, ...updates, id };
+        const newCityId = this.state.migrationTribes[id].settlement.kind === 'CITY'
+            ? this.state.migrationTribes[id].settlement.cityId : null;
+        if (oldCityId === newCityId) { this.notify(); return; }
+        if (oldCityId) {
+            const idx = this.state.byCity.tribes[oldCityId];
+            if (idx) this.state.byCity.tribes[oldCityId] = idx.filter(t => t !== id);
+        }
+        if (newCityId) addToIndex(this.state.byCity.tribes, newCityId, id);
+        this.notify();
+    }
+
+    /** 인덱스만 갱신 — set/update 가 공유한다. */
+    private putTribe(t: TribeState): void {
+        this.state.migrationTribes[t.id] = t;
+        if (t.settlement.kind === 'CITY') addToIndex(this.state.byCity.tribes, t.settlement.cityId, t.id);
+    }
+
+    getInvasionDemand(id: string): InvasionDemand | null {
+        return this.state.invasionDemands[id] ?? null;
+    }
+
+    getAllInvasionDemands(): InvasionDemand[] {
+        return Object.values(this.state.invasionDemands);
+    }
+
+    updateInvasionDemand(id: string, updates: Partial<InvasionDemand>): void {
+        const existing = this.state.invasionDemands[id];
+        if (!existing) return;
+        this.state.invasionDemands[id] = { ...existing, ...updates, id };
+        this.notify();
+    }
+
+    // ============================================================
+    // 황제 알현 — 황제가 머무는 도시에서만 열리는 임무
+    // ============================================================
+
+    getImperialCourt(): ImperialCourt | null {
+        return this.state.imperialCourt;
+    }
+
+    setImperialCourt(court: ImperialCourt | null): void {
+        this.state.imperialCourt = court;
+        this.notify();
+    }
+
+    updateImperialCourt(updates: Partial<ImperialCourt>): void {
+        const court = this.state.imperialCourt;
+        if (!court) return;
+        this.state.imperialCourt = { ...court, ...updates };
+        this.notify();
+    }
+
+    getAudienceMission(id: string): ImperialMission | null {
+        return this.state.imperialCourt?.missions[id] ?? null;
+    }
+
+    /** 임무 저장 — court 가 없으면(황제 미설정) 아무것도 하지 않는다. */
+    putAudienceMission(mission: ImperialMission): void {
+        if (!this.state.imperialCourt) return;
+        this.state.imperialCourt.missions[mission.id] = mission;
+        this.notify();
+    }
+
+    updateAudienceMission(id: string, updates: Partial<ImperialMission>): void {
+        const court = this.state.imperialCourt;
+        if (!court) return;
+        const existing = court.missions[id];
+        if (!existing) return;
+        court.missions[id] = { ...existing, ...updates, id };
+        this.notify();
+    }
+
 
     // ============================================================
     // 엔티티 추가/삭제
@@ -311,7 +503,41 @@ class GameStore implements IGameStore {
 
     restoreSnapshot(snapshot: NormalizedState): void {
         this.state = JSON.parse(JSON.stringify(snapshot));
+        this.migrateSnapshot();
         this.notify();
+    }
+
+    /**
+     * 구 세이브 보정 — 이민족 필드가 아직 없던 시점의 스냅샷을 받는다.
+     *
+     * [왜 필요한가]
+     * restoreSnapshot 은 deep clone 뿐이라 필드가 비면 그대로 undefined 로 남는다.
+     * 그러면 getAllMigrationTribes() 가 Object.values(undefined) 로 터지고,
+     * 도시 방문 시 교섭 창이 예외를 삼킨 채 조용히 안 열린다. 세이브를 못 읽는
+     * 경우는 조용히 넘어가는 편이 나으므로 기본값을 채워 넣는다.
+     */
+    private migrateSnapshot(): void {
+        const s = this.state as unknown as {
+            migrationTribes?: Record<string, TribeState>;
+            invasionDemands?: Record<string, InvasionDemand>;
+            imperialCourt?: ImperialCourt | null;
+            sieges?: Record<FactionID, SiegeOperation>;
+            byCity: { tribes?: Record<string, string[]>; officers: Record<string, string[]> };
+        };
+        if (!s.migrationTribes || typeof s.migrationTribes !== 'object') s.migrationTribes = {};
+        if (!s.invasionDemands || typeof s.invasionDemands !== 'object') s.invasionDemands = {};
+        if (!s.sieges || typeof s.sieges !== 'object') s.sieges = {};
+        // 황제 미설정(null)이 정상 상태다. undefined 로 남기면 null 판정이 깨지므로 정규화한다.
+        if (s.imperialCourt === undefined) s.imperialCourt = null;
+        if (!s.byCity.tribes || typeof s.byCity.tribes !== 'object') s.byCity.tribes = {};
+
+        // 인덱스는 파생 데이터다. 저장본이 어긋나 있으면 지금 있는 부족 기준으로 다시 세운다.
+        const rebuilt: Record<string, string[]> = {};
+        for (const tribe of Object.values(s.migrationTribes)) {
+            if (tribe?.settlement?.kind !== 'CITY') continue;
+            (rebuilt[tribe.settlement.cityId] ??= []).push(tribe.id);
+        }
+        s.byCity.tribes = rebuilt;
     }
 
     // ============================================================
@@ -342,11 +568,22 @@ class GameStore implements IGameStore {
     // ============================================================
     // 월드 초기화
     // ============================================================
-    initWorld(officers: Officer[], factions: Faction[], cities: City[], armies: Army[]): void {
+    initWorld(
+        officers: Officer[],
+        factions: Faction[],
+        cities: City[],
+        armies: Army[],
+        mapFeatures: MapFeature[] = [],
+    ): void {
         this.state = {
             officers: {}, factions: {}, cities: {}, armies: {}, relationships: {},
-            byFaction: { officers: {}, cities: {}, armies: {} },
-            byCity: { officers: {} },
+            mapFeatures: {},
+            sieges: {},
+            migrationTribes: {},
+            invasionDemands: {},
+            imperialCourt: null,
+            byFaction: { officers: {}, cities: {}, armies: {}, mapFeatures: {} },
+            byCity: { officers: {}, tribes: {} },
             byOfficer: { relationships: {} },
         };
         // 글로벌 상태 리셋 — 싱글톤 재사용 시 이전 판의 playerFactionId/턴 잔존 방지 [결함 수정]
@@ -366,6 +603,12 @@ class GameStore implements IGameStore {
             this.state.byCity.officers[c.id] = c.officerIds.slice();
         }
         for (const a of armies) this.state.armies[a.id] = a;
+        // 요충지도 인덱스를 직접 세운다 — setMapFeatures 를 부르면 초기화 중 notify 가
+        // 한 번 더 발생해 구독자가 초기 상태를 두 번 받는다.
+        for (const f of mapFeatures) {
+            this.state.mapFeatures[f.id] = f;
+            if (f.ownerId) addToIndex(this.state.byFaction.mapFeatures, f.ownerId, f.id);
+        }
 
         this.notify();
     }

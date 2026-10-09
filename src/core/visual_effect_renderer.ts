@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — WebGL 기반 수묵화 셰이더 및 동적 스크린 트랜지션 렌더러
+ * 삼국지리턴 — WebGL 기반 수묵화 셰이더 및 동적 스크린 트랜지션 렌더러
  * 파일: src/core/visual_effect_renderer.ts
  *
  * GPU 가속 GLSL 단편 셰이더(Fragment Shader) 기반 포스트 프로세싱 파이프라인

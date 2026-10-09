@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — 브라우저 엔트리 포인트
+ * 삼국지리턴 — 브라우저 엔트리 포인트
  *
  * GameEngine + BootstrapContext 초기화,
  * Canvas 렌더링 루프, UI 바인딩.
@@ -9,11 +9,28 @@ import { GameEngine, getGameEngine } from './core/game_engine.js';
 import { BootstrapContext, getBootstrap } from './core/bootstrap.js';
 import { HexMapCanvasRenderer, HexTile } from './core/hex_map_canvas_renderer.js';
 import { ChinaMapRenderer, MapCityView } from './core/china_map_renderer.js';
-import { City3DRenderer, type CityBuilding } from './core/city_3d_renderer.js';
+import { City3DRenderer, type CityBuilding, dayNightPhase, generateDecorations } from './core/city_3d_renderer.js';
+import { createAmbientTicker, shouldRedrawAmbient, CITY_AMBIENT_INTERVAL_MS, type AmbientTicker } from './core/city_ambient_loop.js';
+import { CITY_SCENE_ART_PATH, anchorFor, clampAnchorToCover, mapAnchorToStage, resolveVisibleAnchor, separateOverlaps, toStageInset, isVisibleRect, renderStatBar, type SceneInset } from './core/city_scene_art.js';
+import { mergeCityAndFreeOfficers, isFreeOfficer, isFreeOfficerInCity, officerRoleLabel } from './core/city_officer_roster.js';
 import { BattleFrontend, DeployableUnit, BattlePhase } from './core/battle_frontend.js';
 import { TitleScreen } from './core/title_screen.js';
-import { loadScenarios, getCachedScenarios, buildWorld, getKnownOfficerName } from './core/scenario_system.js';
+import { loadScenarios, getCachedScenarios, buildWorld, getKnownOfficerName, resolveProtagonistId } from './core/scenario_system.js';
 import type { BuiltWorld, ScenarioData } from './core/scenario_system.js';
+import {
+    buildTribeRoster, tribesNearCity, quoteGrainForGold, grainPricePerUnit,
+    requestGrainAid, requestTroopAid, demandRetraction, tradeGrainForGold, tradeGoldForGrain,
+    troopAidPayout, activeDemands,
+} from './core/migration_tribe_system.js';
+import type { TribeState, MapFeature } from './core/types.js';
+import {
+    createCourt, isAudienceCity, checkAudienceEligibility, judgeAudience,
+    createMission, respondToMission, MISSION_SPECS,
+} from './core/imperial_audience_system.js';
+import {
+    startSiege, checkSiegeEligibility,
+    DEFAULT_SIEGE_MONTHS, SIEGE_MIN_COMMIT_TROOPS,
+} from './core/map_feature_siege_system.js';
 import { buildCustomOfficerWorld, validateCustomOfficer, rollCustomStats, hashSeed, buildExistingOfficerWorld } from './core/custom_officer_start.js';
 import { evaluateScenarios, playableScenarios } from './core/officer_editor_scenarios.js';
 import type { EditableOfficer } from './core/officer_editor_scenarios.js';
@@ -27,13 +44,23 @@ import { composeDialogue, composeResponse } from './core/dialogue_composer.js';
 import type { DialogueTopic } from './core/dialogue_composer.js';
 import {
     ScriptRunner,
-    buildMarketScript,
     buildTradeOffer,
     buildTradeScript,
     hasTradePost,
 } from './core/dialogue_script.js';
+import {
+    MARKET_ORDER_COST,
+    marketMood,
+    moodBar,
+    pickRumorTarget,
+    rumorLine,
+    pickTalent,
+    talentLine,
+} from './core/market_command.js';
 import type { DialogueEffect, ScriptNode, TradeOfferRow } from './core/dialogue_script.js';
 import { MonthlyReportSystem } from './core/monthly_report.js';
+// 턴 실행 트레이스 패널 렌더러 [디버그] — 번호가 붙은 트리를 HTML 로
+import { renderTraceTreeHtml } from './ui/turn_trace_panel.js';
 import { assembleReinforcements } from './core/reinforcement_system.js';
 import { garrisonCap, computeRecruitGain } from './core/faction_ai_monthly.js';
 import { SaveSlotManager } from './core/save_slot_manager.js';
@@ -51,6 +78,12 @@ import { RuntimeModLoader } from './core/runtime_mod_loader.js';
 import { MultiTabMutexCoordinator } from './core/multi_tab_mutex_coordinator.js';
 import { checkInteraction, executeInteraction, getAffinityBetween, GIFT_ITEMS, calculateGiftAffinity, type GiftItemId, type GiftOptions } from './core/officer_interaction_system.js';
 import { ConversationSystem } from './core/conversation_system.js';
+import { shouldInspectAtGate, resolveGateChoice, resolveGateEvent, gateBribeCost, gateSneakThreshold } from './core/city_gate_system.js';
+import { describeTravelPlan } from './core/travel_transport.js';
+import { catchUpOfflineTurns } from './core/offline_catchup.js';
+import type { GateChoiceId } from './core/city_gate_system.js';
+import { StrategicOptionSystem } from './core/strategic_option_system.js';
+import type { DialogueContext } from './core/dialogue_engine.js';
 // [Auth/officers] 정적 도장 데이터 연결 — 이름으로만 조회한다(동명이인 73그룹 안전).
 import {
     resolveOfficerIdByName,
@@ -64,6 +97,21 @@ import * as captive_escape_system from './core/captive_escape_system.js';
 import * as roaming_event_system from './core/roaming_event_system.js';
 // 로밍 대화 + 재야 방문 시스템 [25][461-480]
 import { getRoamingDialogue, resolveRoamingDialogue, type RoamingDialogueData } from './core/roaming_dialogue_system.js';
+import {
+    type DialogueSceneState, type DialogueScenePage, type DialogueSceneChoice,
+    type OpenSceneOptions,
+} from './core/dialogue_transcript.js';
+import {
+    createDialogueScene, isRevealDone,
+} from './ui/scenes/dialogue_scene.js';
+import { speakLine, stopSpeech } from './core/ai_tts_pipeline.js';
+
+// 게임이 결정하고, 화면은 씬이 그린다.
+// 여기서 더 이상 대화창의 DOM 을 직접 만지지 않는다.
+/** 이전 이름 호환 — 씬 타입이 화면 구현을 그대로 물려받았다. */
+type DialogueChoice = DialogueSceneChoice;
+type DialoguePage = DialogueScenePage;
+type DialogueState = DialogueSceneState;
 import { acceptVisit, declineVisit, type FreeOfficerVisit } from './core/free_officer_visit_system.js';
 import { getReputationDiplomacyModifier, describeReputationModifier } from './core/reputation_effect_system.js';
 import { getLeaderReputationVisual, getOfficerReputationVisual } from './core/reputation_visuals.js';
@@ -72,29 +120,11 @@ import { ChronicleManager } from './core/chronicle_system.js';
 import { resolveCityClimateRegion } from './core/monthly_report.js';
 import { computeVagrantStrength } from './core/vagrant_monthly_actions.js';
 import { DIFFICULTY_MULTIPLIERS } from './core/difficulty_balance_system.js';
-import { TutorialSystem } from './core/tutorial_system.js';
-// 온보딩 4-PR 통합 배선 [461-480] — 상태(PR1)/패널(PR2)/카피(PR3)가 여기서 만난다.
-import {
-    ONBOARDING_FACTION_OPTIONS,
-    ONBOARDING_TOTAL_STEPS,
-    completeOnboardingFlow,
-    deferOnboardingFlow,
-    dismissOnboardingFlow,
-    getOnboardingState,
-    setOnboardingStep,
-    shouldShowOnboarding,
-} from './core/onboarding_state.js';
-import {
-    parseOnboardingPanel,
-    renderOnboardingPanel,
-    type OnboardingPanelAction,
-    type OnboardingStepCopy,
-} from './ui/onboarding_panel.js';
-import onboardingCopyJson from './data/onboarding_copy.json' with { type: 'json' };
-
-/** 카피 카탈로그(JSON)를 패널이 쓰는 배열 형태로 펼친다 — 순서 보존이 단계 순서다. */
-const onboardingCopyEntries: readonly OnboardingStepCopy[] =
-    Object.values(onboardingCopyJson as Record<string, OnboardingStepCopy>);
+// [2026-10-03 제거] 튜토리얼·온보딩 안내를 완전 삭제했다(사용자 요청).
+//   없어진 것: 첫 플레이 자동 안내, 「❓ 도움말」버튼(H), 안내 패널, 스포트라이트.
+//   함께 사라진 파일: core/tutorial_system.ts · core/onboarding_state.ts ·
+//   ui/onboarding_panel.ts · data/onboarding_copy.json (+ 테스트 5종).
+//   "설정"(a11y-panel)과 관계망 그래프는 안내가 아니라 기능이라 그대로 남겼다.
 import { RelationshipGraphViewer } from './core/relationship_graph_viewer.js';
 import {
     loadAccessibilitySettings, saveAccessibilitySettings, accessibilityAttributes,
@@ -108,10 +138,17 @@ import {
 import { computeSettlement, diffSettlement } from './core/settlement_summary_system.js';
 // 연대기 인스턴스는 engine 초기화 이후 참조 (hoisting 회피용 래퍼)
 const engineRef: { current: import('./core/game_engine.js').GameEngine | null } = { current: null };
-import type { DuelMinigame } from './core/duel_minigame.js';
+import { DuelMinigame } from './core/duel_minigame.js';
 import type { DebateMinigame } from './core/debate_minigame.js';
+import {
+    shouldTriggerRuffian,
+    buildThugStats,
+    applyRuffianDuelOutcome,
+    applyRuffianBribe,
+    RUFFIAN_BRIBE_COST,
+} from './core/ruffian_event_system.js';
 import { getCaptivesInCity } from './core/captive_escape_system.js';
-import { FacilityType, type CityBuildingState, type OfficerID } from './core/types.js';
+import { FacilityType, type CityBuildingState, type OfficerID, type CityID, type Personality, type OfficerStatus } from './core/types.js';
 import type { GameStore } from './core/game_store.js';
 import { DomesticTaskType } from './core/domestic_scheduler.js';
 // [Auth] 계약 + 백엔드 스토어 + UI 흐름을 조립하는 통합 글루
@@ -126,12 +163,21 @@ const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 const turnDisplay = document.getElementById('turn-display')!;
 const dateDisplay = document.getElementById('date-display')!;
-const phaseDisplay = document.getElementById('phase-display')!;
 const statusText = document.getElementById('status-text')!;
 const fpsDisplay = document.getElementById('fps-display')!;
 const logContent = document.getElementById('log-content')!;
 const officerDetail = document.getElementById('officer-detail')!;
 const factionDetail = document.getElementById('faction-detail')!;
+/**
+ * 일시정지 버튼의 아이콘·이름·제목을 한 번에 바꾼다.
+ * 상단 바가 아이콘 전용(2026-09-30)이므로 textContent 를 쓰면 아이콘이 지워진다.
+ */
+function setPauseButton(paused: boolean): void {
+    btnPause.dataset.icon = paused ? '▶' : '⏸';
+    btnPause.setAttribute('aria-label', paused ? '재개' : '일시정지');
+    btnPause.title = paused ? '재개 (P)' : '일시정지 (P)';
+}
+
 const btnStart = document.getElementById('btn-start') as HTMLButtonElement;
 const btnPause = document.getElementById('btn-pause') as HTMLButtonElement;
 const btnSave = document.getElementById('btn-save') as HTMLButtonElement;
@@ -141,9 +187,10 @@ const btnMapVisibility = document.getElementById('btn-map-visibility') as HTMLBu
 const btnReport = document.getElementById('btn-report') as HTMLButtonElement;
 const btnDiplomacy = document.getElementById('btn-diplomacy') as HTMLButtonElement;
 const btnNextMonth = document.getElementById('btn-next-month') as HTMLButtonElement;
-const btnHelp = document.getElementById('btn-help') as HTMLButtonElement;
 const btnSettings = document.getElementById('btn-settings') as HTMLButtonElement;
+const btnAuth = document.getElementById('btn-auth') as HTMLButtonElement;
 const btnGraph = document.getElementById('btn-graph') as HTMLButtonElement;
+const btnTrace = document.getElementById('btn-trace') as HTMLButtonElement;
 
 // ============================================================
 // Engine State
@@ -232,6 +279,10 @@ interface VengeanceModalState {
     enemyUnits: import('./core/vengeance_system.js').VengeanceUnit[];
     deployable: DeployableUnit[];
     done: boolean;
+    /** 설정되면 복수 후처리 대신 호출된다 (불량배 결투 등). */
+    onFinish?: (actorWon: boolean) => void;
+    /** 결투 모달을 닫을 때 이어서 실행한다 (시장 대화 복귀 등). */
+    afterClose?: (() => void) | null;
 }
 
 let vmState: VengeanceModalState | null = null;
@@ -319,19 +370,12 @@ function setVmBar(side: 'player' | 'enemy', value: number, max: number): void {
 function finishVengeanceModal(actorWon: boolean): void {
     if (!vmState || vmState.done) return;
     vmState.done = true;
-    const { store, actorId, targetId, kind, enemyUnits } = vmState;
+    const { store, actorId, targetId, kind, enemyUnits, onFinish } = vmState;
 
-    // 후처리: 우호도 + 명성 [C-인간관계][11]
-    const outcome = finishVengeance(store, actorId, targetId, actorWon);
-    addLog(outcome.message);
-    // 연출 [191-200] — 성패에 따른 흔들림 + 사운드
-    fireFeedback(actorWon ? 'VENGEANCE_SUCCESS' : 'VENGEANCE_FAIL');
-
-    // 복수 성공 시 전투 유닛 임팩트 [32][131-145] — 적군 사기 − / 아군 사기 + / 주도자 공격 보정
-    if (outcome.targetMoraleHit > 0 || outcome.success) {
-        const impact = applyVengeanceToUnits(outcome, vmState.deployable, enemyUnits);
-        if (impact.enemyLog) addLog('🪫 적군 병력 사기가 크게 흔들립니다!');
-        if (impact.allyLog) addLog(impact.allyLog);
+    if (onFinish) {
+        onFinish(actorWon);
+    } else {
+        finishVengeancePath(store, actorId, targetId, actorWon, vmState.deployable);
     }
 
     // 종료 로그
@@ -342,6 +386,28 @@ function finishVengeanceModal(actorWon: boolean): void {
     logEl.innerHTML += `<div class="vm-log-line"><b>${resultLine}</b></div>`;
     document.getElementById('vm-cards')!.innerHTML = '';
     document.getElementById('vm-close')!.style.display = 'inline-block';
+}
+
+function finishVengeancePath(
+    store: import('./core/game_store.js').GameStore,
+    actorId: string,
+    targetId: string,
+    actorWon: boolean,
+    deployable: DeployableUnit[],
+): void {
+    // 후처리: 우호도 + 명성 [C-인간관계][11]
+    const outcome = finishVengeance(store, actorId, targetId, actorWon);
+    addLog(outcome.message);
+    // 연출 [191-200] — 성패에 따른 흔들림 + 사운드
+    fireFeedback(actorWon ? 'VENGEANCE_SUCCESS' : 'VENGEANCE_FAIL');
+
+    // 복수 성공 시 전투 유닛 임팩트 [32][131-145] — 적군 사기 − / 아군 사기 + / 주도자 공격 보정
+    if (outcome.targetMoraleHit > 0 || outcome.success) {
+        const state = vmState;
+        const impact = applyVengeanceToUnits(outcome, deployable, state?.enemyUnits ?? []);
+        if (impact.enemyLog) addLog('🪫 적군 병력 사기가 크게 흔들립니다!');
+        if (impact.allyLog) addLog(impact.allyLog);
+    }
 }
 
 // 카드 클릭 — 플레이어 선택으로 턴 진행
@@ -360,8 +426,10 @@ document.getElementById('vm-cards')!.addEventListener('click', (e) => {
 });
 
 document.getElementById('vm-close')!.addEventListener('click', () => {
+    const after = vmState?.afterClose ?? null;
     document.getElementById('vengeance-modal')!.style.display = 'none';
     vmState = null;
+    if (after) after();
 });
 
 // ============================================================
@@ -811,22 +879,969 @@ canvas.addEventListener('pointermove', (e) => {
     }
 });
 
+/** 좌측 정보 단이 마지막으로 고른 도시 id — 두 번 클릭 규칙의 상태. */
+let sidebarSelectedCityId: string | null = null;
+
+/**
+ * 좌측 정보 단에 도시를 싣는다 — 세력 정보 · 도시 정보 · 무장 목록.
+ *
+ * [두 번 클릭 규칙]
+ * 지도에서 도시를 누르면 먼저 여기가 차고, *같은* 도시를 한 번 더 누르면 그때 진입한다
+ * (성문 검문 → 도시 진입). 2026-09-30 사용자 요청. 이전에는 한 번 눌러 바로 진입했는데
+ * 그 consequent 아무 도시 정보도 볼 수 없었다.
+ */
+function renderSidebarCitySelection(cityId: string): void {
+    if (!engine) return;
+    const store = engine['store'];
+    const city = store.getCity(cityId);
+    const cityEl = document.getElementById('city-detail');
+    const listEl = document.getElementById('city-officers');
+    const countEl = document.getElementById('sidebar-officer-count');
+    if (!city || !cityEl || !listEl) return;
+
+    const faction = city.ownerId ? store.getFaction(city.ownerId) : null;
+    const ds = city.developmentStats;
+
+    factionDetail.textContent = faction
+        ? `${faction.name} · 군주 ${store_getOfficerSafe(faction.leaderId)?.name ?? '—'} · 수도 ${faction.capitalCityId ? store.getCity(faction.capitalCityId)?.name ?? '—' : '—'}`
+        : '무주공산 — 이 도시는 세력 어느 곳도 점령하지 않았다';
+
+    cityEl.innerHTML = `
+        <div class="cdp-faction-name">${city.name}${city.isCapital ? ' 🏯 首都' : ''}</div>
+        <div class="cdp-faction-meta">점령 세력 ${faction?.name ?? '무주'}</div>
+        <div class="cdp-stat-line">인구 ${city.population.toLocaleString()} · 병력 ${city.development.toLocaleString()} / ${garrisonCap(city).toLocaleString()}</div>
+        <div class="cdp-stat-line">자금 ${city.funds.toLocaleString()}金 · 월입 金+${city.goldIncome} · 粮+${city.foodIncome}</div>
+        <div class="cdp-stat-line">상업 ${ds.commerce} · 농업 ${ds.farming} · 기술 ${ds.technology} · 치안 ${ds.publicOrder}</div>
+        <div class="cdp-stat-line">방어 ${city.defense}/${city.maxDefense} · 충성 ${city.loyalty}</div>
+        <div class="cdp-hint">${visitedCityIds.has(cityId) ? '한 번 더 누르면 이 도시로 진입한다' : '미방문 — 한 번 더 누르면 성문 검문'}</div>`;
+
+    const officers = city.officerIds
+        .map(id => store_getOfficerSafe(id))
+        .filter((o): o is NonNullable<typeof o> => o !== null)
+        .sort((a, b) => (b.stats.leadership + b.stats.might) - (a.stats.leadership + a.stats.might));
+    if (countEl) countEl.textContent = `(${officers.length})`;
+    listEl.innerHTML = officers.length > 0
+        ? officers.map(o => `<div class="cdp-officer-row cdp-officer-clickable" data-sidebar-officer="${o.id}">
+            <div>
+                <div class="cdp-officer-name">${o.name}</div>
+                <div class="cdp-officer-stats">統${o.stats.leadership} 武${o.stats.might} 智${o.stats.intelligence}</div>
+            </div>
+            <span class="cdp-officer-role">${city.ownerId && store.getFaction(city.ownerId)?.leaderId === o.id ? '군주' : o.rank >= 5 ? '장군' : '무관'}</span>
+        </div>`).join('')
+        : '<div class="cdp-expedition-info">이 도시에 주둔한 무장이 없다</div>';
+
+    listEl.querySelectorAll<HTMLElement>('[data-sidebar-officer]').forEach(row => {
+        row.addEventListener('click', () => {
+            const id = row.dataset.sidebarOfficer;
+            if (id) renderOfficerDetail(id);
+        });
+    });
+}
+
+/** 상단 바 실제 높이를 CSS 변수로 물려 sidebar 가 겹치지 않게 한다. */
+function syncSidebarTopOffset(): void {
+    const topBar = document.getElementById('top-bar');
+    const main = document.getElementById('main-area');
+    if (!topBar || !main) return;
+    main.style.setProperty('--sidebar-top', `${Math.round(topBar.getBoundingClientRect().height)}px`);
+}
+
 function selectCityAtClientPoint(clientX: number, clientY: number): boolean {
     if (isBattleMode) return false;
     const { px, py } = clientToCanvasPoint(clientX, clientY);
     const city = chinaMap.cityAt(px, py);
     for (const c of worldCities) c.isSelected = (c.id === city?.id);
+    if (!city) {
+        sidebarSelectedCityId = null;
+        return false;
+    }
+    // [2026-10-04] 이동 모드에서는 한 번의 클릭으로 바로 이동한다.
+    //   지도 클릭 계약(1회=선적, 2회=진입)은 이동 모드가 아닐 때만 적용된다 —
+    //   browser_smoke 가 그 계약을 검증하므로 두 경로를 섞지 않는다.
+    if (travelModeActive) {
+        if (!city) return false;
+        const dest = engine?.['store'].getCity(city.id);
+        if (!dest) return false;
+        confirmTravelTo(dest);
+        return true;
+    }
+    // 같은 도시를 다시 누른 두 번째 클릭 — 진입(성문 검문 → 도시 진입).
+    if (sidebarSelectedCityId === city.id) {
+        sidebarSelectedCityId = null;
+        return enterCityGate(city.id);
+    }
+    sidebarSelectedCityId = city.id;
+    renderSidebarCitySelection(city.id);
+    addLog(`도시 선택: ${city.name}`);
+    return true;
+}
+
+/** 성문 검문 — 미방문·중립 도시와 적대 도시는 검문 이벤트를 먼저 치른다. */
+function enterCityGate(cityId: string): boolean {
+    const store = engine['store'];
+    const city = store.getCity(cityId);
     if (!city) return false;
+    const gs = store.getGlobalState();
+    const ownerName = city.ownerId ? store.getFaction(city.ownerId)?.name ?? null : null;
+    let atWar = false;
+    if (city.ownerId && gs.playerFactionId && city.ownerId !== gs.playerFactionId) {
+        try {
+            atWar = engine.diplomacyEngine.getRelation(gs.playerFactionId, city.ownerId) === FactionRelation.WAR;
+        } catch { atWar = false; }
+    }
+    const inspection = shouldInspectAtGate({
+        cityName: city.name,
+        ownerId: city.ownerId,
+        ownerName,
+        playerFactionId: gs.playerFactionId,
+        atWar,
+        visited: visitedCityIds.has(cityId),
+    });
+    if (inspection.kind === 'none') {
+        enterCity(cityId);
+        return true;
+    }
+    openGateDialogue(cityId, inspection.kind === 'strict');
+    return true;
+}
+
+function enterCity(cityId: string): void {
     // [49] 도시를 실제로 방문하면 이후 '발견 도시' 필터에서 계속 visible하다.
-    visitedCityIds.add(city.id);
+    visitedCityIds.add(cityId);
     // [49] 방문 기록을 GlobalState에 즉시 반영해 세이브/로드 후에도 복원한다.
     engine['store'].setGlobalState({
         ...engine['store'].getGlobalState(),
         visitedCityIds: [...visitedCityIds],
     });
     syncChinaMapCities();
-    showCityInfo(city.id);
+    showCityInfo(cityId);
+    // 마을 진입 안내 대화를 먼저 띄우고, 닫히면 알현/부족 창을 이어서 연다.
+    // 알현이 떴으면 그 선택이 끝나고 부족 창을 띄운다.
+    openCityEntryDialogue(cityId);
+    queueAfterDialogueChained(() => {
+        if (maybeOpenImperialAudience(cityId)) {
+            queueCityWindowsAfterDialogue(cityId);
+        } else {
+            maybeOpenTribeNegotiation(cityId);
+        }
+    });
+}
+
+/**
+ * 마을 진입 안내 대화 — 간단한 인사말 한 줄만 표시한다 [49]
+ *
+ * - 진입 즉시 호칭을 넣어 인사한다. 선택지·단계 없이 한 화면이다.
+ * - 닫기(ESC·자동 종료) 뒤 알현/부족 창을 이어서 연다.
+ * - 본격적인 용무(성벽 보수·도시 방문)는 성문지기 대화에서 처리한다.
+ */
+function openCityEntryDialogue(cityId: string): void {
+    const store = engine['store'];
+    const city = store.getCity(cityId);
+    if (!city) return;
+    const gs = store.getGlobalState();
+    const faction = city.ownerId ? store.getFaction(city.ownerId) : null;
+
+    const selected = store.getOfficer(gs.selectedOfficerId ?? '');
+    const leader = faction ? store.getOfficer(faction.leaderId) : null;
+    const caller = (selected && selected.factionId === gs.playerFactionId)
+        ? selected
+        : leader
+        ?? store.getAllOfficers().find(o => o.factionId === gs.playerFactionId && o.runtime.isAlive)
+        ?? null;
+
+    const title = caller ? `${caller.name}님` : '주군';
+
+    openDialogue({
+        pages: [
+            {
+                title: `${city.name} 입성`,
+                subtitle: faction ? `${faction.name} · ${city.name}` : city.name,
+                speaker: title,
+                placeMark: '邑',
+                speakerPortrait: !!caller,
+                text: `성문지기 ${title}, ${city.name}땅에 이르셨구려.`,
+                hideFooter: true,
+                autoCloseMs: 3000,
+                dismissOnClick: true,
+            },
+        ],
+        index: 0,
+    });
+}
+
+/**
+ * 알현 창이 닫힌 뒤 이어서 열 도시 창들을 띄운다.
+ */
+function queueCityWindowsAfterDialogue(cityId: CityID): void {
+    const run = (): void => {
+        maybeOpenTribeNegotiation(cityId);
+    };
+    // 앞선 대기 콜백이 있으면 먼저 돌린 뒤 우리 것을 건다 — 순서가 뒤집히면 엉뚱한 창이 먼저 열린다.
+    queueAfterDialogueChained(run);
+}
+
+/** 황제 알현 — 황제가 머무는 도시에서만 열고, 황제가 수락한 뒤 임무를 준다. @returns 창을 띄웠으면 true */
+function maybeOpenImperialAudience(cityId: CityID): boolean {
+    const store = engine['store'];
+    const court = store.getImperialCourt();
+    if (!isAudienceCity(court, cityId)) return false;
+    const gs = store.getGlobalState();
+    const officer = store.getOfficer(gs.selectedOfficerId ?? '')
+        ?? (gs.playerFactionId
+            ? store.getAllOfficers().find(o => o.factionId === gs.playerFactionId && o.runtime.isAlive)
+            : null);
+    if (!officer) return false;
+
+    const turn = gs.turnCount;
+    if (!checkAudienceEligibility(court, officer, cityId, turn).ok) return false;
+
+    const emperor = court!.emperorName;
+    const verdict = judgeAudience(officer);
+    store.updateImperialCourt({ lastAudienceTurn: turn });
+
+    if (!verdict.granted) {
+        openDialogue({
+            pages: [{
+                title: `${emperor} 알현 — 거절`,
+                speaker: `${emperor}제`,
+                placeMark: '漢',
+                speakerPortrait: true,
+                text: verdict.message,
+                choices: [{ id: 'leave', label: '물러난다', description: '알현을 포기한다', onSelect: () => '물러나겠소.' }],
+            }],
+            index: 0,
+        });
+        return true;
+    }
+
+    const kinds = Object.keys(MISSION_SPECS) as Array<keyof typeof MISSION_SPECS>;
+    openDialogue({
+        pages: [{
+            title: `${emperor} 알현`,
+            subtitle: `${officer.name} · 공 ${Math.round(verdict.score)}`,
+            speaker: `${emperor}제`,
+            placeMark: '漢',
+            speakerPortrait: true,
+            text: `${verdict.message} 하명이 있다. 한 임무를 맡아라.`,
+            choices: [
+                ...kinds.map(kind => ({
+                    id: `mission_${kind}`,
+                    label: MISSION_SPECS[kind].label,
+                    description: `${MISSION_SPECS[kind].brief} · ${MISSION_SPECS[kind].durationTurns}개월 내 완료 · 관직 ${MISSION_SPECS[kind].rewardRank} · ${MISSION_SPECS[kind].rewardGold}金`,
+                    onSelect: () => {
+                        const mission = createMission(kind, officer, cityId, turn, `mission_${officer.id}_${turn}`);
+                        store.putAudienceMission(mission);
+                        store.updateImperialCourt({ activeMissionId: mission.id });
+                        return `「${MISSION_SPECS[kind].label}」 임무를 받았습니다. ${MISSION_SPECS[kind].durationTurns}개월 안에 완수하라.`;
+                    },
+                })),
+                { id: 'decline', label: '사양한다', description: '아무 임무도 받지 않는다', onSelect: () => '사양하였다.' },
+            ],
+        }],
+        index: 0,
+    });
     return true;
+}
+
+/**
+ * 이민족 교섭 — 그 도시에 부족이 머물면 교섭 창을 연다.
+ *
+ * [E2E 안전]
+ * 테스트 훅은 openCity → showCityInfo 로 직접 도시를 열기 때문에 이 경로를 타지 않는다
+ * (openCity 훅은 enterCity 를 부르지 않는다). 그래서 지도 클릭/성문 검문 프로브를
+ * 건드리지 않는다.
+ */
+/** @returns 창을 띄웠으면 true */
+function maybeOpenTribeNegotiation(cityId: CityID): boolean {
+    const store = engine['store'];
+    const playerFactionId = store.getGlobalState().playerFactionId;
+    if (!playerFactionId) return false;
+    // 부족은 세력의 영토가 아니라 '그 도시에 머무는' 주체다. byCity 인덱스가 정답이다.
+    const near = store.getTribesByCity(cityId);
+    if (near.length === 0) return false;
+    const tribeId = near[0].id;
+    // 한 달에 한 번만 열린다 — 두 번 열면 지원 을 몇 달이고 받는다.
+    if (near[0].negotiatedThisMonth) return false;
+
+    /**
+     * 매 선택마다 스토어에서 다시 읽는다.
+     *
+     * [왜 이렇게 했는가]
+     * 교섭 창을 열 때 한 번 읽어 둔 스냅샷을 모든 선택이 공유하면, 한 번 거래한 뒤
+     * 우호도·가격·재고가 전부 옛 값으로 계산된다. 실제로 지원/거래를 몇 번씩 받고도
+     * 호가가 평생 안 내려가는 버그가 났다. 창은 다시 그리지 않더라도 계산 근거만 최신으로
+     * 읽으면 다음 선택이 맞아떨어진다.
+     */
+    const fresh = (): TribeState => store.getMigrationTribe(tribeId) ?? near[0];
+    const current = fresh();
+    const faction = store.getFaction(playerFactionId);
+    const unitPrice = grainPricePerUnit(current.affinity);
+    const cost100 = quoteGrainForGold(100, current.affinity);
+    // 이 부족이 등 뒤에 두고 있는, 아직 철회되지 않은 침략 요구.
+    const retractable = activeDemands(store.getAllInvasionDemands())
+        .filter(d => current.backingDemandIds.includes(d.id));
+
+    /** 거래 결과만큼 부족 재고도 같이 움직인다 — 파는 쪽만 줄인다. */
+    const applyTrade = (
+        fn: typeof tradeGrainForGold | typeof tradeGoldForGrain,
+        qty: number,
+        direction: 'buy' | 'sell',
+    ): string => {
+        const f0 = store.getFaction(playerFactionId);
+        if (!f0) return '세력을 찾을 수 없습니다.';
+        const tribe = fresh();
+        const res = fn({ playerGold: f0.gold, playerFood: f0.food, tribe }, qty);
+        if (!res.success) return res.message;
+        // goldSpent/grainMoved 는 방향에 따라 금과 粮 중 하나가 '지출' 이다.
+        // goldSpent 은 양방향 모두 '평.player 가 낸 양' 이고, grainMoved 는 방향마다
+        // 뜻이 다르다(구입=받은 糧, 매도=받은 金). 그래서 지출을 방향별로 계산한다.
+        const spentGold = direction === 'buy' ? res.goldSpent : 0;
+        const spentFood = direction === 'buy' ? 0 : res.goldSpent;
+        const gainedFood = direction === 'buy' ? qty : 0;
+        const gainedGold = direction === 'sell' ? res.grainMoved : 0;
+        store.updateFaction(playerFactionId, {
+            gold: f0.gold - spentGold + gainedGold,
+            food: f0.food - spentFood + gainedFood,
+        });
+        store.updateMigrationTribe(tribe.id, {
+            affinity: res.newAffinity,
+            grainStock: Math.max(0, direction === 'buy' ? tribe.grainStock - qty : tribe.grainStock + qty),
+            negotiatedThisMonth: true,
+        });
+        return res.message;
+    };
+
+    openDialogue({
+        pages: [{
+            title: `${current.name} 교섭`,
+            subtitle: `우호도 ${current.affinity} · 1糧 ${unitPrice.toFixed(2)}金`,
+            speaker: `${current.name} 태장`,
+            placeMark: '胡',
+            speakerPortrait: true,
+            text: '이곳에 이주한 부족과 말을 건다. 공물을 주고 지원이나 거래를 청할 수 있다.',
+            choices: [
+                {
+                    id: 'buy_grain',
+                    label: `糧 100 사다 (${cost100}金)`,
+                    description: `우호도가 높을수록 싸진다 · 보유 ${faction?.gold ?? 0}金`,
+                    disabled: (faction?.gold ?? 0) < cost100,
+                    onSelect: () => applyTrade(tradeGrainForGold, 100, 'buy'),
+                },
+                {
+                    id: 'sell_grain',
+                    label: '糧 100 팔다',
+                    description: `糧을 주고 金을 받는다 · 보유 ${faction?.food ?? 0}糧`,
+                    disabled: (faction?.food ?? 0) < 100,
+                    onSelect: () => applyTrade(tradeGoldForGrain, 100, 'sell'),
+                },
+                {
+                    id: 'aid_grain',
+                    label: '군량미 지원 요청',
+                    description: `${current.name}에게 糧 지원을 요청한다`,
+                    onSelect: () => {
+                        const tribe = fresh();
+                        const res = requestGrainAid(tribe);
+                        const f = store.getFaction(playerFactionId);
+                        if (res.success && f) store.updateFaction(playerFactionId, { food: f.food + res.grain });
+                        store.updateMigrationTribe(tribe.id, {
+                            affinity: res.newAffinity,
+                            negotiatedThisMonth: true,
+                            grainStock: Math.max(0, tribe.grainStock - res.grain),
+                        });
+                        return res.message;
+                    },
+                },
+                {
+                    id: 'aid_troops',
+                    label: '병력 지원 요청',
+                    description: `${current.name}에게 용병을 요청한다`,
+                    onSelect: () => {
+                        const tribe = fresh();
+                        const res = requestTroopAid(tribe);
+                        const city = store.getCity(cityId);
+                        const payout = res.success && city
+                            ? troopAidPayout(res.soldiers, city.development, garrisonCap(city))
+                            : { granted: 0, capped: false };
+                        if (payout.granted > 0 && city) {
+                            store.updateCity(city.id, { development: city.development + payout.granted });
+                        }
+                        store.updateMigrationTribe(tribe.id, {
+                            affinity: res.newAffinity,
+                            negotiatedThisMonth: true,
+                            troopStock: Math.max(0, tribe.troopStock - payout.granted),
+                        });
+                        return payout.capped
+                            ? `${res.message} (수용 한도로 ${payout.granted}병만 입병)`
+                            : res.message;
+                    },
+                },
+                {
+                    id: 'retract_demand',
+                    label: '침략 요구 철회 요구',
+                    description: retractable.length > 0
+                        ? `${retractable.length}건을 철회시킨다 · 우호도가 높을수록 쉽다`
+                        : '철회시킬 침략 요구가 없다',
+                    disabled: retractable.length === 0,
+                    onSelect: () => {
+                        const tribe = fresh();
+                        const target = retractable[0];
+                        if (!target) return '철회시킬 침략 요구가 없다.';
+                        const res = demandRetraction(tribe, target);
+                        if (res.withdrawnDemandId) {
+                            store.updateInvasionDemand(res.withdrawnDemandId, { withdrawn: true });
+                        }
+                        store.updateMigrationTribe(tribe.id, {
+                            affinity: res.newAffinity,
+                            negotiatedThisMonth: true,
+                        });
+                        return res.message;
+                    },
+                },
+                { id: 'leave', label: '물러난다', description: '교섭을 끝낸다', onSelect: () => '돌아갔다.' },
+            ],
+        }],
+        index: 0,
+    });
+    return true;
+}
+
+/** 요충지 인접 판정 거리 — 도시 인접 판정(ADJACENT_DIST)과 같은 기준을 쓴다. */
+const FEATURE_ADJACENT_DIST = 0.16;
+
+/** 성문 검문 대화 — 뇌물·잠입·철수 중 선택, 통과하면 입장한다. */
+function openGateDialogue(cityId: string, strict: boolean): void {
+    const store = engine['store'];
+    const city = store.getCity(cityId);
+    if (!city) return;
+    const gs = store.getGlobalState();
+    const faction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
+    const selected = store.getOfficer(gs.selectedOfficerId ?? '');
+    const actor = (selected && selected.factionId === gs.playerFactionId)
+        ? selected
+        : faction ? store.getOfficer(faction.leaderId) : null;
+    const officerInt = actor?.stats.intelligence ?? 50;
+    const cost = gateBribeCost(strict);
+    const ownerName = city.ownerId ? store.getFaction(city.ownerId)?.name ?? '낯선 세력' : '무주공산';
+    const relationName = city.ownerId && ownerName !== '무주공산' ? ownerName : null;
+
+    const statusLabel = strict
+        ? `${ownerName}의 엄중한 경계`
+        : relationName ? `${ownerName}의 성문` : '미방문 도시의 성문';
+
+    const text = strict
+        ? `“멈춰라! 여기는 ${ownerName}의 영역이다. ${city.name} 성문은 적에게 열리지 않는다. 목숨이 아깝거든 당장 돌아가라.”`
+        : relationName
+            ? `“처음 보는 얼굴이군. ${ownerName} 땅 ${city.name}에 무슨 볼일이냐? 수상한 자는 성문에서 돌려보낸다는 엄명이다.”`
+            : `“낯선 이로군. ${city.name}에 무슨 볼일이냐? 수상한 자는 성문에서 돌려보낸다는 엄명이다.”`;
+
+    const applyChoice = (choiceId: GateChoiceId): string => {
+        const ev = resolveGateEvent(choiceId, {
+            factionGold: faction?.gold ?? 0,
+            officerIntelligence: officerInt,
+            strict,
+        });
+        if (ev.goldSpent > 0 && faction) {
+            store.updateFaction(faction.id, { gold: Math.max(0, faction.gold - ev.goldSpent) });
+        }
+        if (ev.infamyDelta !== 0 && actor) {
+            store.updateOfficer(actor.id, { infamy: actor.infamy + ev.infamyDelta });
+        }
+        addLog(ev.message);
+        if (ev.entered) {
+            // 큐를 먼저 비운다. closeDialogue() 가 남아 있는 큐를 실행하면,
+            // enterCity 가 새로 등록할 '이 도시' 교섭이 이전 도시 것으로 먼저 열린다.
+            clearQueuedDialogue();
+            closeDialogue();
+            enterCity(cityId);
+            return `${ev.tag} — ${city.name}에 들어간다.`;
+        }
+        return `${ev.tag} — ${ev.why}`;
+    };
+
+    const sneakChance = Math.max(0, Math.min(100, gateSneakThreshold(officerInt, strict)));
+    const sneakDesc = strict
+        ? `${actor?.name ?? '斥候'} 지력 ${officerInt} · 엄중한 경계, 성공률 약 ${sneakChance}%`
+        : `${actor?.name ?? '斥候'} 지력 ${officerInt} · 성공률 약 ${sneakChance}%`;
+
+    openDialogue({
+        pages: [{
+            title: `성문 검문 — ${city.name}`,
+            subtitle: statusLabel,
+            speaker: '성문지기',
+            placeMark: '門',
+            // 문지기는 사람이라 표식 글자 대신 초상화를 세운다.
+            speakerPortrait: true,
+            text,
+            choices: [
+                {
+                    id: 'bribe',
+                    label: `뇌물을 건넨다 (${cost}金)`,
+                    description: faction && faction.gold >= cost
+                        ? `문지기에게 ${cost}金을 쥐여주고 통과한다`
+                        : `자금 부족 (보유 ${faction?.gold ?? 0}金, 필요 ${cost}金)`,
+                    disabled: !faction || faction.gold < cost,
+                    onSelect: () => applyChoice('bribe'),
+                },
+                {
+                    id: 'sneak',
+                    label: '몰래 잠입한다',
+                    description: sneakDesc,
+                    onSelect: () => applyChoice('sneak'),
+                },
+            ],
+        }],
+        index: 0,
+    });
+}
+
+// ============================================================
+// 성문 — 성문지기 대화 / 다른 도시 방문 [2026-10-04]
+// ============================================================
+
+// [2026-10-04] 이동 모드 — 성문에서 "다른 도시 방문"을 고른 뒤 지도가 뜨는 구간.
+//   군단(Army) 위치 모델은 아직 없다(3단계). 지금은 출발지/목적지 좌표만
+//   보관해 경로 선을 그리고, 애니메이션이 끝나면 목적지 도시를 연다.
+let travelModeActive = false;
+let travelModeOriginId: string | null = null;
+let travelReturnCityId: string | null = null;
+let travelRoute: { from: string; to: string } | null = null;
+let travelAnimToken = 0;
+/** [2026-10-04] 지도 위 마커의 현재 진행도 — 턴 이동에서 애니메이션의 시작점이 된다. */
+let travelProgressCurrent = 0;
+
+/**
+ * 이동 대상 도시 목록 (현재 도시 제외).
+ *
+ * 정렬은 이름 순이다. 이동 경로를 아직 상태로 갖고 있지 않으므로(2단계는 시각
+ * 표시만), 가까운 순으로 보여주면 도착 시간을 예측할 수 없는 순서로 보게 된다.
+ */
+function travelTargetCities(originId?: string | null): Array<import('./core/types.js').City> {
+    if (!engine) return [];
+    const origin = originId ?? citySceneCityId;
+    return engine['store'].getAllCities()
+        .filter(c => c.id !== origin)
+        .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+}
+
+/**
+ * 성문지기 대화 — 도시 진입 풀 대화가 열리는 곳이다.
+ *
+ * 진입 시에는 인사말만 보이고, 성벽 보수·도시 방문 같은 용무는 여기서 처리한다.
+ * 1) 인사·안내 2단계를 읽고 2) 선택지를 고른 뒤 ▶ 로 확정한다.
+ * 도시 방문을 확정하면 전국 지도가 바로 열린다.
+ */
+function openCityGatekeeperDialogue(city: import('./core/types.js').City | null | undefined): void {
+    if (!engine || !city) return;
+    const store = engine['store'];
+    const gs = store.getGlobalState();
+    const faction = city.ownerId ? store.getFaction(city.ownerId) : null;
+
+    const selected = store.getOfficer(gs.selectedOfficerId ?? '');
+    const leader = faction ? store.getOfficer(faction.leaderId) : null;
+    const caller = (selected && selected.factionId === gs.playerFactionId)
+        ? selected
+        : leader
+        ?? store.getAllOfficers().find(o => o.factionId === gs.playerFactionId && o.runtime.isAlive)
+        ?? null;
+
+    const title = caller ? `${caller.name}님` : '주군';
+    const wallPct = city.maxDefense > 0 ? Math.round((city.defense / city.maxDefense) * 100) : 100;
+
+    const stepGreeting = `성문지기 ${title}, ${city.name}땅에 이르셨구려.`;
+    const stepGuide = `살림살이는 제법 안정되어 있으니, 한번 둘러보시지요.`;
+    const text = `${stepGreeting} ${stepGuide}`;
+
+    // [선택 확정 모드] 성벽 보수 · 도시 방문을 고른 뒤 ▶ 로 확정한다.
+    const repairChoice: DialogueSceneChoice = {
+        id: 'repair_wall',
+        label: '성벽 보수',
+        description: '',
+        disabled: wallPct >= 100,
+        onSelect: () => {
+            const cost = 200 + Math.round((city.maxDefense - city.defense) * 2);
+            if (city.funds < cost) {
+                return `자금이 부족하다 (필요 ${cost}金, 보유 ${city.funds}金).`;
+            }
+            store.updateCity(city.id, {
+                funds: city.funds - cost,
+                defense: Math.min(city.maxDefense, city.defense + Math.max(5, Math.round((city.maxDefense - city.defense) * 0.4))),
+            });
+            addLog(`${city.name} 성벽을 보수했다 (비용 ${cost}金).`);
+            return `성벽을 보수했다. 이제 방어력이 더 단단해졌다.`;
+        },
+    };
+    const visitChoice: DialogueSceneChoice = {
+        id: 'visit_city',
+        label: '도시 방문',
+        description: '',
+        // ▶ 확정 뒤 전국 지도를 바로 연다.
+        onSelect: () => {
+            // 도시를 떠나므로 대기 중인 다른 창은 열지 않는다.
+            clearQueuedDialogue();
+            closeDialogue();
+            setTimeout(() => openWorldMapForTravel(city.id), 180);
+            return `${city.name}을 떠나 다른 도시로 향한다.`;
+        },
+    };
+
+    openDialogue({
+        pages: [
+            {
+                title: `성문 — ${city.name}`,
+                subtitle: faction ? `${faction.name} · ${city.name} 성문` : `${city.name} 성문`,
+                speaker: title,
+                placeMark: '門',
+                speakerPortrait: !!caller,
+                text,
+                steps: [stepGreeting, stepGuide],
+                selectChoice: true,
+                hideFooter: true,
+                choicePrompt: `${title}, 업무 또는 다른 도시 방문 계획이 있으신 가요`,
+                choices: [repairChoice, visitChoice],
+            },
+        ],
+        index: 0,
+    });
+}
+
+/**
+ * 이동 모드 — 전국 지도를 열어 목적지 도시를 고르게 한다.
+ *
+ * [E2E 계약에 대한 주의]
+ * 지도 클릭은 이미 "1회=선적, 2회=진입" 계약을 쓰고 browser_smoke 가 그것을
+ * 검증한다. 이동 모드에서는 그 계약과 무관하게 **한 번의 클릭**으로 이동이
+ * 성사되도록 별도 분기를 둔다.
+ */
+function openWorldMapForTravel(originCityId?: string): void {
+    const origin = originCityId ?? citySceneCityId;
+    const targets = travelTargetCities(origin);
+    if (targets.length === 0) {
+        addLog('이 세계에는 방문할 다른 도시가 없다.');
+        return;
+    }
+    // 도시 화면을 먼저 닫는다 — 닫지 않으면 지도 위에 도시 패널이 겹친다.
+    closeCityPanel();
+    travelModeOriginId = origin;
+    travelModeActive = true;
+    travelReturnCityId = travelModeOriginId;
+    addLog('어느 도시로 갈까? 지도의 도시를 누르면 이동한다.');
+    renderTravelHint(targets.length);
+    requestAnimationFrame(() => {
+        syncChinaMapCities();
+        chinaMap?.render();
+    });
+}
+
+/** 이동 모드 안내 — 지도 위 토스트. 취소할 수 있어야 한다. */
+function renderTravelHint(count: number): void {
+    const hint = document.getElementById('travel-hint');
+    if (!hint) return;
+    hint.innerHTML = `<span class="travel-hint-text">이동할 도시를 고르시오 — ${count}개 도시</span>`
+        + '<button type="button" class="travel-hint-cancel">취소</button>';
+    hint.hidden = false;
+    hint.querySelector('.travel-hint-cancel')?.addEventListener('click', cancelTravel);
+}
+
+/** 이동 모드를 끝내고 원래 도시 화면으로 돌아간다. */
+function cancelTravel(): void {
+    if (!travelModeActive) return;
+    travelModeActive = false;
+    travelModeOriginId = null;
+    travelRoute = null;
+    chinaMap?.clearTravelRoute();
+    document.getElementById('travel-hint')?.setAttribute('hidden', '');
+    const back = travelReturnCityId;
+    travelReturnCityId = null;
+    if (back) showCityInfo(back);
+    addLog('이동을 취소했다.');
+}
+
+/**
+ * 목적지 확정 — 경로를 그리고(시각 표시 전용) 목적지 도시를 연다.
+ *
+ * 여기까지는 **상태를 만들지 않는다.** 군단(Army) 위치 모델은 3단계에서 넣고,
+ * 지금은 출발지→목적지 선을 그렸다가 도착 도시 화면을 여는 것까지만 한다.
+ */
+function confirmTravelTo(dest: import('./core/types.js').City): void {
+    const originId = travelModeOriginId;
+    travelModeActive = false;
+    document.getElementById('travel-hint')?.setAttribute('hidden', '');
+    if (!originId) {
+        addLog(`${dest.name}(으)로 향한다.`);
+        enterCity(dest.id);
+        return;
+    }
+    travelRoute = { from: originId, to: dest.id };
+    chinaMap?.setTravelRoute(originId, dest.id);
+    // 새 이동은 출발점에서 시작한다 — 이전 이동의 진행도가 남아 있으면
+    // 두 번째 도시가 출발하자마자 중간 지점에 있는 것처럼 보인다.
+    travelProgressCurrent = 0;
+    chinaMap?.setTravelProgress(0);
+
+    // [2026-10-04] 이동 시간을 계산한다. 육로는 말, 바다는 배 — 배가 더 느리다.
+    //   단위는 **개월** 이다. 게임 1턴 = 1개월 이므로 이 값이 곧 소요 턴 수다.
+    const plan = chinaMap?.getTravelPlan() ?? null;
+    const months = plan?.totalMonths ?? 0;
+    const how = plan ? describeTravelPlan(plan) : '이동 경로 없음';
+    addLog(`${dest.name}(으)로 이동한다 — ${how}`);
+
+    // 경로가 없거나 0 개월이면 턴을 쓰지 않고 즉시 도착한다.
+    if (months <= 0) {
+        playTravelAnimation(originId, dest.id, () => {
+            travelRoute = null;
+            chinaMap?.clearTravelRoute();
+            enterCity(dest.id);
+        });
+        return;
+    }
+
+    // 턴이 필요한 이동 — 상태에 넣고 "이동 중" 지도 모드로 둔다.
+    const store = engine['store'];
+    store.setGlobalState({
+        ...store.getGlobalState(),
+        activeTravel: {
+            fromCityId: originId,
+            toCityId: dest.id,
+            monthsRemaining: months,
+            monthsTotal: months,
+        },
+    });
+    travelReturnCityId = null; // 이동 중에는 원래 도시로 돌아가지 않는다
+    renderActiveTravelHint(dest, months);
+    // [2026-10-04] 턴을 기다리지 않고 계속 움직인다 — 실시간 이동 모습.
+    startTravelLoop();
+}
+
+/**
+ * 이동 중 안내 — "목적지까지 N개월" 을 보여주고 취소를 제공한다.
+ *
+ * [왜 map 위가 아니라 지도 위 토스트인가]
+ * 이동 중에는 도시 화면이 닫혀 있고 지도가 보인다. 진행 상태를 지도 위에 두는
+ * 것이 사용자가 자연스럽게 보는 곳이다.
+ */
+function renderActiveTravelHint(dest: import('./core/types.js').City, months: number): void {
+    const hint = document.getElementById('travel-hint');
+    if (!hint) return;
+    hint.innerHTML = `<span class="travel-hint-text">${dest.name}로 이동 중 — 남은 ${months}개월</span>`
+        + '<button type="button" class="travel-hint-cancel">이동 중지</button>';
+    hint.hidden = false;
+    hint.querySelector('.travel-hint-cancel')?.addEventListener('click', cancelActiveTravel);
+}
+
+/** 이동 중지 — 출발 도시로 돌아간다. 도착한 것처럼 행동한 적은 없다. */
+function cancelActiveTravel(): void {
+    const store = engine?.['store'];
+    const active = store?.getGlobalState().activeTravel;
+    if (!store || !active) return;
+    stopTravelLoop();
+    store.setGlobalState({ ...store.getGlobalState(), activeTravel: undefined });
+    travelRoute = null;
+    chinaMap?.clearTravelRoute();
+    document.getElementById('travel-hint')?.setAttribute('hidden', '');
+    addLog('이동을 중지했다.');
+    showCityInfo(active.fromCityId);
+}
+
+/**
+ * 턴 경계마다 이동 1개월 경과 — 턴이 끝날 때마다 부른다.
+ *
+ * [단위가 개월인 이유]
+ * 1턴 = 1개월 이므로 "1개월 경과" 와 "턴 1회" 는 같은 사건이다. 여기서 1 을 빼는
+ * 것이 곧 한 달을 보내는 것이다.
+ *
+ * [3단계로 이어지는 자리]
+ * 지금은 "한 달씩 줄이고 0 이 되면 도착" 만 한다. 군단(Army) 이 붙으면 여기에
+ * 행군 사건(식량 고갈·길목 교전·날씨 페널티)을 끼워 넣으면 된다. 지금 넣으면
+ * Army 가 없는 상태에서 규칙이 죽으므로 넣지 않는다.
+ *
+ * @returns 도착했으면 목적지 도시 id, 아니면 null
+ */
+export function advanceActiveTravelOneTurn(): string | null {
+    const store = engine?.['store'];
+    const active = store?.getGlobalState().activeTravel;
+    if (!store || !active) return null;
+    const left = active.monthsRemaining - 1;
+    if (left > 0) {
+        store.setGlobalState({
+            ...store.getGlobalState(),
+            activeTravel: { ...active, monthsRemaining: left },
+        });
+        const dest = store.getCity(active.toCityId);
+        if (dest) renderActiveTravelHint(dest, left);
+        // [2026-10-04] 지도 위에서 실제로 한 칸 앞으로 이동시킨다.
+        //   진행도를 **날짜 비율**이 아니라 **경로 거리 비율**로 환산해야 한다.
+        //   말 구간과 배 구간의 월 이동 거리가 다르므로, 개월 비율을 그대로 쓰면
+        //   빠른 말 구간에서 마커가 지형을 뚫고 앞질러 나간다.
+        syncTravelProgressToMonths(active.monthsTotal, left);
+        return null;
+    }
+    // 도착 — 상태를 비우고 경로를 지운다.
+    stopTravelLoop();
+    store.setGlobalState({ ...store.getGlobalState(), activeTravel: undefined });
+    travelRoute = null;
+    chinaMap?.clearTravelRoute();
+    document.getElementById('travel-hint')?.setAttribute('hidden', '');
+    const dest = store.getCity(active.toCityId);
+    addLog(`${dest?.name ?? '목적지'}(으)로 도착했다.`);
+    return active.toCityId;
+}
+
+/**
+ * 남은 개월 수 → 지도 위 진행도(0~1).
+ *
+ * [왜 개월 비율이 아니라 거리 비율인가]
+ * 이동 계획의 구간마다 소요 개월 수가 다르다(말은 빠르고 배는 느리다). 개월 비율을
+ * 그대로 진행도에 쓰면, 3개월 걸리는 구간을 한 달 만에 지나가 버린다 — 지형을 무시하고
+ * 순간이동하는 것처럼 보인다. 그래서 **해당 개월 지점에서 실제로 어디쯤인지** 를
+ * 거리로 환산해야 한다.
+ *
+ * 렌더러가 구간별 누적 거리를 갖고 있으므로 그쪽에서 계산한다. 여기서는 목표
+ * 진행도만 넘긴다.
+ *
+ * @param monthsTotal 총 소요 개월 수 (= 소요 턴 수)
+ * @param monthsLeft  남은 개월 수
+ */
+function syncTravelProgressToMonths(monthsTotal: number, monthsLeft: number): void {
+    if (monthsTotal <= 0) return;
+    // [2026-10-04] 실시간 루프가 떠 있는 동안은 루프가 그린다. 턴 경계에서만
+    //   진행도를 정확히 되감을 뿐( re-align ), 그 사이에 애니메이션을 새로 띄우면
+    //   루프와 부딪혀 두 애니메이션이 같은 값을 놓고 다툰다.
+    if (travelLoopHandle) { realignToTurnProgress(monthsTotal, monthsLeft); return; }
+    // 루프가 없는 경우(감소 모드)만 부드러운 점프 애니메이션을 쓴다.
+    const target = chinaMap?.progressForDays(monthsLeft, monthsTotal) ?? 0;
+    animateTravelProgressTo(target);
+}
+
+/**
+ * 진행도를 한 프레임씩 부드럽게 만든다.
+ *
+ * [즉시 set 하지 않는 이유]
+ * 턴이 한 달씩 넘어가는데 마커가 순간이동하면 "이동 중"이라는 사실이 눈에 안
+ * 들어온다. 약간의 부드러짐을 주면 "한 걸음 다가갔다" 는 인지가 생긴다.
+ * prefers-reduced-motion 이면 즉시 이동한다 — [461-480] 접근성 축.
+ */
+function animateTravelProgressTo(target: number): void {
+    const reduced = typeof matchMedia === 'function'
+        && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) { chinaMap?.setTravelProgress(target); return; }
+
+    const token = ++travelAnimToken; // 이전 애니메이션을 취소한다
+    const start = travelProgressCurrent;
+    const delta = target - start;
+    // 이미 그 자리면 움직일 것이 없다.
+    if (Math.abs(delta) < 0.001) return;
+    const startTime = performance.now();
+    const DURATION = 420;
+    const step = (now: number): void => {
+        if (token !== travelAnimToken) return;
+        const t = Math.min(1, (now - startTime) / DURATION);
+        // ease-out — 출발할 때 빠르고 끝날 때 느리다(가속/감속).
+        const eased = 1 - Math.pow(1 - t, 3);
+        travelProgressCurrent = start + delta * eased;
+        chinaMap?.setTravelProgress(travelProgressCurrent);
+        if (t < 1) { requestAnimationFrame(step); return; }
+        travelProgressCurrent = target;
+    };
+    requestAnimationFrame(step);
+}
+
+/**
+ * 출발지 → 목적지 이동 연출.
+ *
+ * 지도 위 한 점을 시간에 따라 이동시키고 완료 콜백을 부른다. 상태를 만들지
+ * 않으므로(3단계 대상) 끝난 뒤 흔적은 남지 않는다.
+ * prefers-reduced-motion 을 존중해 즉시 완료한다 — [461-480] 접근성 축.
+ */
+function playTravelAnimation(_from: string, _to: string, done: () => void): void {
+    const reduced = typeof matchMedia === 'function'
+        && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) { done(); return; }
+    const token = ++travelAnimToken;
+    const start = performance.now();
+    const DURATION = 900;
+    const step = (now: number): void => {
+        // 새 이동이 시작되면 이전 애니메이션은 즉시 포기한다.
+        if (token !== travelAnimToken) return;
+        const t = Math.min(1, (now - start) / DURATION);
+        chinaMap?.setTravelProgress(t);
+        if (t < 1) { requestAnimationFrame(step); return; }
+        chinaMap?.setTravelProgress(1);
+        done();
+    };
+    requestAnimationFrame(step);
+}
+
+
+/**
+ * 실시간 이동 루프 — 턴을 기다리지 않고 계속 앞으로 나아간다. [2026-10-04]
+ *
+ * [왜 필요한가]
+ * 턴마다 한 번씩 420ms짜리 애니메이션은 "이동 중" 을 보여주지만 **멈춰 있다**.
+ * 사용자가 요청한 것은 "실시간으로 이동하는 모습" 이었다. 턴이 몇 달 걸리든
+ * 마커는 화면에서 계속 움직여야 한다. 그래야 "5일 걸린다" 는 숫자가
+ * "지금 이렇게 느리게 간다" 는 인상으로 읽힌다.
+ *
+ * [속도 설계 — 왜 전체를 짧게 순회하는가]
+ * 전체 경로를 N초에 한 번 순회(loop)시킨다. 몇 가지 선택지가 있었다:
+ *   (a) 실제 1개월을 N초에 압축 → 하루가 몇 밀리초라 턴 길이와 무관하게 어긋남
+ *   (b) 남은 구간만 천천히 — 턴마다 리셋돼 출발할 때마다 다시 느려짐
+ *   (c) 전체를 일정한 속도로 순회 — "이동 중" 인 사실이 계속 보인다
+ * (c) 를 택했다. 턴 경계는 진행도를 정확히 되감는 역할만 하고(아래
+ * `realignToTurnProgress`), 루프는 그 위에 계속 얹힌다.
+ *
+ * [빠른 말 / 느린 배 구간]
+ * 루프는 **거리 기준**으로 움직인다. 하루 이동 거리는 말 0.085, 배 0.051 이므로
+ * 배 구간에서 마커가 실제로 느리게 간다 — 이것이 이 애니메이션의 진짜 목적이다.
+ *
+ * [prefers-reduced-motion]
+ * 루프를 아예 띄우지 않는다. 턴마다 한 번 점프하는 방식으로 되돌린다. [461-480]
+ */
+let travelLoopHandle = 0;
+let travelLoopLast = 0;
+
+/** 전체 경로를 한 번 순회하는 데 걸리는 밀리초. */
+const TRAVEL_LOOP_MS = 6000;
+
+/** 실시간 이동 루프를 시작한다 — 턴이 필요한 이동을 시작할 때만 부른다. */
+function startTravelLoop(): void {
+    stopTravelLoop();
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        return; // 감소 모드에서는 루프 대신 턴마다 점프한다.
+    }
+    travelLoopLast = performance.now();
+    const tick = (now: number): void => {
+        const store = engine?.['store'];
+        if (!store || !store.getGlobalState().activeTravel) { travelLoopHandle = 0; return; }
+        const dt = now - travelLoopLast;
+        travelLoopLast = now;
+        // 거리 기준 속도. 순회 시간은 전체 거리 기준이므로 여기서 1/6000 을 더한다.
+        travelProgressCurrent += dt / TRAVEL_LOOP_MS;
+        if (travelProgressCurrent >= 1) travelProgressCurrent -= 1; // 순환
+        chinaMap?.setTravelProgress(travelProgressCurrent);
+        travelLoopHandle = requestAnimationFrame(tick);
+    };
+    travelLoopHandle = requestAnimationFrame(tick);
+}
+
+/** 실시간 이동 루프를 멈춘다 — 도착·취소·이동 중지 시 부른다. */
+function stopTravelLoop(): void {
+    if (travelLoopHandle) cancelAnimationFrame(travelLoopHandle);
+    travelLoopHandle = 0;
+}
+
+/**
+ * 턴 경계에서 진행도를 그 턴의 정확한 위치로 되돌린다.
+ *
+ * [루프와 턴의 관계]
+ * 루프는 화면을 예쁘게 만들기 위한 것이고 **진짜 상태는 아니다**. 턴이 넘어가면
+ * `monthsRemaining` 이 줄어들었으므로, 진행도를 그 값에 맞는 위치로 되돌려야
+ * "여기까지 왔다" 는 사실이 화면과 어긋나지 않는다. 되돌린 뒤 루프가 다시
+ * 그 자리에서 계속 움직인다.
+ */
+function realignToTurnProgress(monthsTotal: number, monthsLeft: number): void {
+    const target = chinaMap?.progressForDays(monthsLeft, monthsTotal) ?? 0;
+    travelProgressCurrent = target;
+    chinaMap?.setTravelProgress(target);
 }
 
 function endPointerInteraction(e: PointerEvent): void {
@@ -900,6 +1915,8 @@ function syncChinaMapCities(): void {
                 imageX: c.mapImageX ?? x,
                 imageY: c.mapImageY ?? y,
                 iconType: c.mapIconType ?? (c.isCapital ? 'CAPITAL' : 'CITY'),
+                // 도성 아이콘 크기를 도시 규모에 맞춰 정하기 위해 인구를 넘긴다
+                population: c.population,
                 hitRadius: c.isCapital ? 22 : 16,
                 ownerColor: factionColor(fac?.color),
                 factionName: fac?.name,
@@ -936,7 +1953,8 @@ function syncChinaMapCities(): void {
 /** 현재 상세 패널에 열려 있는 도시 ID (전환 애니메이션 판단용) */
 function updateMapVisibilityButton(): void {
     const discovered = cityVisibilityMode === 'discovered';
-    btnMapVisibility.textContent = discovered ? '🔎 발견 도시' : '🗺️ 전체 도시';
+    btnMapVisibility.dataset.icon = discovered ? '🔎' : '🗺️';
+    btnMapVisibility.setAttribute('aria-label', discovered ? '발견 도시' : '전체 도시');
     btnMapVisibility.setAttribute('aria-pressed', String(discovered));
     btnMapVisibility.title = discovered
         ? '방문했거나 플레이어 세력이 소유한 도시만 표시합니다'
@@ -963,11 +1981,10 @@ function showCityInfo(cityId: string): void {
         if (!city) return;
         preserveCityNavigation(cityId);
         const faction = city.ownerId ? store.getFaction(city.ownerId) : null;
-        officerDetail.textContent = `도시: ${city.name} (인구 ${city.population.toLocaleString()})`;
+        // 좌측 정보 단도 같은 도시로 맞춘다 — 도시 진입 경로와 지도 클릭 경로의 화면이 달라지면 안 된다.
+        sidebarSelectedCityId = null;
+        renderSidebarCitySelection(cityId);
         renderOfficerDetail(null); // 도시 전환 시 무장 상세 초기화
-        factionDetail.textContent = faction
-            ? `${faction.name} — 병력 ${city.development} · 충성 ${city.loyalty}`
-            : '무주공산';
         renderCityDetailPanel(city, faction, cityId !== currentPanelCityId);
         currentPanelCityId = cityId;
         addLog(`도시 선택: ${city.name}${faction ? ` (${faction.name})` : ''}`);
@@ -983,10 +2000,41 @@ function showCityInfo(cityId: string): void {
 const cityDetailPanel = document.getElementById('city-detail-panel')!;
 const cdpCityName = document.getElementById('cdp-city-name')!;
 const cdpFactionBadge = document.getElementById('cdp-faction-badge')!;
-const cdpStats = document.getElementById('cdp-stats')!;
-const cdpOfficers = document.getElementById('cdp-officers')!;
+// 內政 지표 칸은 2026-09-30 에 삭제됐다(사용자 요청). 자리에 없으므로 null 이고 아래 렌더를 건너뛴다.
+const cdpStats = document.getElementById('cdp-stats');
+// [2026-10-03] 좌·우 레일을 그림 위 시트로 옮겼으므로 이 요소는 도시 화면을 열어야 생긴다.
+//   예전엔 상시 존재하는 레일 안에 있어서 여기서 바로 잡을 수 있었다. 지금 시트가 닫혀
+//   있으면 getElementById 가 null 이라 `!` 단언이 곧바로 예외를 던져 앱 부팅이 중단됐다.
+//   그래서 null 을 허용하고, 시트를 열 때 만들어지는 el 을 쓰도록 renderCityOfficerList 가
+//   매번 다시 조회한다(아래 함수 참조).
+const cdpOfficersContainer = document.getElementById('cdp-sheet-body');
 const cdpFacilities = document.getElementById('cdp-facilities')!;
 const citySceneCanvas = document.getElementById('city-scene-canvas') as HTMLCanvasElement | null;
+const citySceneArt = document.getElementById('city-scene-art') as HTMLImageElement | null;
+const citySceneStage = document.getElementById('city-scene-stage');
+
+/**
+ * 배경 그림 로딩 상태.
+ * [실패해도 안전] 실패하면 art-ready 를 켜지 않는다. 그랬더니 절차 렌더가 그대로
+ * 남아 도시 화면은 항상 나타난다 — 그림이 없어도 도시가 비면 안 된다.
+ */
+let citySceneArtReady = false;
+if (citySceneArt) {
+    citySceneArt.addEventListener('load', () => {
+        citySceneArtReady = true;
+        citySceneStage?.classList.add('art-ready');
+        const city = citySceneCityId ? engine?.['store'].getCity(citySceneCityId) : null;
+        if (city) drawCityCanvas(city);
+        // 그림 크기가 이제 앵커 계산에 쓰인다(무대가 창 크기 그대로). 크기가 확정된
+        // 뒤에 배지를 다시 재야 cover 보정이 적용된다.
+        applyCitySceneBadgePositions();
+    });
+    citySceneArt.addEventListener('error', () => {
+        citySceneArtReady = false;
+        citySceneStage?.classList.remove('art-ready');
+    });
+    citySceneArt.src = CITY_SCENE_ART_PATH;
+}
 const citySceneSummary = document.getElementById('city-scene-summary');
 const citySceneDetail = document.getElementById('city-building-detail');
 const citySceneRenderer = new City3DRenderer();
@@ -1002,131 +2050,79 @@ function preserveCityNavigation(cityId: string): void {
     chinaMap.setCities(worldCities);
 }
 
-// === 범용 선택형 대화 모달 [24][49][441-460] ===
-type DialogueChoice = {
-    id: string;
-    label: string;
-    description: string;
-    disabled?: boolean;
-    onSelect?: () => string;
-};
+/* ============================================================
+   대화 씬 배선 — 게임은 '무엇을 보여줄지'만 정하고, 화면은 씬이 그린다.
+   (2026-10-03) 이전에 여기 있던 DOM 상수·무대 페인팅·선택지 렌더는
+   src/ui/scenes/dialogue_scene.ts 로 옮겼다. 그 모듈은 스토어를 모른다.
+   ============================================================ */
 
-type DialoguePage = {
-    title: string;
-    subtitle?: string;
-    speaker: string;
-    /** 화자 무장 id — 있으면 왼쪽 열에 초상·세력·품계를 그린다. */
-    speakerId?: string;
-    /** 사람이 아닌 화자(시설/장소)의 표식 한 글자. */
-    placeMark?: string;
-    text: string;
-    /** 우측(상대편) 무장 id. 없으면 빈 슬롯이 된다. */
-    rightOfficerId?: string;
-    rightSpeaker?: string;
-    rightPlaceMark?: string;
-    rightOrg?: string;
-    detail?: string[];
-    choices?: DialogueChoice[];
-    giftComposer?: {
-        actorId: string;
-        targetId: string;
-        currentAffinity: number;
-    };
-};
+/** 씬이 요구한 훅 — 스토어 조회와 게임 명령만 주입한다. */
+const dialogueScene = createDialogueScene(document.body, {
+    lookupOfficer: (officerId) => {
+        if (!engine) return null;
+        const store = engine['store'];
+        const o = store.getOfficer(officerId);
+        if (!o) return null;
+        const f = o.factionId ? store.getFaction(o.factionId) : null;
+        return {
+            id: o.id, name: o.name, gender: o.gender === 'F' ? 'F' : 'M',
+            rank: o.rank, status: o.status,
+            factionName: f?.name ?? '재야', factionColor: f?.color ?? '#4a5160',
+        };
+    },
+    renderPortrait: (args) => renderPortraitSvg(args),
+    log: (text) => addLog(text),
+    sendGift: ({ actorId, targetId, itemId, gold }) => {
+        const result = executeInteraction(engine!['store'], actorId, targetId, 'GIFT', {
+            itemId: itemId as GiftItemId, gold,
+        } satisfies GiftOptions);
+        return { ok: result.success, message: result.message };
+    },
+    refreshOfficer: (officerId) => renderOfficerDetail(officerId),
+    speak: (args) => { speakLine(args, a11ySettings.speech); },
+    typewriter: () => typewriterEnabled(),
+    runTrade: (goodId, mode) => runTrade(goodId, mode),
+});
+dialogueScene.setGiftItems(Object.values(GIFT_ITEMS).map(item => ({
+    id: item.id, name: item.name, gradeLabel: item.gradeLabel, affinity: item.affinity,
+})));
 
-type DialogueState = {
-    pages: DialoguePage[];
-    index: number;
-    onClose?: () => void;
-};
-
-let dialogueState: DialogueState | null = null;
-const dialogueModal = document.getElementById('dialogue-modal')!;
-const dialogueTitle = document.getElementById('dialogue-title')!;
-const dialogueSubtitle = document.getElementById('dialogue-subtitle')!;
-const dialogueSpeaker = document.getElementById('dialogue-speaker')!;
-const dialogueText = document.getElementById('dialogue-text')!;
-const dialogueDetail = document.getElementById('dialogue-detail')!;
-const dialogueChoices = document.getElementById('dialogue-choices')!;
-const dialogueResult = document.getElementById('dialogue-result')!;
-const dialoguePrev = document.getElementById('dialogue-prev') as HTMLButtonElement;
-const dialogueNext = document.getElementById('dialogue-next') as HTMLButtonElement;
-const dialoguePageLabel = document.getElementById('dialogue-page')!;
-const dialogueStep = document.getElementById('dialogue-progress-label')!;
-const dialogueNotes = document.getElementById('dialogue-notes')!;
-const dialogueStage = document.querySelector<HTMLElement>('#dialogue-modal .dlg-stage')!;
-const dlgFigure = {
-    left: document.getElementById('dlg-left-figure')!,
-    right: document.getElementById('dlg-right-figure')!,
-};
-const dlgName = {
-    left: document.getElementById('dlg-left-name')!,
-    right: document.getElementById('dlg-right-name')!,
-};
-const dlgOrg = { left: document.getElementById('dlg-left-org')!, right: document.getElementById('dlg-right-org')! };
-const dlgRank = { left: document.getElementById('dlg-left-rank')!, right: document.getElementById('dlg-right-rank')! };
-const dialogueTrade = document.getElementById('dialogue-trade')!;
-const dlgContinue = document.getElementById('dlg-continue') as HTMLButtonElement;
-
-/** 무대 한쪽(좌/우)을 채운다. officerId 가 없으면 표식 글자를 쓴다. */
-function paintSlot(side: 'left' | 'right', spec: {
-    speaker: string; officerId?: string; placeMark?: string; org?: string; rank?: string;
-}): void {
-    const fig = dlgFigure[side];
-    const slot = fig.closest('.dlg-slot') as HTMLElement | null;
-    // 자리를 채울 상대가 없으면 슬롯을 비운다 — 빈 자리에 표식이 서 있으면 이상하다.
-    if (!spec.officerId && !spec.placeMark) {
-        fig.classList.remove('dlg-place');
-        fig.innerHTML = '';
-        dlgName[side].textContent = '';
-        dlgOrg[side].textContent = '';
-        dlgRank[side].textContent = '';
-        if (slot) slot.dataset.empty = '1';
-        return;
-    }
-    if (slot) delete slot.dataset.empty;
-    if (spec.officerId && engine) {
-        const o = engine['store'].getOfficer(spec.officerId);
-        if (o) {
-            fig.classList.remove('dlg-place');
-            fig.innerHTML = renderPortraitSvg({
-                id: o.id, name: o.name, gender: o.gender === 'F' ? 'F' : 'M',
-                grade: Math.max(0, Math.min(9, o.rank)),
-            });
-            const f = o.factionId ? engine['store'].getFaction(o.factionId) : null;
-            dlgName[side].textContent = o.name;
-            dlgOrg[side].textContent = f?.name ?? '재야';
-            dlgRank[side].textContent = o.status === 'FREE' ? '재야' : `${o.rank}품`;
-            if (side === 'left') dialogueStage.style.setProperty('--dlg-accent', f?.color ?? '#4a5160');
-            return;
-        }
-    }
-    // 시설·장소 등 사람이 아닌 화자
-    fig.classList.add('dlg-place');
-    fig.textContent = spec.placeMark ?? '址';
-    dlgName[side].textContent = spec.speaker;
-    dlgOrg[side].textContent = spec.org ?? '';
-    dlgRank[side].textContent = spec.rank ?? '';
+/** 씬에 창을 연다. 블록 밖 18곳이 이 함수를 쓴다. */
+function openDialogue(state: DialogueSceneState, opts?: OpenSceneOptions): void {
+    dialogueScene.open(state, opts);
+}
+/** 창을 닫는다. */
+function closeDialogue(): void {
+    dialogueScene.close();
+}
+/** 창이 열려 있는가 — 전역 키보드/ESC 핸들러가 이걸 본다. */
+function isDialogueOpen(): boolean {
+    return dialogueScene.isOpen();
+}
+/** 창이 닫힌 뒤 실행할 콜백을 건다(알현 → 교섭처럼 창을 이어서 띄울 때). */
+function queueAfterDialogue(fn: () => void): void {
+    dialogueScene.queueAfterClose(fn);
+}
+/** 대기 콜백을 이어 붙인다 — 앞선 것이 있으면 먼저 돌린다. */
+function queueAfterDialogueChained(fn: () => void): void {
+    dialogueScene.queueAfterCloseChained(fn);
+}
+/** 대기 콜백을 버린다 — 다른 도시의 창이 먼저 열리지 않도록. */
+function clearQueuedDialogue(): void {
+    dialogueScene.clearQueuedClose();
 }
 
-/** 대화 페이지로 무대 양쪽을 채운다. 화자는 왼쪽, 상대는 오른쪽. */
-function paintDialogueStage(page: DialoguePage): void {
-    paintSlot('left', {
-        speaker: page.speaker,
-        officerId: page.speakerId,
-        placeMark: page.placeMark,
-        org: page.subtitle,
-    });
-    paintSlot('right', {
-        speaker: page.rightSpeaker ?? '',
-        officerId: page.rightOfficerId,
-        placeMark: page.rightPlaceMark,
-        org: page.rightOrg,
-    });
-    // 세력 색은 판 전체를 칠하지 않고 테두리/강조에만 쓴다.
-    if (!page.speakerId) dialogueStage.style.setProperty('--dlg-accent', '#4a5160');
+/** 타이포그래피가 도는지 — 사용자가 끄거나 모션 최소화를 존중하면 false. */
+function typewriterEnabled(): boolean {
+    if (revealForceInstant) return false;
+    if (!a11ySettings.typewriter) return false;
+    try {
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
+    } catch { /* matchMedia 가 없으면 설정값을 따른다. */ }
+    return true;
 }
-
+/** E2E/디버그용 — 대사를 즉시 다 보여준다. */
+let revealForceInstant = false;
 
 /* ============================================================
    연쇄 대화 재생기 [신규 기능]
@@ -1244,6 +2240,9 @@ function renderScriptNode(): void {
     const node = activeRunner?.current;
     if (!node || !activeScriptContext) return;
 
+    // 연쇄 대화의 기록은 openDialogue() 안의 renderDialoguePage() 가 쌓는다.
+    // 여기서 또 쌓으면 같은 말이 두 번 들어간다.
+
     openDialogue({
         pages: [{
             title: node.speaker,
@@ -1267,14 +2266,15 @@ function renderScriptNode(): void {
             })),
         }],
         index: 0,
-    });
+    }, { keepTranscript: true });
 
     // 계속 화살표: 선택지가 없고 다음 장면이 있을 때만 살아 있다.
     const canAdvance = node.choices.length === 0 && !!node.next && !activeRunner!.finished;
-    dlgContinue.disabled = !canAdvance;
-    dlgContinue.classList.toggle('dlg-bouncing', canAdvance);
-    dialoguePrev.disabled = !activeRunner!.canGoBack;
-    dialoguePageLabel.textContent = `방문 ${activeRunner!.visitedCount}`;
+    dialogueScene.setNavState({
+        canAdvance,
+        canGoBack: activeRunner!.canGoBack,
+        pageLabel: `방문 ${activeRunner!.visitedCount}`,
+    });
     renderTradePanel();
 }
 
@@ -1283,9 +2283,9 @@ function renderScriptNode(): void {
    대화가 이어지는 동안 계속 열려 있다.
    ============================================================ */
 
-/** 세력별 물자 소지량. 세이브에 섞이지 않도록 rtk8_ 접두 키를 쓴다. */
+/** 세력별 물자 소지량. 세이브에 섞이지 않도록 samgukzi_return_ 접두 키를 쓴다. */
 function tradeStockKey(factionId: string): string {
-    return `rtk8_trade_stock_${factionId}`;
+    return `samgukzi_return_trade_stock_${factionId}`;
 }
 function loadTradeStock(factionId: string): Record<string, number> {
     try {
@@ -1310,14 +2310,13 @@ function isTradeScene(node: ScriptNode | undefined): boolean {
 function renderTradePanel(): void {
     const node = activeRunner?.current;
     if (!isTradeScene(node) || !engine || !tradeCityId) {
-        dialogueTrade.style.display = 'none';
-        dialogueTrade.innerHTML = '';
+        dialogueScene.hideTrade();
         return;
     }
     const store = engine['store'];
     const gs = store.getGlobalState();
     const faction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
-    if (!faction) { dialogueTrade.style.display = 'none'; return; }
+    if (!faction) { dialogueScene.hideTrade(); return; }
     const stock = loadTradeStock(faction.id);
 
     const rows = tradeOffer.map(r => {
@@ -1333,13 +2332,12 @@ function renderTradePanel(): void {
             + '</span></div>';
     }).join('');
 
-    dialogueTrade.innerHTML = '<div class="dlg-trade-head">'
+    dialogueScene.renderTrade('<div class="dlg-trade-head">'
         + '<span>물자</span><span>도시 매입가</span><span>도시 매도가</span><span></span>'
         + '<span class="dlg-trade-gold">보유 ' + faction.gold.toLocaleString() + '金</span>'
         + '</div>'
         + '<div class="dlg-trade-rows">' + rows + '</div>'
-        + '<div class="dlg-trade-note">10자 단위로 거래한다. 대화가 끝나도 물자는 남는다.</div>';
-    dialogueTrade.style.display = 'flex';
+        + '<div class="dlg-trade-note">10자 단위로 거래한다. 대화가 끝나도 물자는 남는다.</div>');
 }
 /** 매입/매도 실행. 10자 단위. */
 function runTrade(goodId: string, mode: 'buy' | 'sell'): void {
@@ -1355,26 +2353,23 @@ function runTrade(goodId: string, mode: 'buy' | 'sell'): void {
 
     if (mode === 'buy') {
         if (faction.gold < price * unit) {
-            dialogueResult.textContent = '금화가 부족합니다.';
-            dialogueResult.style.display = 'block';
+            dialogueScene.showResult('금화가 부족합니다.');
             return;
         }
         faction.gold -= price * unit;
         stock[goodId] = (stock[goodId] ?? 0) + unit;
-        dialogueResult.textContent = `${row.good.name} ${unit}자 매입 (${price * unit}金)`;
+        dialogueScene.showResult(`${row.good.name} ${unit}자 매입 (${price * unit}金)`);
     } else {
         const have = stock[goodId] ?? 0;
         if (have < unit) {
-            dialogueResult.textContent = '가진 물자가 부족합니다.';
-            dialogueResult.style.display = 'block';
+            dialogueScene.showResult('가진 물자가 부족합니다.');
             return;
         }
         stock[goodId] = have - unit;
         faction.gold += price * unit;
-        dialogueResult.textContent = `${row.good.name} ${unit}자 매도 (${price * unit}金)`;
+        dialogueScene.showResult(`${row.good.name} ${unit}자 매도 (${price * unit}金)`);
     }
     saveTradeStock(faction.id, stock);
-    dialogueResult.style.display = 'block';
     renderTradePanel();
 }
 
@@ -1383,27 +2378,107 @@ function runTrade(goodId: string, mode: 'buy' | 'sell'): void {
    ============================================================ */
 
 /** 시장 클릭 -> 불량배 사건 대화. */
+/**
+ * 시장 명령 패널 — 민심·상업 확인 + 견문·인재탐색·매매 3개 명령.
+ *
+ * - 민심은 충성·치안에서 유도한 표시 전용 수치다 (저장 불필요).
+ * - 명령 1회는 令MARKET_ORDER_COST 행동력을 쓴다. 부족하면 그 자리에서 막는다.
+ * - 매매는 교역소 대화로 편도 이동한다 (돌아오려면 시장을 다시 누른다).
+ * - 예전 불량배 사건·시장 대본 경로는 이 진입점을 잃어 삭제했다.
+ */
 function openMarketDialogue(cityId: string): void {
     if (!engine) return;
     const store = engine['store'];
     const city = store.getCity(cityId);
     if (!city) return;
     const gs = store.getGlobalState();
-    const time = gs.time;
-
-    const script = buildMarketScript({
-        cityName: city.name,
-        commerce: city.developmentStats.commerce,
-        publicOrder: city.developmentStats.publicOrder,
-        danger: city.danger,
-        gold: city.funds,
-        population: city.population,
-        isCapital: city.isCapital,
-        seed: `${city.id}|${time.year}|${time.month}`,
+    const faction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
+    const inCity = city.officerIds
+        .map(id => store_getOfficerSafe(id))
+        .filter((o): o is NonNullable<typeof o> => o !== null);
+    const selected = store.getOfficer(gs.selectedOfficerId ?? '');
+    const actor = (selected && selected.factionId === gs.playerFactionId)
+        ? selected
+        : inCity.find(o => o.factionId === gs.playerFactionId)
+        ?? (faction ? store.getOfficer(faction.leaderId) : null);
+    if (!actor) return;
+    const ds = city.developmentStats;
+    const mood = marketMood(city.loyalty, ds.publicOrder);
+    const spend = (): boolean => {
+        const cur = store.getOfficer(actor.id);
+        if (!cur || cur.actionPoints < MARKET_ORDER_COST) return false;
+        store.updateOfficer(actor.id, { actionPoints: cur.actionPoints - MARKET_ORDER_COST });
+        return true;
+    };
+    const lackMsg = `행동력이 부족하다 (令${MARKET_ORDER_COST} 필요).`;
+    openDialogue({
+        pages: [{
+            title: `시장 — ${city.name}`,
+            subtitle: faction ? `${faction.name} · ${city.name} 시장` : `${city.name} 시장`,
+            speaker: actor.name,
+            speakerId: actor.id,
+            text: `장사꾼들의 소리로 북적이는구려. 한 귀를 기울이면 천하의 소식이, 눈을 크게 뜨면 인재가 보인다오.`,
+            detail: [
+                `민심 ${moodBar(mood)} ${mood}/100`,
+                `상업 ${ds.commerce}/${ds.maxCommerce}`,
+                `행동력 ${actor.actionPoints}/${actor.maxActionPoints} · 명령 1회 令${MARKET_ORDER_COST}`,
+            ],
+            choices: [
+                {
+                    id: 'market-hear',
+                    label: '견문한다',
+                    description: `시장 소문을 듣는다 · 令${MARKET_ORDER_COST}`,
+                    disabled: actor.actionPoints < MARKET_ORDER_COST,
+                    onSelect: () => {
+                        if (!spend()) return lackMsg;
+                        const cands = [
+                            ...inCity,
+                            ...store.getAllOfficers().filter(o => o.factionId === null && o.runtime.isAlive),
+                        ].map(o => ({ name: o.name, fame: o.fame, infamy: o.infamy }));
+                        const target = pickRumorTarget(cands);
+                        const msg = target ? rumorLine(target) : '오늘은 별다른 소문이 없다.';
+                        addLog(`👂 ${city.name} 시장에서 견문 — ${msg}`);
+                        return msg;
+                    },
+                },
+                {
+                    id: 'market-seek',
+                    label: '인재를 찾는다',
+                    description: `재야 무장 탐색 · 令${MARKET_ORDER_COST}`,
+                    disabled: actor.actionPoints < MARKET_ORDER_COST,
+                    onSelect: () => {
+                        if (!spend()) return lackMsg;
+                        const free = store.getAllOfficers()
+                            .filter(o => o.factionId === null && o.runtime.isAlive)
+                            .map(o => {
+                                const entries = [
+                                    { label: '통솔', value: o.stats.leadership },
+                                    { label: '무력', value: o.stats.might },
+                                    { label: '지력', value: o.stats.intelligence },
+                                    { label: '정치', value: o.stats.politics },
+                                    { label: '매력', value: o.stats.charisma },
+                                ];
+                                const best = entries.reduce((a, b) => (b.value > a.value ? b : a));
+                                return { name: o.name, bestLabel: best.label, bestValue: best.value };
+                            });
+                        const msg = talentLine(pickTalent(free));
+                        addLog(`🔎 ${city.name} 시장에서 인재 탐색 — ${msg}`);
+                        return msg;
+                    },
+                },
+                {
+                    id: 'market-trade',
+                    label: '매매한다',
+                    description: '교역소 거래로 이동한다',
+                    onSelect: () => {
+                        openTradeDialogue(cityId);
+                        return '교역소로 향한다.';
+                    },
+                },
+            ],
+        }],
+        index: 0,
     });
-    activeRunner = new ScriptRunner(script);
-    activeScriptContext = { cityId };
-    renderScriptNode();
 }
 
 /** 교역소/시장 클릭 -> 교역 대화. 대도시면 교역소가 있다. */
@@ -1432,209 +2507,6 @@ function openTradeDialogue(cityId: string): void {
     activeScriptContext = { cityId };
     renderScriptNode();
 }
-function renderDialoguePage(): void {
-    if (!dialogueState) return;
-    const state = dialogueState;
-    const page = state.pages[state.index];
-    if (!page) return;
-    dialogueTitle.textContent = page.title;
-    paintDialogueStage(page);
-    // 대사(빈 줄 앞)와 참고(빈 줄 뒤)를 나눠 그린다.
-    // 참고를 같은 크기로 꿰으면 '말'인지 '정보'인지 읽을 수 없다.
-    const sep = page.text.indexOf('\n\n');
-    if (sep >= 0) {
-        dialogueText.textContent = page.text.slice(0, sep);
-        dialogueNotes.textContent = page.text.slice(sep + 2);
-        dialogueNotes.style.display = 'block';
-    } else {
-        dialogueText.textContent = page.text;
-        dialogueNotes.textContent = '';
-        dialogueNotes.style.display = 'none';
-    }
-    dialogueDetail.innerHTML = (page.detail ?? []).map(line => `<span>${line}</span>`).join('');
-    dialogueDetail.style.display = page.detail && page.detail.length > 0 ? 'grid' : 'none';
-    dialogueStep.textContent = state.pages.length > 1 ? `단계 ${state.index + 1} / ${state.pages.length}` : '';
-    dialogueChoices.innerHTML = (page.choices ?? []).map((choice, i) =>
-        `<button class="dlg-choice" data-choice="${choice.id}" ${choice.disabled ? 'disabled' : ''}>
-            <span class="dlg-choice-idx">${i + 1}</span>
-            <span class="dlg-choice-label">${choice.label}</span>
-            <span class="dlg-choice-desc">${choice.description}</span>
-        </button>`).join('');
-    if (page.giftComposer) {
-        const gift = page.giftComposer;
-        const items = Object.values(GIFT_ITEMS);
-        dialogueChoices.insertAdjacentHTML('beforeend', `
-            <div class="gift-composer" data-gift-composer>
-                <div class="gift-composer-title">선물 구성</div>
-                <label class="gift-row gift-row-wide">
-                    <span class="gift-label">아이템</span>
-                    <select data-gift-item>
-                        ${items.map(item => `<option value="${item.id}">${item.name} · ${item.gradeLabel} (+${item.affinity})</option>`).join('')}
-                    </select>
-                </label>
-                <label class="gift-row">
-                    <span class="gift-label">금화</span>
-                    <input data-gift-gold type="number" min="0" step="100" value="200" inputmode="numeric" />
-                </label>
-                <div class="gift-preview" data-gift-preview aria-live="polite"></div>
-                <button class="dlg-choice gift-send-choice" data-gift-send>
-                    <span class="dlg-choice-idx">✦</span>
-                    <span class="dlg-choice-label">선물 보내기</span>
-                    <span class="dlg-choice-desc">선택한 구성으로 우호도 상승</span>
-                </button>
-            </div>`);
-        const updatePreview = () => {
-            const root = dialogueChoices.querySelector('[data-gift-composer]');
-            if (!root) return;
-            const itemId = (root.querySelector('[data-gift-item]') as HTMLSelectElement).value as GiftItemId;
-            const gold = Math.max(0, Math.floor(Number((root.querySelector('[data-gift-gold]') as HTMLInputElement).value) || 0));
-            const item = GIFT_ITEMS[itemId];
-            const delta = calculateGiftAffinity({ itemId, gold });
-            const after = Math.max(-100, Math.min(100, gift.currentAffinity + delta));
-            (root.querySelector('[data-gift-preview]') as HTMLElement).innerHTML =
-                `<span>${item.name} · ${item.gradeLabel}</span><b>금화 +${delta - item.affinity}</b><strong>예상 우호도 ${gift.currentAffinity >= 0 ? '+' : ''}${gift.currentAffinity} → ${after >= 0 ? '+' : ''}${after} (+${delta})</strong>`;
-        };
-        dialogueChoices.querySelectorAll('[data-gift-item], [data-gift-gold]').forEach(input => input.addEventListener('input', updatePreview));
-        updatePreview();
-    }
-    dialogueResult.style.display = 'none';
-    dialogueResult.textContent = '';
-    dialoguePrev.disabled = state.index <= 0;
-    dialogueNext.disabled = state.index >= state.pages.length - 1;
-    dialoguePageLabel.textContent = `${state.index + 1} / ${state.pages.length}`;
-}
-
-function openDialogue(state: DialogueState): void {
-    if (state.pages.length === 0) return;
-    dialogueState = state;
-    renderDialoguePage();
-    dialogueModal.style.display = 'flex';
-    dialogueModal.focus({ preventScroll: true });
-}
-
-function closeDialogue(): void {
-    const onClose = dialogueState?.onClose;
-    dialogueState = null;
-    dialogueModal.style.display = 'none';
-    // 스크립트 대화가 끝났으면 상태를 버린다. 다음 클릭에 이전 대화가 남으면 안 된다.
-    endScript();
-    onClose?.();
-}
-
-/** 연쇄 대화가 떠 있으면 일반 페이지 이동 대신 스크립트를 움직인다. */
-function stepDialogue(delta: 1 | -1): void {
-    if (activeRunner) {
-        if (delta === 1) {
-            const r = activeRunner.advance();
-            if (r.ended) { closeDialogue(); return; }
-        } else {
-            if (!activeRunner.canGoBack) return;
-            activeRunner.back();
-        }
-        renderScriptNode();
-        return;
-    }
-    if (!dialogueState) return;
-    if (delta === 1 && dialogueState.index >= dialogueState.pages.length - 1) return;
-    if (delta === -1 && dialogueState.index <= 0) return;
-    dialogueState.index += delta;
-    renderDialoguePage();
-}
-
-/** 대화가 닫히면 스크립트 상태를 버린다 — 다음 클릭에 이전 대화가 남으면 안 된다. */
-function endScript(): void {
-    activeRunner = null;
-    activeScriptContext = null;
-    tradeCityId = null;
-    dialogueTrade.style.display = 'none';
-}
-
-dialoguePrev.addEventListener('click', () => stepDialogue(-1));
-dialogueNext.addEventListener('click', () => stepDialogue(1));
-dlgContinue.addEventListener('click', () => {
-    if (dlgContinue.disabled) return;
-    stepDialogue(1);
-});
-document.getElementById('dialogue-close')!.addEventListener('click', closeDialogue);
-document.getElementById('dialogue-close')!.addEventListener('click', closeDialogue);
-
-/**
- * 대화창 키보드 조작 [신규 기능] — San14 PK 방식.
- *  - 1~9 : 해당 번호 선택지 누르기 (선택지에 적힌 번호 그대로)
- *  - ←/→ : 이전/다음 단계
- *  - Esc  : 닫기 (전역 핸들러가 담당)
- * 입력칸에 커서가 있을 때는 건드리지 않는다 — 숫자를 못 찍게 하면 안 된다.
- */
-dialogueModal.addEventListener('keydown', (event) => {
-    if (!dialogueState) return;
-    const t = event.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-
-    if (event.key === 'ArrowRight') {
-        if (dialogueNext.disabled) return;
-        event.preventDefault();
-        dialogueNext.click();
-        return;
-    }
-    if (event.key === 'ArrowLeft') {
-        if (dialoguePrev.disabled) return;
-        event.preventDefault();
-        dialoguePrev.click();
-        return;
-    }
-    // 숫자/숫자키패드만 받는다. 선택지가 9개를 넘으면 넘긴다.
-    if (!/^[1-9]$/.test(event.key)) return;
-    const buttons = dialogueChoices.querySelectorAll<HTMLButtonElement>('.dlg-choice:not([data-gift-send])');
-    const target = buttons[Number(event.key) - 1];
-    if (!target || target.disabled) return;
-    event.preventDefault();
-    target.click();
-});
-
-// 교역 패널은 dialogue-choices 의 형제라 별도 핸들러가 필요하다.
-// 이 등록은 반드시 모듈 최상단에서 한 번만 한다.
-// dialogueChoices 핸들러 안에 넣으면 선택지를 누를 때마다 리스너가 하나씩 늘어난다.
-dialogueTrade.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement;
-    const buyBtn = target.closest('[data-trade-buy]') as HTMLElement | null;
-    if (buyBtn) { runTrade(buyBtn.dataset.tradeBuy!, 'buy'); return; }
-    const sellBtn = target.closest('[data-trade-sell]') as HTMLElement | null;
-    if (sellBtn) { runTrade(sellBtn.dataset.tradeSell!, 'sell'); return; }
-});
-
-dialogueChoices.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement;
-
-    const giftSend = target.closest('[data-gift-send]') as HTMLButtonElement | null;
-    if (giftSend && dialogueState) {
-        const page = dialogueState.pages[dialogueState.index];
-        const composer = page?.giftComposer;
-        if (!composer) return;
-        const root = giftSend.closest('[data-gift-composer]') as HTMLElement | null;
-        if (!root) return;
-        const itemId = (root.querySelector('[data-gift-item]') as HTMLSelectElement).value as GiftItemId;
-        const gold = Math.max(0, Math.floor(Number((root.querySelector('[data-gift-gold]') as HTMLInputElement).value) || 0));
-        const result = executeInteraction(engine!['store'], composer.actorId, composer.targetId, 'GIFT', { itemId, gold } satisfies GiftOptions);
-        dialogueResult.textContent = result.message;
-        dialogueResult.style.display = 'block';
-        if (result.success) {
-            addLog(result.message);
-            renderOfficerDetail(composer.targetId);
-        }
-        return;
-    }
-    const button = target.closest('.dlg-choice') as HTMLButtonElement | null;
-    if (!button || button.disabled || !dialogueState) return;
-    const page = dialogueState.pages[dialogueState.index];
-    const choice = page.choices?.find(item => item.id === button.dataset.choice);
-    if (!choice?.onSelect) return;
-    const message = choice.onSelect();
-    dialogueResult.textContent = message;
-    dialogueResult.style.display = 'block';
-    button.disabled = true;
-    // 연쇄 대화면 선택한 자리에 이어지는 장면이 있다. 바로 넘어간다.
-    if (activeRunner) renderScriptNode();
-});
 // === 무장 상세 표시 [27][11] ===
 
 /**
@@ -1780,6 +2652,35 @@ function buildOfficerProfileLines(link: StaticOfficerLink, traitLine: string | u
     return lines;
 }
 
+// 대화 분기 id를 특화 대화 상황으로 옮긴다. military/strategy는 전장 맥락으로 본다.
+function mapBranchToSituation(branchId: string): DialogueContext['situation'] {
+    switch (branchId) {
+        case 'military':
+        case 'strategy':
+            return 'battle';
+        case 'diplomacy':
+            return 'diplomacy';
+        case 'domestic':
+            return 'domestic';
+        default:
+            return 'personal';
+    }
+}
+
+// 두 무장 사이 관계를 특화 대화 태도로 옮긴다. 직접 엣지가 우선하고 없으면 소속과 우호도로 판단한다.
+function mapRelationToDialogue(store: GameStore, actorId: string, targetId: string): DialogueContext['relationship'] {
+    const edge = store.getRelationships(actorId).find(e => e.target === targetId);
+    if (edge) {
+        if (edge.type === 'SWORN_BROTHER') return 'sworn';
+        if (edge.type === 'FAMILY') return 'family';
+        if (edge.type === 'NEMESIS' || edge.type === 'RIVAL') return 'enemy';
+    }
+    const actor = store.getOfficer(actorId);
+    const target = store.getOfficer(targetId);
+    if (actor && target && actor.factionId && actor.factionId === target.factionId) return 'ally';
+    return 'neutral';
+}
+
 function openOfficerDialogue(officerId: string): void {
     if (!engine) return;
     const store = engine['store'];
@@ -1827,6 +2728,14 @@ function openOfficerDialogue(officerId: string): void {
         affinity,
         { includeTraitLine: true },
     );
+    // 특화 대화 — 성향/능력치/관계/상황 조합으로 무장마다 다른 대사를 뽑는다.
+    const specialized = engine.dialogueEngine.generateDialogue({
+        officerId: target.id,
+        situation: mapBranchToSituation(conversationBranch.id),
+        relationship: mapRelationToDialogue(store, actor.id, target.id),
+        affinity,
+    });
+    const specializedText = specialized.text.replace(/^[^:]+:\s*/, '');
     const status = target.status === 'FREE' ? '재야 무장' : store.getFaction(target.factionId!)?.name ?? '무소속';
     const chooseInteraction = (kind: 'CHAT' | 'GIFT' | 'DEBATE' | 'DUEL'): DialogueChoice => {
         const gate = checkInteraction(store, actor.id, target.id, kind);
@@ -1844,7 +2753,7 @@ function openOfficerDialogue(officerId: string): void {
         };
     };
 
-    // San8/San14 톤: 좌측 상단에 화자 정보, 본문은 새 조립기가 만든다.
+    // 대화창 구성 원칙: 좌측 상단에 화자 정보, 본문은 새 조립기가 만든다.
     const gsNow = store.getGlobalState();
     const topicOf = (branchId: string): DialogueTopic =>
         (['military', 'strategy', 'domestic', 'diplomacy', 'personal'] as const)
@@ -1863,6 +2772,45 @@ function openOfficerDialogue(officerId: string): void {
         stateLine: `통솔 ${target.stats.leadership} · 무력 ${target.stats.might} · 지력 ${target.stats.intelligence}`,
     });
 
+    // 전략 건의 — 목표 무장의 능력에 따라 건넬 수 있는 계책이 달라진다.
+    const strategySystem = new StrategicOptionSystem(store, engine.diplomacyEngine);
+    const counselContext = {
+        officerId: target.id,
+        turnCount: store.getGlobalState().turnCount,
+        factionStrength: playerFaction?.gold ?? 0,
+        counterpartFactionId: target.factionId && target.factionId !== gs.playerFactionId ? target.factionId : undefined,
+    };
+    const counselCategoryLabel = { diplomacy: '외교', battle: '전투', domestic: '내정' } as const;
+    const strategyPages: DialoguePage[] = (['diplomacy', 'battle', 'domestic'] as const).map(category => {
+        const context = { ...counselContext, category };
+        const counselOptions = strategySystem.getOptions(context);
+        return {
+            title: `${target.name}의 ${counselCategoryLabel[category]} 건의`,
+            subtitle: `가용한 계책 ${counselOptions.length}건 · ${status}`,
+            speaker: target.name,
+            speakerId: target.id,
+            text: counselOptions.length > 0
+                ? `${target.name}이(가) ${counselCategoryLabel[category]} 방면으로 건넬 수 있는 계책이다.`
+                : `${target.name}은(는) 지금 ${counselCategoryLabel[category]} 방면으로 건넬 계책이 없다.`,
+            detail: counselOptions.map(o =>
+                `${o.title} — ${o.description} (요건: ${o.requirements.join(' · ') || '없음'} / 효과: ${o.effects.join(' · ')})`,
+            ),
+            choices: counselOptions.map(o => ({
+                id: `counsel:${o.id}`,
+                label: o.title,
+                description: `${o.description} · 우호도 ${o.affinityImpact >= 0 ? '+' : ''}${o.affinityImpact}`,
+                onSelect: () => {
+                    const result = strategySystem.executeOption(o.id, context);
+                    addAffinity(store, actor.id, target.id, o.affinityImpact, '전략 건의');
+                    const msg = result.success ? `${target.name}의 ${o.title} — ${result.message}` : result.message;
+                    addLog(msg);
+                    renderOfficerDetail(target.id);
+                    return msg;
+                },
+            })),
+        };
+    });
+
     openDialogue({
         pages: [
             {
@@ -1875,6 +2823,8 @@ function openOfficerDialogue(officerId: string): void {
                     `현재 우호도 ${affinity >= 0 ? '+' : ''}${affinity}`,
                     `장기 ${target.personality} · 충성도 ${target.loyalty} · 명성 ${target.fame}`,
                     ...(conversationBranch.traitLine !== undefined ? [conversationBranch.traitLine] : []),
+                    '── 특화 ──',
+                    specializedText,
                 ],
                 choices: [chooseInteraction('CHAT')],
                 giftComposer: {
@@ -1882,6 +2832,34 @@ function openOfficerDialogue(officerId: string): void {
                     targetId: target.id,
                     currentAffinity: affinity,
                 },
+            },
+            {
+                title: `${target.name}의 특화 대화`,
+                subtitle: `${status} · 성향 ${target.personality} · 감정 ${specialized.emotion}`,
+                speaker: target.name,
+                speakerId: target.id,
+                text: specializedText,
+                detail: [
+                    `상황 ${mapBranchToSituation(conversationBranch.id)} · 관계 ${mapRelationToDialogue(store, actor.id, target.id)} · 우호도 ${affinity >= 0 ? '+' : ''}${affinity}`,
+                ],
+                choices: specialized.choices.map(choice => {
+                    const req = choice.statRequirement;
+                    const lacking = req !== undefined && actor.stats[req.stat] < req.value;
+                    return {
+                        id: `special:${choice.id}`,
+                        label: choice.label,
+                        description: `${choice.description}${req !== undefined ? ` · 필요 ${req.stat} ${req.value}` : ''}${choice.affinityDelta !== 0 ? ` · 우호도 ${choice.affinityDelta >= 0 ? '+' : ''}${choice.affinityDelta}` : ''}`,
+                        disabled: lacking,
+                        onSelect: () => {
+                            if (lacking) return '능력이 부족해 선택할 수 없다.';
+                            addAffinity(store, actor.id, target.id, choice.affinityDelta, '특화 대화');
+                            const msg = `${target.name} — “${choice.label}” (우호도 ${choice.affinityDelta >= 0 ? '+' : ''}${choice.affinityDelta})`;
+                            addLog(msg);
+                            renderOfficerDetail(target.id);
+                            return msg;
+                        },
+                    };
+                }),
             },
             {
                 title: `${target.name}의 능력과 경력`,
@@ -1896,6 +2874,7 @@ function openOfficerDialogue(officerId: string): void {
                     ...buildOfficerProfileLines(staticLink, conversationBranch.traitLine),
                 ],
             },
+            ...strategyPages,
             {
                 title: `${target.name}에게 어떤 말을 건넬까?`,
                 subtitle: '선택한 행동은 즉시 우호도와 기록에 반영됩니다',
@@ -1909,7 +2888,10 @@ function openOfficerDialogue(officerId: string): void {
 }
 
 // 무장 목록 클릭 → 상세 정보 + 선택형 대화 [24][27]
-cdpOfficers.addEventListener('click', (e) => {
+// [2026-10-03] 대상이 상시 존재하던 #cdp-officers → 살아 있는 상위 #cdp-sheet-body 로 바뀐다.
+//   무장 목록은 시트를 열 때 만들어졌다가 닫을 때 지워진다. 요소에 직접 걸면
+//   두 번째 도시를 열 때 리스너가 옛 DOM 에 남아 조용히 죽는다.
+cdpOfficersContainer?.addEventListener('click', (e) => {
     const row = (e.target as HTMLElement).closest('.cdp-officer-clickable') as HTMLElement | null;
     if (!row) return;
     const officerId = row.dataset.officerId ?? null;
@@ -1945,6 +2927,7 @@ officerDetail.addEventListener('click', (e) => {
 });
 
 document.getElementById('cdp-close')!.addEventListener('click', () => {
+    stopCityAmbient();
     cityDetailPanel.classList.remove('city-entry-mode');
     cityDetailPanel.style.display = 'none';
     citySceneCanvas?.classList.remove('is-active');
@@ -1956,14 +2939,76 @@ document.getElementById('cdp-close')!.addEventListener('click', () => {
     canvas.focus({ preventScroll: true });
 });
 
-/** 내정치 바 한 줄 생성 */
+/**
+ * [2026-10-03] 좌·우 사이드바(레일)를 걷어내고 그림 위 정보 시트로 대체했다.
+ *
+ * 왜 — 실측(1001x900)에서 좌측 레일이 무대의 1.2%~19.2%(180px)를 먹으며 병영·농지
+ * 배지를 각각 2% 까지 밀어 배지 반쪽이 화면 밖으로 잘랐다. 우측 레일(23% 폭)까지
+ * 겹치면 가장 좁은 창에서 그림의 47% 가 사라진다. 그래서 1100px 기준 자동 접힘,
+ * 리사이즈마다 접힘 재계산, 접힘 상태 배지 재계산까지 붙었다가 전부 복잡해졌다.
+ *
+ * 지금 — 레일을 DOM 에서 없앴다. 같은 정보(주둔 무장·내정 명령·포로 기록·세력·무장)는
+ * 그림 위 오버레이(#cdp-scene-sheet)에 담고, 건물 배지를 누를 때만 연다. 닫으면
+ * 그림이 온전히 보이고, 리사이즈에 따라 접히거나 재계산할 것도 없어졌다.
+ */
+function openCitySceneSheet(city: import('./core/types.js').City): void {
+    const sheet = document.getElementById('cdp-scene-sheet');
+    const body = document.getElementById('cdp-sheet-body');
+    if (!sheet || !body || !engine) return;
+    const store = engine['store'];
+    const gs = store.getGlobalState();
+    const isPlayerCity = city.ownerId === gs.playerFactionId;
+
+    // 좌측 레일 내용(성주·명령·史記)과 우측 레일 내용(세력·무장)을 한 흐름으로 담는다.
+    // 렌더 함수는 그대로 재사용한다 — 내용은 그대로 두고 위치만 옮겼다.
+    const commanderSlot = document.createElement('div');
+    commanderSlot.id = 'city-commander';
+    const groupsSlot = document.createElement('div');
+    groupsSlot.id = 'cdp-command-groups';
+    const resultSlot = document.createElement('div');
+    resultSlot.id = 'cdp-action-result';
+    const factionsSlot = document.createElement('div');
+    factionsSlot.id = 'cdp-factions';
+    const officersSlot = document.createElement('div');
+    officersSlot.id = 'cdp-officers';
+
+    body.replaceChildren();
+    body.append(commanderSlot, groupsSlot, resultSlot);
+    body.insertAdjacentHTML('beforeend',
+        '<div class="cdp-section-title">諸侯 — 세력 정보</div>');
+    body.append(factionsSlot);
+    body.insertAdjacentHTML('beforeend',
+        '<div class="cdp-section-title">武將 — 무장 목록 <span id="cdp-officer-count" class="cdp-count"></span></div>');
+    body.append(officersSlot);
+
+    renderCityCommander(city);
+    renderCityCommandGroups(city, isPlayerCity);
+    renderCityFactions(city);
+    renderCityOfficerList(city);
+    sheet.hidden = false;
+    // 시트가 그림을 덮으므로 배지를 다시 확정한다 — 닫았을 때도 같은 이유로 되돌린다.
+    requestAnimationFrame(applyCitySceneBadgePositions);
+}
+
+function closeCitySceneSheet(): void {
+    const sheet = document.getElementById('cdp-scene-sheet');
+    if (!sheet || sheet.hidden) return;
+    sheet.hidden = true;
+    document.getElementById('cdp-sheet-body')?.replaceChildren();
+    requestAnimationFrame(applyCitySceneBadgePositions);
+}
+
+document.getElementById('cdp-sheet-close')?.addEventListener('click', closeCitySceneSheet);
+
+// [2026-10-04] 이동 모드 취소 — ESC. 토스트의 취소 버튼만으로도 되지만,
+//   지도를 켠 뒤 아무것도 안 누른 상태에서 빠져나갈 수단이 필요하다.
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && travelModeActive) cancelTravel();
+});
+
+/** 내정치 바 한 줄 생성 — 값→HTML 변환은 src/core/city_scene_art.ts 의 순수 함수가 한다. */
 function statBar(label: string, value: number, max: number, color: string): string {
-    const pct = Math.max(0, Math.min(100, (value / max) * 100));
-    return `<div class="cdp-stat-row">
-        <span class="cdp-stat-label">${label}</span>
-        <span class="cdp-stat-bar-track"><span class="cdp-stat-bar-fill" style="width:${pct}%;background:${color}"></span></span>
-        <span class="cdp-stat-value">${Math.round(value)}</span>
-    </div>`;
+    return renderStatBar({ label, value, max, color });
 }
 
 const FACILITY_INFO: Record<FacilityType, { label: string; effect: string; icon: string }> = {
@@ -1979,7 +3024,7 @@ const FACILITY_INFO: Record<FacilityType, { label: string; effect: string; icon:
 
 function getFacilityRows(city: import('./core/types.js').City): Array<{ type: FacilityType; level: number; maxLevel: number; investment: number }> {
     const existing = new Map(city.facilities.map(f => [f.type, f]));
-    // Koei식 도시 운영面板: 모든 핵심 시설을 선택 가능하게 하되,
+    // 도시 운영 패널: 모든 핵심 시설을 선택 가능하게 하되,
     // 아직 건설되지 않은 시설은 Lv.0으로 표시해 실제 건설 상태를 구분한다. [49]
     const defaults: FacilityType[] = [
         FacilityType.PALACE, FacilityType.WALL, FacilityType.MARKET, FacilityType.FARM,
@@ -2113,17 +3158,54 @@ function playCitySceneTone(kind: 'enter' | 'invest' | 'toggle'): void {
     }
 }
 
-function renderCityScene(city: import('./core/types.js').City): void {
+/** 도시 낮밤 옵셋 — 디버그/E2E용 시간 점프 (밀리초). */
+let cityTimeOffsetMs = 0;
+
+function currentNightFactor(): number {
+    return dayNightPhase(Date.now() + cityTimeOffsetMs).nightFactor;
+}
+
+/** 씬 캔버스만 다시 그린다 — 주야 틱·투자 갱신용. DOM(배지·초상·힌트)은 손대지 않는다. */
+function drawCityCanvas(city: import('./core/types.js').City): void {
     if (!citySceneCanvas) return;
     const ctx = citySceneCanvas.getContext('2d');
     if (!ctx) return;
 
-    const width = 480;
-    const height = 240;
-    citySceneCanvas.width = width;
-    citySceneCanvas.height = height;
+    // [2026-10-03 실제 결함 수정] 캔버스 backing-store 가 480x240 으로 고정돼 있었다.
+    //   CSS 가 캔버스를 무대 크기(예: 1920x1080)로 늘리므로, 창을 키워도 내부는
+    //   480x240 그대로였다 — 화면이 4배로 확대된 듯 흐리고 배율도 어긋났다.
+    //   사용자가 "도시화면 좌우 리사이징이 안 된다" 고 본 것이 이것이다
+    //   (DOM/이미지 쪽 리사이즈는 정상이고, 캔버스 내부 해상도만 따라가지 않았다).
+    //
+    //   해법: 무대 rect × devicePixelRatio 로 backing-store 를 맞춘다(지도 캔버스와 동일).
+    //   셀렉터는 CSS 에서 쓰는 .city-scene-canvas 그대로 쓴다.
+    const stageEl = citySceneCanvas.closest('.city-scene-stage') ?? citySceneCanvas;
+    const rect = stageEl.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    const width = Math.max(1, Math.round((rect.width || citySceneCanvas.clientWidth || 480) * dpr));
+    const height = Math.max(1, Math.round((rect.height || citySceneCanvas.clientHeight || 240) * dpr));
+    if (citySceneCanvas.width !== width || citySceneCanvas.height !== height) {
+        citySceneCanvas.width = width;
+        citySceneCanvas.height = height;
+    }
+    const night = currentNightFactor();
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#26382c';
+
+    // 그림이 준비되면 캔버스는 **밤 안개만 얹는 층**이 된다. 그림은 <img> 가 밑에
+    // 깔려 있고, 여기서 불투명 배경을 칠하면 그림이 가려진다.
+    if (citySceneArtReady) {
+        const seasonNow = engine?.['store'].getGlobalState().season ?? 'SPRING';
+        const devNow = Math.max(1, Math.min(5, city.development / 20));
+        const statesNow = engine?.['store'].getGlobalState().cityBuildingStates?.[city.id] ?? {};
+        // 배치는 그림이 있어도 항상 다시 만들어야 한다 — 재사용하면 저장된
+        // 투자·레벨 상태가 반영되지 않아 투자 직후 화면이 안 바뀐다.
+        citySceneBuildings = citySceneRenderer.generateCityLayout(city.id, devNow, seasonNow, statesNow);
+        citySceneCityId = city.id;
+        citySceneRenderer.applyNightTint(ctx, width, height, night);
+        return;
+    }
+
+    ctx.fillStyle = night > 0.5 ? '#141c2e' : '#26382c';
     ctx.fillRect(0, 0, width, height);
 
     // 지도 위에 도시가 놓인 느낌을 주는 가벼운 격자
@@ -2143,23 +3225,74 @@ function renderCityScene(city: import('./core/types.js').City): void {
     citySceneBuildings = buildings;
     citySceneCityId = city.id;
     const sorted = [...buildings].sort((a, b) => (a.x + a.y) - (b.x + b.y));
+    const gridRadius = Math.ceil(Math.sqrt(Math.max(1, buildings.length)));
+    const blossom = season === 'SPRING' ? '#f4a7c3' : season === 'SUMMER' ? '#8fce7a' : season === 'AUTUMN' ? '#e8955a' : '#d8d8e2';
+
+    // [2026-10-03] 캔버스가 창 크기를 따라가므로 타일 크기도 따라가야 한다.
+    //   예전엔 42x21 로 고정이라 창이 커지면 도심이 한쪽에 작게 몰려 있었다.
+    //   기준 높이 240px(예전 고정 높이) 대비 비율로 타일·오프셋·글자를 함께 늘린다.
+    const BASE_H = 240;
+    const scale = Math.max(0.25, height / BASE_H);
+    const tileW = Math.round(42 * scale);
+    const tileH = Math.round(21 * scale);
+    const originYOff = Math.round(28 * scale);
 
     ctx.save();
-    ctx.translate(width / 2, height / 2 + 28);
+    ctx.translate(width / 2, height / 2 + originYOff);
+    for (const decor of generateDecorations(city.id, gridRadius)) {
+        citySceneRenderer.renderDecor(ctx, decor, tileW, tileH, night, blossom);
+    }
     for (const building of sorted) {
-        citySceneRenderer.renderBuilding(ctx, building, 42, 21);
-        const point = citySceneRenderer.worldToScreen(building.x, building.y, 42, 21);
-        ctx.fillStyle = 'rgba(255, 248, 210, 0.9)';
-        ctx.font = '9px "Malgun Gothic", sans-serif';
+        citySceneRenderer.renderBuilding(ctx, building, tileW, tileH, night);
+        const point = citySceneRenderer.worldToScreen(building.x, building.y, tileW, tileH);
+        ctx.fillStyle = night > 0.5 ? 'rgba(255, 230, 170, 0.95)' : 'rgba(255, 248, 210, 0.9)';
+        ctx.font = `${Math.max(9, Math.round(9 * scale))}px "Malgun Gothic", sans-serif`;
         ctx.textAlign = 'center';
-        ctx.fillText(building.label, point.sx, point.sy + 14);
+        ctx.fillText(building.label, point.sx, point.sy + 14 * scale);
     }
     ctx.restore();
+    citySceneRenderer.applyNightTint(ctx, width, height, night);
+}
 
+/** 도시 낮밤 자동 순환 타이머 — 패널이 열려 있을 때만 0.5초마다 다시 그린다. */
+let cityAmbient: AmbientTicker | null = null;
+
+function startCityAmbient(cityId: string): void {
+    stopCityAmbient();
+    cityAmbient = createAmbientTicker(CITY_AMBIENT_INTERVAL_MS, () => {
+        if (!engine || !citySceneCanvas) return;
+        const city = engine['store'].getCity(cityId);
+        if (!shouldRedrawAmbient({
+            sceneActive: citySceneCanvas.classList.contains('is-active'),
+            cityExists: !!city,
+            drawnCityId: citySceneCityId,
+            targetCityId: cityId,
+        })) return;
+        drawCityCanvas(city!);
+    });
+    cityAmbient.start();
+}
+
+function stopCityAmbient(): void {
+    cityAmbient?.stop();
+    cityAmbient = null;
+}
+
+function renderCityScene(city: import('./core/types.js').City): void {
+    if (!citySceneCanvas) return;
+    drawCityCanvas(city);
+
+    const season = engine?.['store'].getGlobalState().season ?? 'SPRING';
     selectedCitySceneBuilding = null;
+    // [2026-10-03] 캔버스가 창 크기를 따라가므로 배지 좌표도 실제 크기로 계산한다.
+    //   예전엔 480x240 고정이라 창이 커지면 배지가 그림 왼쪽 위로 몰렸다.
+    renderCitySceneBadges(citySceneBuildings, citySceneCanvas.width, citySceneCanvas.height);
+    renderCityCommander(city);
+    renderCitySeason(season);
+    renderCityHint(city);
     if (citySceneSummary) {
         const counts = new Map<string, number>();
-        for (const building of buildings) counts.set(building.label, (counts.get(building.label) ?? 0) + 1);
+        for (const building of citySceneBuildings) counts.set(building.label, (counts.get(building.label) ?? 0) + 1);
         citySceneSummary.innerHTML = Array.from(counts.entries())
             .map(([label, count]) => `<span class="city-building-chip">${label} × ${count}</span>`)
             .join('');
@@ -2167,6 +3300,514 @@ function renderCityScene(city: import('./core/types.js').City): void {
     showCitySceneBuildingDetail(null);
     citySceneCanvas.classList.add('is-active');
     playCitySceneTone('enter');
+    startCityAmbient(city.id);
+}
+
+/**
+ * HUD 패널 rect → 무대 % 인셋 목록.
+ *
+ * 유리 패널이라 앵커를 완전히 가린다. 패널이 숨었거나 크기가 0 이면 인셋이 아니다
+ * (도시를 열기 전에는 전부 0 이다). 무대가 아직 레이아웃되지 않았으면 빈 목록을 돌려야
+ * 0 으로 나누어 배지를 조용히 잃지 않는다.
+ *
+ * 마지막 셋은 그림 *안쪽*에 얹힌 HUD(좌·우 레일, 하단 시설줄)다. 앞의 둘은 무대 바깥의
+ * 패널이라 배지가 그림 위로 밀려날 일이 없지만, 이 셋은 그림을 덮으므로 반드시 포함해야 한다.
+ */
+function measureCitySceneInsets(): SceneInset[] {
+    const stage = document.getElementById('city-scene-stage');
+    if (!stage) return [];
+    const stageRect = stage.getBoundingClientRect();
+    if (!isVisibleRect(stageRect)) return [];
+
+    // 좌표 변환은 src/core/city_scene_art.ts 의 순수 함수(toStageInset)가 한다.
+    // 여기서는 "어느 패널이 보여 주는가" 만 판단한다 — 브라우저 없이 계산 자체를 검증할 수 있게.
+    const insets: SceneInset[] = [];
+    // [2026-10-03] 좌·우 레일이 없어 인셋은 상단 바·하단 시설줄·(열린 시트)만 읽는다.
+//   시트는 기본(hidden)이라 닫혀 있을 때 인셋에 들어가지 않고, 배지를 그림 위에 그대로 둔다.
+    for (const selector of ['.cdp-header', '.cdp-scene-sheet:not([hidden])', '.cdp-stage-hud-bottom']) {
+        const pane = document.querySelector(selector);
+        if (!pane) continue;
+        const rect = pane.getBoundingClientRect();
+        if (!isVisibleRect(rect)) continue;
+        insets.push(toStageInset(rect, stageRect));
+    }
+    return insets;
+}
+
+/**
+ * 배지 좌표를 HUD 가 덮지 않는 곳으로 확정한다.
+ *
+ * 앵커는 data-anchor-* 에 "희망 좌표(그림의 %)"로 남아 있고, 여기서 실측 인셋을 곁들여
+ * 눌릴 수 있는 좌표를 style.left/top 에 쓴다. 측정 못 하면(패널 아직 숨김) 희망 좌표 그대로 쓴다.
+ *
+ * [2026-10-02 — 무대가 창 크기 그대로가 되면서 새로 넣은 단계]
+ * 앵커는 *그림의 %* 인데 무대는 이제 16:9 가 아니라 창 비율이다. .city-scene-art 의
+ * object-fit: cover 가 그림을 잘라내므로, 무대 % 를 그림 % 라고 그냥 쓰면 배지가
+ * 잘린 뒤의 엉뚱한 곳을 가리킨다(실측 최대 470px). 그래서 mapAnchorToStage() 로
+ * cover 사각형을 한 번 더 적용해 "무대 위 %"로 되돌린 *다음에* HUD 회피를 푼다.
+ * 순서가 중요한다 — 인셋은 무대 % 기준이므로 보정 후에 비교해야 같은 좌표계다.
+ */
+function applyCitySceneBadgePositions(): void {
+    const layer = document.getElementById('city-scene-badges');
+    if (!layer) return;
+    const buttons = Array.from(layer.querySelectorAll<HTMLButtonElement>('.city-badge'));
+    if (buttons.length === 0) return;
+
+    const stage = document.getElementById('city-scene-stage');
+    const stageRect = stage?.getBoundingClientRect();
+    const insets = measureCitySceneInsets();
+    // 그림이 없으면(로드 전/실패) 앵커는 절차 렌더용 타원 링이라 그대로 쓴다.
+    const artWidth = citySceneArt?.naturalWidth ?? 0;
+    const artHeight = citySceneArt?.naturalHeight ?? 0;
+    const onStage = (anchor: { x: number; y: number }): { x: number; y: number } =>
+        citySceneArtReady && stageRect && stageRect.width > 0 && stageRect.height > 0
+            ? mapAnchorToStage(anchor, artWidth, artHeight, stageRect.width, stageRect.height)
+            : anchor;
+
+    // [2026-10-03 되돌림] 여기에 배지 반폭을 크롭 마진에 섞으면 안 된다.
+    //   좁은 창에서 배지 일부가 잘리는 문제는 *의도된* 처리다. clampAnchorToCover 의
+    //   계약은 "잘린 건물의 배지는 크롭 경계에 붙는다" 이며, E2E(city_art_measure)가
+    //   경계에서 45px 이내를 정상으로 판정한다(EDGE_TOL_PX).
+    //   반폭을 더하니 배지가 안쪽으로 밀려(768x1024 교역소: 경계 1162.6 → 실측
+    //   1143.4 = 19px 안쪽) 그 자리에 있는 다른 건물을 가리키게 됐다.
+    //   배지 반쪽이 보이는 것은 "이 창에서는 저쪽 편" 이라는 사실을 알리는 대가이고,
+    //   엉뚱한 건물을 가리키는 것보다 낫다.
+    //   배지 자체 폭은 아래(겹침 간격 계산)에서 쓰고, 여기선 앵커 % 만 다룬다.
+    const badgeRect = buttons[0].getBoundingClientRect();
+
+    const resolved = buttons.map(btn => {
+        const onStageAnchor = onStage({
+            x: Number(btn.dataset.anchorX),
+            y: Number(btn.dataset.anchorY),
+        });
+        // [2026-10-03] 잘려 나간 앵커를 크롭 경계로 되돌린 **다음에** HUD 회피를 푼다.
+        //   순서가 반대면 clampToStage(2..98) 가 크롭 경계에 배지를 밀착시켜
+        //   다른 건물 위를 가리킨다(실측: 병영 370px → 497.6px, 127.6px 어긋남).
+        const inView = clampAnchorToCover(onStageAnchor);
+        return resolveVisibleAnchor(inView, insets);
+    });
+
+    // 겹침을 푸 때의 최소 간격은 배지 실제 크기를 무대 %로 바꿔 쓴다. 34px 를 상수로 박으면
+    // CSS 로 배지가 커졌을 때 조용히 겹친다.
+    const minGapX = stageRect && stageRect.width > 0 ? badgeRect.width / stageRect.width * 100 : 0;
+    const minGapY = stageRect && stageRect.height > 0 ? badgeRect.height / stageRect.height * 100 : 0;
+
+    const placed = separateOverlaps(resolved, minGapX, minGapY);
+    buttons.forEach((btn, i) => {
+        btn.style.left = `${placed[i].x.toFixed(1)}%`;
+        btn.style.top = `${placed[i].y.toFixed(1)}%`;
+    });
+}
+
+/** 씬 위 시설 배지 — 타입별 1개씩, 클릭하면 캔버스 클릭과 같은 선택 흐름을 탄다. */
+function renderCitySceneBadges(buildings: CityBuilding[], width: number, height: number): void {
+    const layer = document.getElementById('city-scene-badges');
+    if (!layer) return;
+    // 타입별 1개씩 타원 슬롯에 배치 — % 단위 혼용 거리 계산 대신 겹침 없는 고정 슬롯을 쓴다.
+    const picked: CityBuilding[] = [];
+    const seen = new Set<string>();
+    for (const building of buildings) {
+        if (seen.has(building.type)) continue;
+        seen.add(building.type);
+        picked.push(building);
+    }
+    const badges: string[] = picked.map((building, i) => {
+        // 그림이 있으면 그림 위 좌표를 쓴다. 없으면 종전 타원 링 — 앵커는 그림 전용이라
+        // 절차 렌더와 어긋난다.
+        const angle = -Math.PI / 2 + (i * Math.PI * 2) / Math.max(1, picked.length);
+        const preferred = citySceneArtReady
+            ? anchorFor(building.type, i, picked.length)
+            : { x: 50 + 42 * Math.cos(angle), y: 50 + 36 * Math.sin(angle) };
+        return (
+            `<button type="button" class="city-badge" data-building-id="${building.id}" ` +
+            `data-anchor-x="${preferred.x.toFixed(1)}" data-anchor-y="${preferred.y.toFixed(1)}" ` +
+            `title="${building.label} Lv.${building.level}">` +
+            // 2026-10-02 사용자 요청 — 첫 글자만("시") 말고 전체 이름("시장")을 적는다.
+            // 잘라내던 이유였던 34px 원형 배지는 CSS 에서 필(pill) 모양으로 바꿨다.
+            // [2026-10-03] 이름 아래 레벨 숫자는 뺀다 — 하단 시설줄이 이미
+            // "주막 Lv.0/3" 을 보여주고, 배지는 그림 위에 얹히므로 두 번째 줄이
+            // 이름 실루엣만 가릴 뿐이었다. 정보는 title(hover)과 하단 시설줄에 남긴다.
+            `<span class="city-badge-label">${building.label}</span></button>`
+        );
+    });
+    layer.innerHTML = badges.join('');
+    applyCitySceneBadgePositions();
+    // 위 호출은 패널이 아직 숨겨져 있을 때 돈다. renderCityDetailPanel 이 city-entry-mode 를
+    // 붙이고 표시한 *뒤에* 한 번 더 재야 rect 가 실측값이므로 다음 프레임에 다시 잰다.
+    requestAnimationFrame(applyCitySceneBadgePositions);
+    layer.querySelectorAll<HTMLButtonElement>('.city-badge').forEach(btn => {
+        // [2026-10-03] 좌·우 레일을 걷어냈으므로, 시트를 열기 위한 도시를 기억한다.
+        //   배지 클릭 → 상세 + 이 도시의 정보 시트. 시트는 도시를 열 때마다 닫힌다.
+        btn.addEventListener('click', () => {
+            const target = citySceneBuildings.find(b => b.id === btn.dataset.buildingId);
+            if (!target) return;
+            showCitySceneBuildingDetail(target);
+            // [2026-10-04] 성문은 다른 건물과 흐름이 다르다. 정보 시트(명령·무장·
+            //   세력 목록)가 아니라 **성문지기와의 대화**를 먼저 치는 게 자연스럽다.
+            //   이동 전 상태를 되돌릴 수 있게 "다른 도시 방문" 선택지는 시트 경로를 쓴다.
+            if (target.type === 'WALL') {
+                // 저장소가 비어 있을 수도 있어 null 을 그대로 넘긴다 — 아래에서 걸러 낸다.
+                openCityGatekeeperDialogue(citySceneCityId ? engine?.['store'].getCity(citySceneCityId) : undefined);
+                return;
+            }
+            if (citySceneCityId) {
+                const city = engine?.['store'].getCity(citySceneCityId);
+                if (city) openCitySceneSheet(city);
+            }
+            addLog(`도시 건물 선택: ${target.label} (Lv.${target.level})`);
+        });
+    });
+}
+
+/** 주둔 무장 초상 — 통솔+무력 합이 가장 높은 무장을 내세운다. */
+/**
+ * 세력 정보 — 현재 도시를 점령한 세력 하나만.
+ *
+ * 2026-09-30 사용자 요청. 세력 전체를 나열하면 "지금 이 도시에 누구 있나" 가 묻혀서
+ * 화면 purpose(도시 하나 보기)와 어긋난다. 무주공산이면 세력 없음으로 표시한다.
+ */
+function renderCityFactions(city: import('./core/types.js').City): void {
+    const el = document.getElementById('cdp-factions');
+    if (!el || !engine) return;
+    const store = engine['store'];
+
+    if (!city.ownerId) {
+        el.innerHTML = '<div class="cdp-faction-row"><span class="cdp-faction-name">무주공산</span>'
+            + '<span class="cdp-faction-meta">이 도시는 어떤 세력도 점령하지 않았다</span></div>';
+        return;
+    }
+    const f = store.getFaction(city.ownerId);
+    if (!f) {
+        el.innerHTML = '<div class="cdp-faction-row"><span class="cdp-faction-meta">점령 세력을 찾을 수 없습니다.</span></div>';
+        return;
+    }
+    const leader = store_getOfficerSafe(f.leaderId);
+    const capital = f.capitalCityId ? store.getCity(f.capitalCityId) : null;
+    const isPlayer = f.id === store.getGlobalState().playerFactionId;
+    el.innerHTML = `<div class="cdp-faction-row is-player" style="--faction-color:${f.color}">
+        <span class="cdp-faction-name">${f.name}${isPlayer ? ' ★' : ''}</span>
+        <span class="cdp-faction-meta">군주 ${leader?.name ?? '—'} · 수도 ${capital?.name ?? '—'} · 도시 ${f.cities.length}</span>
+    </div>`;
+}
+
+/** 도시 패널을 닫는다 — ✕ 버튼과 같은 경로(stopCityAmbient·is-active 정리 포함). */
+function closeCityPanel(): void {
+    document.getElementById('cdp-close')?.dispatchEvent(new Event('click'));
+}
+
+/** 인접 도시 판정 거리 — 출정 대상 고를 때 쓴다. */
+const ADJACENT_DIST = 0.16;
+
+/** 出征 — 인접 적 도시를 골라 전투로 들어간다. */
+function openCityExpeditionDialogue(city: import('./core/types.js').City): void {
+    if (!engine) return;
+    const store = engine['store'];
+    const targets = store.getAllCities().filter(c => {
+        if (!c.ownerId || c.ownerId === city.ownerId) return false;
+        const dx = (c.mapX ?? 0) - (city.mapX ?? 0);
+        const dy = (c.mapY ?? 0) - (city.mapY ?? 0);
+        return Math.hypot(dx, dy) <= ADJACENT_DIST;
+    });
+    if (targets.length === 0) {
+        openDialogue({ index: 0, pages: [{
+            title: '出征 — 出陣', speaker: '문서관', placeMark: '📜',
+            text: '인접한 적 도시가 없다. 먼 곳으로 출진하려면 수도를 거쳐야 한다.',
+        }] });
+        return;
+    }
+    openDialogue({ index: 0, pages: [{
+        title: '出征 — 出陣',
+        subtitle: `${city.name} · 병력 ${city.development.toLocaleString()}`,
+        speaker: '문서관', placeMark: '📜',
+        text: `병력 ${city.development.toLocaleString()}으로 출진한다. 공격할 도시를 고르시오.`,
+        choices: targets.map(t => {
+            const tf = t.ownerId ? store.getFaction(t.ownerId) : null;
+            return {
+                id: `exp:${t.id}`,
+                label: `${t.name} · ${tf?.name ?? '무주'}`,
+                description: `병력 ${t.development.toLocaleString()} · 방어 ${t.defense}/${t.maxDefense}`,
+                onSelect: () => {
+                    launchExpedition(city.id, t.id);
+                    return `${t.name}으로 출진이 개시된다.`;
+                },
+            };
+        }),
+    }] });
+}
+
+/** 출진 실행 — 페널을 닫고 전투로 넘어간다. */
+function launchExpedition(sourceCityId: string, targetCityId: string): void {
+    if (!engine) return;
+    const store = engine['store'];
+    const target = store.getCity(targetCityId);
+    if (!target) return;
+    expeditionSource = sourceCityId;
+    expeditionTarget = targetCityId;
+    addLog(`📍 出征 ${target.name}으로 출진이 개시된다`);
+    // ✕ 경로가 stopCityAmbient 와 is-active 정리를 함께 한다.
+    closeCityPanel();
+    enterBattleMode();
+}
+
+/** 登用 — 이 도시에 있는 재야 무장을 등용한다. */
+function openCityRecruitDialogue(city: import('./core/types.js').City): void {
+    if (!engine) return;
+    const store = engine['store'];
+    const gs = store.getGlobalState();
+    const pool = store.getAllOfficers()
+        .filter(o => isFreeOfficerInCity(o, city.id))
+        .sort((a, b) => (b.stats.leadership + b.stats.might) - (a.stats.leadership + a.stats.might))
+        .slice(0, 8);
+    if (pool.length === 0) {
+        openDialogue({ index: 0, pages: [{
+            title: '登用 — 登用', speaker: '문서관', placeMark: '📜',
+            text: `${city.name}에 머무는 재야 무장이 없다.`,
+        }] });
+        return;
+    }
+    const loyalty = engine['loyaltySystem'];
+    const repMod = getReputationDiplomacyModifier(store, gs.playerFactionId ?? null);
+    const repLabel = describeReputationModifier(repMod);
+    openDialogue({ index: 0, pages: [{
+        title: '登用 — 登用',
+        subtitle: `${city.name} · 재야 ${pool.length}명`,
+        speaker: '문서관', placeMark: '📜',
+        text: '이 도시에 머무는 재야 무장이다. 등용할 사람을 고르시오.',
+        detail: [repLabel ? `평판 보정 ${repLabel}` : ''].filter(Boolean),
+        choices: pool.map(o => {
+            const chance = Math.round(loyalty.getRecruitChance(o.id, undefined, gs.playerFactionId ?? undefined) * 100);
+            return {
+                id: `rec:${o.id}`,
+                label: `${o.name} · 등용 확률 ${chance}%`,
+                description: `統${o.stats.leadership} 武${o.stats.might} 智${o.stats.intelligence}`,
+                onSelect: () => {
+                    const playerCity = gs.playerFactionId ? store.getCitiesByFaction(gs.playerFactionId)[0] : null;
+                    if (!playerCity) return '등용할 세력 도시가 없다.';
+                    loyalty.penaltyMessages = [];
+                    const result = loyalty.recruit(o.id, gs.playerFactionId!, playerCity.id);
+                    addLog(result.message);
+                    for (const msg of loyalty.penaltyMessages) addLog(msg);
+                    renderCityDetailPanel(city, city.ownerId ? store.getFaction(city.ownerId) : null, false);
+                    return result.message;
+                },
+            };
+        }),
+    }] });
+}
+
+/** 復起 — 방랑군 세력이 적 도시를 약탈한다. */
+function openCityRaidDialogue(city: import('./core/types.js').City): void {
+    if (!engine) return;
+    const store = engine['store'];
+    const gs = store.getGlobalState();
+    const pf = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
+    if (!pf?.isVagrant) {
+        openDialogue({ index: 0, pages: [{
+            title: '復起 —  방랑군 습격', speaker: '문서관', placeMark: '📜',
+            text: '방랑군 세력만 쓸 수 있는 명령이다.',
+        }] });
+        return;
+    }
+    const pts = engine.strategicCommand.getStrategyPoints();
+    const strength = (() => { try { return computeVagrantStrength(store, gs.playerFactionId!); } catch { return 0; } })();
+    const targets = store.getAllCities()
+        .filter(c => c.ownerId !== gs.playerFactionId)
+        .sort((a, b) => a.defense - b.defense)
+        .slice(0, 5);
+    openDialogue({ index: 0, pages: [{
+        title: '復起 —  방랑군 습격',
+        subtitle: `전략 포인트 ${pts} · 약략 30 소모`,
+        speaker: '문서관', placeMark: '📜',
+        text: targets.length === 0 ? '약탈할 도시가 없다.' : '약탈할 도시를 고르시오. 약략은 전략 포인트 30 을 쓴다.',
+        choices: targets.map(c => {
+            const reachable = pts >= 30 && strength >= c.defense * 10;
+            return {
+                id: `raid:${c.id}`,
+                label: `${c.name} · 방어 ${c.defense}`,
+                description: reachable ? '약탈 가능' : '약략 불가 — 병력 부족',
+                disabled: !reachable,
+                onSelect: () => {
+                    const outcome = engine.playerRaidCity(c.id);
+                    addLog(outcome.message);
+                    const resultEl = document.getElementById('cdp-action-result');
+                    if (resultEl) { resultEl.textContent = outcome.message; resultEl.dataset.cityId = c.id; }
+                    if (outcome.success) {
+                        syncChinaMapCities();
+                        renderCityDetailPanel(c, c.ownerId ? store.getFaction(c.ownerId) : null, true);
+                    }
+                    return outcome.message;
+                },
+            };
+        }),
+    }] });
+}
+
+/** 外交 — 기존 외교 패널을 연다. */
+function openCityDiplomacy(): void {
+    if (diplomacyPanel.style.display === 'block') {
+        diplomacyPanel.style.display = 'none';
+        return;
+    }
+    renderDiplomacyPanel();
+    diplomacyPanel.style.display = 'block';
+    closeCityPanel();
+}
+
+/** 좌측 레일 명령 목록 — 내정 / 지배 / 인사 / 교外 4그룹. */
+function renderCityCommandGroups(
+    city: import('./core/types.js').City,
+    isPlayerCity: boolean,
+): void {
+    const el = document.getElementById('cdp-command-groups');
+    if (!el) return;
+    const groups: Array<{ title: string; items: Array<{ label: string; action?: string; amount?: string; run?: () => void; disabled?: boolean }> }> = [
+        {
+            title: '內政 — 내정',
+            items: [
+                { label: '징병', amount: 'recruit' },
+                { label: '훈련', amount: 'train' },
+                { label: '순찰', amount: 'patrol' },
+                { label: '자동 배정', action: 'auto-domestic' },
+                { label: '개발', amount: 'develop' },
+            ],
+        },
+        {
+            title: '支配 — 지배',
+            items: [
+                { label: '出征 · 出陣', run: () => openCityExpeditionDialogue(city), disabled: !isPlayerCity },
+                { label: '復起 · 약탈', run: () => openCityRaidDialogue(city), disabled: !isPlayerCity },
+            ],
+        },
+        {
+            title: '人事 — 인사',
+            items: [
+                { label: '登用 · 등용', run: () => openCityRecruitDialogue(city), disabled: !isPlayerCity },
+            ],
+        },
+        {
+            title: '外交 — 교외',
+            items: [
+                { label: '外交 · 외교', run: openCityDiplomacy },
+                { label: '月報 · 보고', run: () => document.getElementById('btn-report')?.dispatchEvent(new MouseEvent('click')) },
+            ],
+        },
+    ];
+
+    el.innerHTML = groups.map(g => `
+        <div class="cdp-command-group">
+            <div class="cdp-command-group-title">${g.title}</div>
+            ${g.items.map(it => it.action
+                ? `<button type="button" class="cdp-action-btn" data-action="${it.action}">${it.label}</button>`
+                : `<button type="button" class="cdp-action-btn" data-cmd="1"${it.disabled ? ' disabled' : ''}>${it.label}</button>`
+            ).join('')}
+        </div>`).join('');
+
+    // 수량 선택이 필요한 내정 명령은 직접 실행하지 않고 선택지 대화창을 먼저 연다.
+    el.querySelectorAll<HTMLButtonElement>('.cdp-action-btn[data-cmd]').forEach(btn => {
+        const label = btn.textContent ?? '';
+        for (const g of groups) {
+            const hit = g.items.find(i => i.label === label);
+            if (!hit) continue;
+            if (hit.amount) {
+                btn.addEventListener('click', () => openDomesticAmountDialogue(city, hit.amount!, hit.label));
+            } else if (hit.run) {
+                btn.addEventListener('click', hit.run);
+            }
+            break;
+        }
+    });
+}
+
+/**
+ * 내정 명령의 수량 선택 단계.
+ *
+ * 2026-09-30 사용자 요청 — 내정 목록을 누르면 곧바로 고정 금액(200/150/100/250金) 으로
+ * 执行돼 임의로 조절할 수 없었다. 여기서 배수를 고르면 runCityAction 의 비용·효과가
+ * 그 배수만큼 늘어난다. 배수만 고르는 이유는-effect 를 세분하면 도시마다 다른
+ * (재고·인구·상한) 이라 설명이 거짓말을 하게 되기 때문이다.
+ */
+const DOMESTIC_AMOUNTS: ReadonlyArray<{ label: string; times: number; note: string }> = [
+    { label: '소량 ×1', times: 1, note: '기본 단위' },
+    { label: '중량 ×3', times: 3, note: '세 배' },
+    { label: '대량 ×5', times: 5, note: '다섯 배' },
+];
+
+/** 내정 명령별 1회당 골드 — 수량 선택지의 예상 비용을 보여주는 데 쓴다. */
+const DOMESTIC_UNIT_COST: Record<string, number> = {
+    recruit: 200, train: 150, patrol: 100, develop: 250,
+};
+
+function openDomesticAmountDialogue(
+    city: import('./core/types.js').City,
+    action: string,
+    label: string,
+): void {
+    const unit = DOMESTIC_UNIT_COST[action] ?? 0;
+    const effect: Record<string, string> = {
+        recruit: '병사 모집', train: '병사 훈련', patrol: '치안 +5', develop: '상업+3 · 농업+3',
+    };
+    openDialogue({ index: 0, pages: [{
+        title: `內政 — ${label}`,
+        subtitle: `${city.name} · 보유 ${city.funds.toLocaleString()}金`,
+        speaker: ' 문서관', placeMark: '📜',
+        text: `${label}을 몇 회 실행할지 고르시오. 수량에 따라 비용과 효과가 함께 늘어난다.`,
+        detail: [`1회당 ${unit}金 · 효과 ${effect[action] ?? ''}`],
+        choices: DOMESTIC_AMOUNTS.map(a => ({
+            id: `${action}:${a.times}`,
+            label: `${a.label} · ${(unit * a.times).toLocaleString()}金`,
+            description: a.note,
+            disabled: unit * a.times > city.funds,
+            onSelect: () => {
+                runCityAction(city.id, action, a.times);
+                return `${label} ${a.label} 실행`;
+            },
+        })),
+    }] });
+}
+
+function renderCityCommander(city: import('./core/types.js').City): void {
+    const el = document.getElementById('city-commander');
+    if (!el) return;
+    const officers = city.officerIds
+        .map(id => store_getOfficerSafe(id))
+        .filter((o): o is NonNullable<typeof o> => o !== null)
+        .sort((a, b) => (b.stats.might + b.stats.leadership) - (a.stats.might + a.stats.leadership));
+    const top = officers[0];
+    if (!top) {
+        el.innerHTML = '<div class="city-commander-empty">주둔 무장 없음</div>';
+        return;
+    }
+    el.innerHTML =
+        `<div class="city-commander-portrait">${renderPortraitSvg({
+            id: top.id, name: top.name, gender: top.gender === 'F' ? 'F' : 'M',
+            grade: Math.max(0, Math.min(9, top.rank)),
+        })}</div>` +
+        `<div class="city-commander-name">${top.name}</div>` +
+        `<div class="city-commander-stats">統${top.stats.leadership} 武${top.stats.might} 智${top.stats.intelligence}</div>`;
+}
+
+/** 계절 오버레이 — 씬 위에 시간대 분위기를 얹는다. */
+function renderCitySeason(season: string): void {
+    const el = document.getElementById('city-scene-season');
+    if (!el) return;
+    el.dataset.season = String(season).toLowerCase();
+}
+
+/** 다음 행동 안내 — 가장 낮은 내정 지표를 골라 추천한다. */
+function renderCityHint(city: import('./core/types.js').City): void {
+    const el = document.getElementById('city-hint-bar');
+    if (!el) return;
+    const ds = city.developmentStats;
+    const candidates: Array<{ key: string; value: number; hint: string }> = [
+        { key: '상업', value: ds.commerce, hint: '시장 투자·개발 명령을 권장합니다' },
+        { key: '농업', value: ds.farming, hint: '농지 투자·개발 명령을 권장합니다' },
+        { key: '기술', value: ds.technology, hint: '공방 투자를 권장합니다' },
+        { key: '치안', value: ds.publicOrder, hint: '순찰·관청 투자를 권장합니다' },
+        { key: '충성', value: city.loyalty, hint: '복지 정책·선정을 권장합니다' },
+    ];
+    candidates.sort((a, b) => a.value - b.value);
+    const lowest = candidates[0];
+    el.textContent = `💡 ${lowest.key}(${lowest.value}) — ${lowest.hint}`;
 }
 
 /** 선택한 건물의 정보와 투자 버튼을 표시한다. */
@@ -2177,13 +3818,21 @@ function showCitySceneBuildingDetail(building: CityBuilding | null): void {
         citySceneDetail.textContent = '건물을 클릭하면 상세 정보가 표시됩니다.';
         return;
     }
+    // [2026-10-03] 타입을 그림 이름(서원·교역소·마구간)에 맞췄으므로 분기도 고쳤다.
+    //   마지막 else 는 STABLE 로 흐른다. 이전처럼 나머지를 몰아서 쓰면
+    //   새 이름들이 엉뚱한 역할 설명을 갖게 된다.
     const role = building.type === 'GOVERNMENT' ? '치안·내정 중심'
         : building.type === 'BARRACKS' ? '병력·훈련 중심'
         : building.type === 'MARKET' ? '상업·교역 중심'
         : building.type === 'FARM' ? '농업·식량 중심'
-        : building.type === 'TEMPLE' ? '안정·민심 중심'
+        : building.type === 'SEOUN' ? '교육·유교 중심'
         : building.type === 'WORKSHOP' ? '기술·개발 중심'
-        : building.type === 'WALL' ? '방어·도시 보호 중심' : '주거·인구 중심';
+        : building.type === 'WALL' ? '방어·도시 보호 중심'
+        : building.type === 'TRADING_HOUSE' ? '보관·장부 중심'
+        : building.type === 'PALACE' ? '수도·경호 중심'
+        : building.type === 'ACADEMY' ? '교육·양성 중심'
+        : building.type === 'BLACKSMITH' ? '무기·장비 중심'
+        : '마구간·가축 단지';
     citySceneDetail.innerHTML = `<strong>${building.label}</strong> · Lv.${building.level} · ${role} · ${building.active ? '운영 중' : '휴업'} · 누적 투자 ${building.investment}金 <button id="city-building-invest" class="city-building-invest" type="button">투자</button><button id="city-building-toggle" class="city-building-toggle" type="button">${building.active ? '휴업' : '운영'}</button>`;
 }
 
@@ -2193,11 +3842,15 @@ function selectCitySceneBuilding(clientX: number, clientY: number): void {
     const rect = citySceneCanvas.getBoundingClientRect();
     const x = (clientX - rect.left) * citySceneCanvas.width / rect.width;
     const y = (clientY - rect.top) * citySceneCanvas.height / rect.height;
+    // [2026-10-03] drawCityCanvas 가 타일 크기를 캔버스 높이 기준으로 정하므로
+    //   여기도 같은 값을 써야 한다. 예전 고정값(42/21)을 쓰면 창을 키웠을 때
+    //   클릭 좌표가 렌더링된 건물과 어긋나 엉뚱한 건물이 선택됐다.
+    const scale = Math.max(0.25, citySceneCanvas.height / 240);
     const originX = citySceneCanvas.width / 2;
-    const originY = citySceneCanvas.height / 2 + 28;
+    const originY = citySceneCanvas.height / 2 + Math.round(28 * scale);
     const sorted = [...citySceneBuildings].sort((a, b) => (b.x + b.y) - (a.x + a.y));
     for (const building of sorted) {
-        const point = citySceneRenderer.worldToScreen(building.x, building.y, 42, 21);
+        const point = citySceneRenderer.worldToScreen(building.x, building.y, Math.round(42 * scale), Math.round(21 * scale));
         const sx = originX + point.sx;
         const sy = originY + point.sy;
         if (Math.abs(x - sx) <= building.width / 2 + 4 && y >= sy - building.height * 1.5 && y <= sy + 8) {
@@ -2237,10 +3890,12 @@ function investInSelectedCityBuilding(): void {
         case 'BARRACKS': development = Math.min(garrisonCap(city), development + 600); break;
         case 'MARKET': stats.commerce = Math.min(stats.maxCommerce, stats.commerce + 2); break;
         case 'FARM': stats.farming = Math.min(stats.maxFarming, stats.farming + 2); break;
-        case 'TEMPLE': stats.publicOrder = Math.min(stats.maxPublicOrder, stats.publicOrder + 1); break;
+        // [2026-10-03] TEMPLE → SEOUN, HOUSE → STABLE 로 이름이 바뀌었다(그림에 맞추기 위함).
+        //   인과는 기능 기준이다 — 서원은 민심(+1), 마구간은 인구(+500)로 그대로 옮긴다.
+        case 'SEOUN': stats.publicOrder = Math.min(stats.maxPublicOrder, stats.publicOrder + 1); break;
         case 'WORKSHOP': stats.technology = Math.min(stats.maxTechnology, stats.technology + 2); break;
         case 'WALL': defense = Math.min(city.maxDefense, defense + 5); break;
-        case 'HOUSE': population += 500; break;
+        case 'STABLE': population += 500; break;
     }
     store.updateCity(city.id, { funds: city.funds - cost, developmentStats: stats, development, defense, population });
     const nextBuilding = building.level < 5
@@ -2288,10 +3943,100 @@ function toggleSelectedCityBuilding(): void {
     addLog(`${next.label} ${next.active ? '운영 시작' : '휴업 전환'}`);
 }
 
+/**
+ * 무장 목록 렌더 — 도시 소속 + 재야(FREE) + 수용 중인 포로.
+ *
+ * [2026-10-03] 좌·우 레일을 걷어내면서 그림 위 시트로 옮겼는데, 이 렌더가
+ * renderCityDetailPanel 안에 인라인으로 박혀 있으면 시트가 같은 내용을 다시 만들어야 한다.
+ * 한 곳에 모아 두어야 도시 열 때와 배지 눌렀을 때의 목록이 어긋나지 않는다.
+ */
+function renderCityOfficerList(city: import('./core/types.js').City): void {
+    // [2026-10-03] 시트가 닫혀 있으면 무장 목록 자리가 없다. 조용히 넘긴다 —
+    //   시트를 열면 그때 만들어져 이 함수가 다시 불린다.
+    const officersEl = document.getElementById('cdp-officers');
+    if (!officersEl) return;
+    const faction = city.ownerId ? engine?.['store'].getFaction(city.ownerId) ?? null : null;
+    const cityOfficers = city.officerIds
+        .map(id => store_getOfficerSafe(id))
+        .filter((o): o is NonNullable<typeof o> => o !== null);
+    const officers = mergeCityAndFreeOfficers(cityOfficers, engine!['store'].getAllOfficers(), city.id)
+        .sort((a, b) => (b.stats.leadership + b.stats.might) - (a.stats.leadership + a.stats.might));
+    const countEl = document.getElementById('cdp-officer-count');
+    if (countEl) countEl.textContent = `(${officers.length})`;
+
+    // 수용 중인 포로 표시 [131-145]
+    const captives = getCaptivesInCity(engine!['store'], city.id);
+
+    officersEl.innerHTML = officers.map(o => {
+        const isLeader = faction?.leaderId === o.id;
+        const isFree = isFreeOfficer(o);
+        const role = officerRoleLabel(o, faction?.leaderId ?? null);
+        return `<div class="cdp-officer-row cdp-officer-clickable${isFree ? ' is-free' : ''}" data-officer-id="${o.id}" title="클릭하여 상세 정보 보기">
+            <div>
+                <div class="cdp-officer-name ${isLeader ? 'is-leader' : ''}">${o.name}</div>
+                <div class="cdp-officer-stats">統率${o.stats.leadership} 武力${o.stats.might} 智力${o.stats.intelligence}</div>
+            </div>
+            <span class="cdp-officer-role">${role}</span>
+        </div>`;
+    }).join('')
+    + (captives.length > 0
+        ? captives.map(c => `<div class="cdp-officer-row cdp-captive-row" data-officer-id="${c.id}">
+            <div>
+                <div class="cdp-officer-name">⛓️ ${c.name}</div>
+                <div class="cdp-officer-stats">포로 — 이번 달에 탈출할 수 있다 (지력 ${store_getOfficerSafe(c.id)?.stats.intelligence ?? '-'})</div>
+            </div>
+            <span class="cdp-officer-role">포로</span>
+        </div>`).join('')
+        : '');
+}
+
 /** 도시 상세 패널 렌더링 (switched: 다른 도시에서 전환 시 콘텐츠 페이드) */
 function renderCityDetailPanel(city: import('./core/types.js').City, faction: import('./core/types.js').Faction | null, switched: boolean): void {
     cdpCityName.textContent = city.name;
     renderCityScene(city);
+
+    // 진입 헤더 요약 — 고전식 2단 바 (1단: 날짜·수치 / 2단: 나의 정보, 값만 표시)
+    // 도시명·세력·평판은 타이틀 줄(cdp-faction-badge)에 이미 있다.
+    const cdpSummary = document.getElementById('cdp-summary')!;
+    const gs1 = engine['store'].getGlobalState();
+    const seasonKo = { spring: '봄', summer: '여름', autumn: '가을', winter: '겨울' }[monthToSeason(gs1.time.month)];
+    const flagOf = (color: string | null) =>
+        `<span class="cdp-flag" style="background:${color ? factionColor(color) : 'var(--gold-dim)'}"></span>`;
+    const plainChip = (html: string) => `<span class="cdp-chip">${html}</span>`;
+    const numPair = (cur: number, max: number) => `${cur.toLocaleString()}/${max.toLocaleString()}`;
+    const cds = city.developmentStats;
+    const topRow =
+        plainChip(`📅 ${gs1.time.year}년 ${gs1.time.month}월 ${seasonKo}`) +
+        plainChip(`🌾 ${numPair(cds.farming, cds.maxFarming)}`) +
+        plainChip(`⚖️ ${numPair(cds.commerce, cds.maxCommerce)}`) +
+        plainChip(`🏺 ${numPair(cds.technology, cds.maxTechnology)}`) +
+        plainChip(`🛡️ ${numPair(city.defense, city.maxDefense)}`) +
+        plainChip(`🏮 ${numPair(cds.publicOrder, cds.maxPublicOrder)}`);
+    // 2단: 나의 정보 — 플레이 무장의 소속·신분·행동력·세력 자금·명성 3종
+    const STATUS_KO: Record<OfficerStatus, string> = {
+        LORD: '군주', VICEROY: '도독', STRATEGIST: '군사', GOVERNOR: '태수',
+        OFFICER: '무장', FREE: '재야', REBEL: '반군',
+    };
+    const me = store_getOfficerSafe(gs1.selectedOfficerId ?? '')
+        ?? (faction ? store_getOfficerSafe(faction.leaderId) : null);
+    let myRow = '';
+    if (me) {
+        const myFac = me.factionId ? engine['store'].getFaction(me.factionId) : null;
+        myRow = `<div class="cdp-myrow">` +
+            plainChip(`${flagOf(myFac?.color ?? null)}${myFac ? myFac.name : '재야'}`) +
+            plainChip(`${STATUS_KO[me.status]} ${me.rank}품`) +
+            plainChip(`🎖️ ${me.actionPoints}/${me.maxActionPoints}`) +
+            plainChip(`💰 ${myFac ? myFac.gold.toLocaleString() : '—'}`) +
+            plainChip(`명성 ${me.fame} · 공적 ${me.merit} · 악명 ${me.infamy}`) +
+            `</div>`;
+    }
+    // 타이틀 노드 안에 1단 칩들을 합친다 — toprow 껍데기를 타이틀 자식으로 옮긴다.
+    // innerHTML 교체 전에 참조를 잡아야 한다 — 교체되면 옛 행째로 떨어져 조회가 안 된다.
+    // 노드를 옮기는 것이라 id가 유지되어 E2E·aria가 깨지지 않는다.
+    const titleWrap = document.querySelector('#city-detail-panel .cdp-title-wrap');
+    cdpSummary.innerHTML = `<div class="cdp-toprow">${topRow}</div>` + myRow;
+    const topRowEl = cdpSummary.querySelector('.cdp-toprow');
+    if (titleWrap && topRowEl) titleWrap.appendChild(topRowEl);
 
     // 세력 배지 (세력색 테두리 + 군주 평판 등급 [11][27])
     if (faction) {
@@ -2309,77 +4054,51 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
         cdpFactionBadge.style.setProperty('--faction-color', 'var(--gold-dim)');
     }
 
-    // 내정치 바 (developmentStats 기반)
+    // 내정치 바 (developmentStats 기반) + 병력·방어 현황
     const ds = city.developmentStats;
-    cdpStats.innerHTML =
-        statBar('상업', ds.commerce, ds.maxCommerce, '#d4af37') +
-        statBar('농업', ds.farming, ds.maxFarming, '#7cb342') +
-        statBar('기술', ds.technology, ds.maxTechnology, '#5fb5e8') +
-        statBar('치안', ds.publicOrder, ds.maxPublicOrder, '#e9865a') +
-        statBar('충성', city.loyalty, 100, '#b06ae8');
+    if (cdpStats) {
+        cdpStats.innerHTML =
+            statBar('상업', ds.commerce, ds.maxCommerce, '#d4af37') +
+            statBar('농업', ds.farming, ds.maxFarming, '#7cb342') +
+            statBar('기술', ds.technology, ds.maxTechnology, '#5fb5e8') +
+            statBar('치안', ds.publicOrder, ds.maxPublicOrder, '#e9865a') +
+            statBar('충성', city.loyalty, 100, '#b06ae8') +
+            statBar('병력', city.development, garrisonCap(city), '#d45a5a') +
+            statBar('방어', city.defense, city.maxDefense, '#5a8fd4');
+    }
 
     // 도시 시설 목록 — 건설 상태와 상위 효과를 확인하고 직접 운영할 수 있다. [49]
     const playerCity = engine['store'].getGlobalState().playerFactionId === city.ownerId;
     renderFacilityList(city, playerCity);
+    renderCityFactions(city);
 
-    // 무장 목록 (능력치 합 순)
-    const officers = city.officerIds
-        .map(id => store_getOfficerSafe(id))
-        .filter((o): o is NonNullable<typeof o> => o !== null)
-        .sort((a, b) => (b.stats.leadership + b.stats.might) - (a.stats.leadership + a.stats.might));
-
-    // 수용 중인 포로 표시 [131-145]
-    const captives = getCaptivesInCity(engine['store'], city.id);
-
-    cdpOfficers.innerHTML = officers.map(o => {
-        const isLeader = faction?.leaderId === o.id;
-        const role = isLeader ? '군주' : (o.rank >= 5 ? '장군' : '무관');
-        return `<div class="cdp-officer-row cdp-officer-clickable" data-officer-id="${o.id}" title="클릭하여 상세 정보 보기">
-            <div>
-                <div class="cdp-officer-name ${isLeader ? 'is-leader' : ''}">${o.name}</div>
-                <div class="cdp-officer-stats">統率${o.stats.leadership} 武力${o.stats.might} 智力${o.stats.intelligence}</div>
-            </div>
-            <span class="cdp-officer-role">${role}</span>
-        </div>`;
-    }).join('')
-    + (captives.length > 0
-        ? captives.map(c => `<div class="cdp-officer-row cdp-captive-row" data-officer-id="${c.id}">
-            <div>
-                <div class="cdp-officer-name">⛓️ ${c.name}</div>
-                <div class="cdp-officer-stats">포로 — 이번 달에 탈출할 수 있다 (지력 ${store_getOfficerSafe(c.id)?.stats.intelligence ?? '-'})</div>
-            </div>
-            <span class="cdp-officer-role">포로</span>
-        </div>`).join('')
-        : '');
+    // 무장 목록 — 도시 소속 + 재야(무소속 FREE) 를 함께 둔다.
+    // 登用 패널을 지우면서 재야가 화면에서 사라졌는데, 여기 합쳐 두지 않으면
+    // "등용할 사람이 없다" 와 "화면에 없다" 를 구분할 수 없다. 규칙은 단위 테스트가 붙는다.
+    renderCityOfficerList(city);
 
     const captiveHistory = engine.chronicle.list()
         .filter(entry => entry.kind === 'CAPTURE' && entry.cityId === city.id)
         .slice(0, 5);
     const captiveHistoryEl = document.getElementById('cdp-captive-history');
+    const captiveSection = document.getElementById('cdp-captive-history-section');
     if (captiveHistoryEl) {
         captiveHistoryEl.innerHTML = captiveHistory.length > 0
             ? captiveHistory.map(entry => `<div class="cdp-history-row">${entry.icon} ${entry.text}<span>${entry.year}년 ${entry.month}월</span></div>`).join('')
             : '도시의 포로 처분 기록이 없습니다.';
     }
+    // 기록이 없으면 섹션을 접어 진입 화면 한 화면 구성을 유지한다 (E2E는 textContent로 읽으므로 영향 없음)
+    if (captiveSection) captiveSection.style.display = captiveHistory.length > 0 ? '' : 'none';
 
-    // 내정 명령 섹션은 플레이어 자기 도시에서만 활성
-    const gs = engine['store'].getGlobalState();
-    const isPlayerCity = faction !== null && city.ownerId === gs.playerFactionId;
-    document.getElementById('cdp-actions-section')!.style.display = isPlayerCity ? 'block' : 'none';
-    if (isPlayerCity) {
-        const actionResult = document.getElementById('cdp-action-result')!;
+    // 명령 목록을 좌측 레일에 그린다. 내정 5개는 도시 선택 때마다 초기화돼야 한다.
+    const gs0 = engine['store'].getGlobalState();
+    const isPlayerCity0 = city.ownerId !== null && city.ownerId === gs0.playerFactionId;
+    renderCityCommandGroups(city, isPlayerCity0);
+    const actionResult = document.getElementById('cdp-action-result');
+    if (actionResult && isPlayerCity0) {
         actionResult.textContent = '';
         actionResult.dataset.cityId = city.id;
     }
-
-    // 출진 섹션 [32]: 내 도시 + 인접 적 도시가 있을 때 표시
-    renderExpeditionSection(city, isPlayerCity);
-
-    // 등용 섹션 [24]: 내 도시 + 도시에 재야 무장이 있을 때
-    renderRecruitSection(city, isPlayerCity);
-
-    // [83] 방랑군 습격 섹션 — 플레이어 세력이 방랑군이고, 보고 있는 도시가 적/무주 도시일 때
-    renderVagrantRaidSection(city, faction, isPlayerCity);
 
     // 전환 시 콘텐츠 페이드 애니메이션 재생 (같은 도시 재클릭 시 생략)
     if (switched) {
@@ -2390,198 +4109,26 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
         });
     }
 
+    // 진입 화면은 한 가지 구성뿐이다 (2026-09-30 개편): 16:9 배경 그림 위에
+    // 상단 바와 하단 시설줄이 반투명으로 얹힌다(좌·우 레일은 2026-10-03 에 걷어냈고,
+    // 같은 정보는 그림 위 시트로 옮겼다). 모드 전환이 없으므로
+    // 돌아오기 버튼(🏛 도시 관리)도 필요 없다 — 닫기는 ✕ 하나로 충분하다.
     cityDetailPanel.classList.add('city-entry-mode');
-    cityDetailPanel.style.display = 'block';
+    // 인라인 display 를 지워 CSS(.city-entry-mode 의 grid) 가 레이아웃을 결정하게 한다.
+    cityDetailPanel.style.display = '';
+    // [2026-10-03] 레일을 걷어냈으므로 접힘 재계산은 없다. 도시를 바꿀 때만 시트를 닫는다 —
+    //   이전 도시의 정보가 남아 있으면 어느 도시 것인지 헷갈린다. 같은 도시 새로고침
+    //   (명령 실행 등)에서는 열어 둔다 — 닫으면 결과 요소까지 함께 지워진다.
+    if (switched) closeCitySceneSheet();
 }
 
 /**
- * [83] 방랑군 습격 섹션 — 플레이어 세력이 방랑군일 때 열리는 재기 커맨드.
- * 전략 포인트 30 소비, 인접 도시(자기 도시 제외)를 대상으로 습격 판정.
+ * 출진 대상 — 2026-09-30 에 출진 UI(出征 섹션)를 삭제하며 설정하는 곳이 없어졌다.
+ * 남은 참조는 전투 종료 처리와 복수 이벤트 로그인데, 둘 다 여기서 멈춘다.
+ * 출진 UI 를 되살리면 이 두 칸에 값을 넣으면 그대로 동작한다.
  */
-function renderVagrantRaidSection(
-    city: import('./core/types.js').City,
-    faction: import('./core/types.js').Faction | null,
-    isPlayerCity: boolean,
-): void {
-    const section = document.getElementById('cdp-raid-section')!;
-    const info = document.getElementById('cdp-raid-info')!;
-    if (!engine) { section.style.display = 'none'; return; }
-
-    const gs = engine['store'].getGlobalState();
-    const pf = gs.playerFactionId ? engine['store'].getFaction(gs.playerFactionId) : null;
-    // 방랑군 + 비(非)자기 도시에서만 표시 (자기 도시면 일반 출진 섹션이 이미 활성)
-    if (!pf?.isVagrant || isPlayerCity) {
-        section.style.display = 'none';
-        return;
-    }
-
-    const pts = engine.strategicCommand.getStrategyPoints();
-    const canAfford = pts >= 30;
-    info.textContent = `⚔️ 방랑군 재기 — 습격 대상을 선택하세요 (전략 포인트 30 소비, 보유 ${pts})`;
-    info.style.color = canAfford ? '' : '#e07a6a';
-
-    // [83] 습격 대상 목록 — 최약 도시 순 (현재 보고 있는 도시 포함). 방어/역량 임계 표시
-    const targetsEl = document.getElementById('cdp-raid-targets')!;
-    const store = engine['store'];
-    const raidStrength = (() => {
-        try {
-            return computeVagrantStrength(store, gs.playerFactionId!);
-        } catch { return 0; }
-    })();
-    const raidCandidates = store.getAllCities()
-        .filter(c => c.ownerId !== gs.playerFactionId)
-        .sort((a, b) => a.defense - b.defense)
-        .slice(0, 5);
-    targetsEl.innerHTML = raidCandidates.map(c => {
-        const reachable = raidStrength >= c.defense * 10;
-        const isCurrent = c.id === city.id;
-        return `<div class="cdp-raid-target cdp-officer-clickable" data-city-id="${c.id}" ` +
-            `style="display:flex;justify-content:space-between;padding:3px 6px;margin:2px 0;` +
-            `border:1px solid ${isCurrent ? 'var(--gold-dim)' : 'rgba(212,175,55,.12)'};border-radius:4px;` +
-            `cursor:${reachable && canAfford ? 'pointer' : 'not-allowed'};opacity:${reachable ? 1 : 0.45}">` +
-            `<span>${isCurrent ? '📌 ' : ''}${c.name} <span style="opacity:.6">방어 ${c.defense}</span></span>` +
-            `<span style="color:${reachable ? '#7ec97e' : '#e07a6a'};font-size:.9em">${reachable ? '습격 가능' : '역량 부족'}</span></div>`;
-    }).join('');
-    // 대상 클릭 → 해당 도시 선택 후 습격 실행
-    targetsEl.querySelectorAll<HTMLElement>('.cdp-raid-target').forEach(el => {
-        el.addEventListener('click', () => {
-            const targetId = el.dataset.cityId;
-            const target = targetId ? store.getCity(targetId) : null;
-            if (!target) return;
-            const outcome = engine.playerRaidCity(target.id);
-            addLog(outcome.message);
-            const resultEl = document.getElementById('cdp-action-result');
-            if (resultEl) {
-                resultEl.textContent = outcome.message;
-                resultEl.dataset.cityId = target.id;
-            }
-            if (outcome.success) {
-                syncChinaMapCities();
-                const fac = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
-                renderCityDetailPanel(target, fac, true);
-            }
-        });
-    });
-
-    const btn = document.getElementById('cdp-raid-btn') as HTMLButtonElement;
-    btn.style.display = 'none'; // 목록 클릭 방식으로 대체 — 기존 단일 버튼은 숨김
-    section.style.display = 'block';
-}
-
-/**
- * 출진 섹션 렌더링 [32] — 플레이어 도시에서 인접 적 도시를 대상으로 표시
- * 인접 판정: 전도 정규화 좌표 거리 (대략 1개 지역 거리)
- */
-const ADJACENT_DIST = 0.16;
-function renderExpeditionSection(city: import('./core/types.js').City, isPlayerCity: boolean): void {
-    const section = document.getElementById('cdp-expedition-section')!;
-    const info = document.getElementById('cdp-expedition-info')!;
-    const targets = document.getElementById('cdp-expedition-targets')!;
-
-    if (!isPlayerCity || !engine) { section.style.display = 'none'; return; }
-
-    const store = engine['store'];
-    const allCities = store.getAllCities();
-    const adjacentEnemies = allCities.filter(c => {
-        if (!c.ownerId || c.ownerId === city.ownerId) return false;
-        const dx = (c.mapX ?? 0) - (city.mapX ?? 0);
-        const dy = (c.mapY ?? 0) - (city.mapY ?? 0);
-        return Math.hypot(dx, dy) <= ADJACENT_DIST;
-    });
-
-    if (adjacentEnemies.length === 0) {
-        section.style.display = 'block';
-        info.textContent = '인접한 적 도시가 없습니다.';
-        targets.innerHTML = '';
-        return;
-    }
-
-    section.style.display = 'block';
-    info.textContent = `병력 ${city.development.toLocaleString()}으로 출진합니다 — 대상 도시를 선택하세요`;
-    targets.innerHTML = adjacentEnemies.map(t => {
-        const tf = t.ownerId ? store.getFaction(t.ownerId) : null;
-        return `<button class="cdp-expedition-btn" data-target="${t.id}" style="--faction-color:${factionColor(tf?.color)}">
-            <span class="exp-target-name">${t.name}</span>
-            <span class="exp-target-info">${tf?.name ?? '무주'} · 병력 ${t.development} · 방어 ${t.defense}</span>
-        </button>`;
-    }).join('');
-}
-
-// 출진 버튼 클릭 → 전투 진입 (출진 도시/대상 저장)
 let expeditionSource: string | null = null;
 let expeditionTarget: string | null = null;
-document.getElementById('cdp-expedition-targets')!.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('.cdp-expedition-btn') as HTMLElement | null;
-    if (!btn || !currentPanelCityId) return;
-    expeditionSource = currentPanelCityId;
-    expeditionTarget = btn.dataset.target ?? null;
-    if (!expeditionTarget) return;
-    const store = engine['store'];
-    const target = store.getCity(expeditionTarget!);
-    addLog(`出征 ${target?.name}으로 출진을 개시합니다`);
-    cityDetailPanel.style.display = 'none';
-    enterBattleMode();
-});
-
-/**
- * 등용 섹션 [24] — 자기 도시의 재야 무장을 등용
- */
-function renderRecruitSection(city: import('./core/types.js').City, isPlayerCity: boolean): void {
-    const section = document.getElementById('cdp-recruit-section')!;
-    const targets = document.getElementById('cdp-recruit-targets')!;
-    if (!isPlayerCity || !engine) { section.style.display = 'none'; return; }
-
-    const store = engine['store'];
-    const freeOfficers = store.getAllOfficers().filter(o =>
-        o.factionId === null && o.status === 'FREE' && o.cityId === city.id);
-    const allFree = store.getAllOfficers().filter(o => o.factionId === null && o.status === 'FREE');
-    const pool = freeOfficers.length > 0 ? freeOfficers : allFree.slice(0, 3);
-
-    if (pool.length === 0) {
-        section.style.display = 'block';
-        targets.innerHTML = '<div class="cdp-expedition-info">등용 가능한 재야 무장이 없습니다.</div>';
-        return;
-    }
-
-    section.style.display = 'block';
-    const loyaltySystem = engine['loyaltySystem'];
-    const gsR = store.getGlobalState();
-    targets.innerHTML = pool.map(o => {
-        // 평판 보정 반영 확률 [11] — 세력 군주 명성/악명 포함
-        const chance = Math.round(loyaltySystem.getRecruitChance(o.id, undefined, gsR.playerFactionId ?? undefined) * 100);
-        const chanceColor = chance >= 60 ? 'var(--color-success, #4caf50)' : chance >= 30 ? '#e8c35a' : '#e05a5a';
-        const repMod = getReputationDiplomacyModifier(store, gsR.playerFactionId ?? null);
-        const repLabel = describeReputationModifier(repMod);
-        return `<button class="cdp-expedition-btn cdp-recruit-btn" data-officer="${o.id}">
-            <span class="exp-target-name">${o.name}</span>
-            <span class="exp-target-info">統率${o.stats.leadership} 武力${o.stats.might} 智力${o.stats.intelligence} · <span style="color:${chanceColor};font-weight:bold">등용 확률 ${chance}%</span>${repLabel ? ` <span style="font-size:10px;opacity:.75">(${repLabel})</span>` : ''}</span>
-        </button>`;
-    }).join('');
-}
-
-// 등용 버튼 클릭
-document.getElementById('cdp-recruit-targets')!.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('.cdp-recruit-btn') as HTMLElement | null;
-    if (!btn || !currentPanelCityId || !engine) return;
-    const store = engine['store'];
-    const gs = store.getGlobalState();
-    if (!gs.playerFactionId) return;
-    const playerCity = store.getCitiesByFaction(gs.playerFactionId)[0];
-    if (!playerCity) return;
-    const loyalty = engine['loyaltySystem'];
-    loyalty.penaltyMessages = [];
-    const result = loyalty.recruit(btn.dataset.officer!, gs.playerFactionId, playerCity.id);
-    addLog(result.message);
-    // 포로 등용 페널티 메시지 (원소속 세력 원수화) [24][341-360]
-    for (const msg of loyalty.penaltyMessages) {
-        addLog(msg);
-    }
-    const target = store.getCity(currentPanelCityId);
-    if (target) {
-        const fac = target.ownerId ? store.getFaction(target.ownerId) : null;
-        renderCityDetailPanel(target, fac, false);
-    }
-});
 
 /** 전투 종료 시 출진 결과 처리 — 승리 시 도시 점령 [105] */
 function resolveExpeditionOutcome(playerWon: boolean): void {
@@ -2622,10 +4169,12 @@ function resolveExpeditionOutcome(playerWon: boolean): void {
 }
 
 /** 내정 명령 실행 — 실행 후 패널/전도 동기 갱신 [49] */
-function runCityAction(cityId: string, action: string): void {
+function runCityAction(cityId: string, action: string, times = 1): void {
     const store = engine['store'];
     const city = store.getCity(cityId);
     if (!city) return;
+    // 수량은 1·3·5 만 받는다 — 선택지에서만 오지만 외부 호출에도 대상을 막는다.
+    const n = ([1, 3, 5].includes(times) ? times : 1);
     const gs = store.getGlobalState();
     const faction = city.ownerId ? store.getFaction(city.ownerId) : null;
     if (!faction || city.ownerId !== gs.playerFactionId) return;
@@ -2658,28 +4207,28 @@ function runCityAction(cityId: string, action: string): void {
             //    실제로는 1명만 늘어난다.
             // 2) 상한으로 city.maxDefense(방어도, 0~100)를 썼다.
             //    병력이 인구의 0.4 ~ 12% 규모인 지금 이건 사실상 무의미하다.
-            store.updateCity(city.id, { funds: city.funds - 200, development: city.development + gain });
-            resultMsg = `병사 ${gain.toLocaleString()}명 모집 완료 (골드 -200)`;
+            store.updateCity(city.id, { funds: city.funds - 200 * n, development: city.development + gain * n });
+            resultMsg = `병사 ${(gain * n).toLocaleString()}명 모집 완료 (골드 -${(200 * n).toLocaleString()})`;
             break;
         }
         case 'train': {
             // 훈련: 골드 150 소모 → 병력 소모
-            if (city.funds < 150) { resultMsg = '골드가 부족합니다 (150 필요)'; break; }
+            if (city.funds < 150 * n) { resultMsg = `골드가 부족합니다 (${150 * n} 필요)`; break; }
             // [결함 수정] "사기 반영" 이라면서 병력을 +2 하던 것을
             // 실제 의미(사기상승은 training 개념) 에 맞게 병력 소모로 바꿨다.
             // 병력을 늘리는 코드는 위 'recruit' 항목 하나로 통일한다.
             // 훈련이 병력을 늘리면 징병 규칙(가산분 순증)을 우회해 버린다.
-            const loss = Math.min(city.development, 200);
-            store.updateCity(city.id, { funds: city.funds - 150, development: city.development - loss });
-            resultMsg = `훈련 완료 — 병사 사기 상승 (골드 -150)`;
+            const loss = Math.min(city.development, 200 * n);
+            store.updateCity(city.id, { funds: city.funds - 150 * n, development: city.development - loss });
+            resultMsg = `훈련 완료 — ${loss.toLocaleString()}명 사기 상승 (골드 -${(150 * n).toLocaleString()})`;
             break;
         }
         case 'patrol': {
             // 순찰: 골드 100 소모 → 치안 +5
-            if (city.funds < 100) { resultMsg = '골드가 부족합니다 (100 필요)'; break; }
-            ds.publicOrder = Math.min(ds.maxPublicOrder, ds.publicOrder + 5);
-            store.updateCity(city.id, { funds: city.funds - 100, developmentStats: ds });
-            resultMsg = `순찰 완료 — 치안 ${ds.publicOrder} (골드 -100)`;
+            if (city.funds < 100 * n) { resultMsg = `골드가 부족합니다 (${100 * n} 필요)`; break; }
+            ds.publicOrder = Math.min(ds.maxPublicOrder, ds.publicOrder + 5 * n);
+            store.updateCity(city.id, { funds: city.funds - 100 * n, developmentStats: ds });
+            resultMsg = `순찰 완료 — 치안 ${ds.publicOrder} (골드 -${(100 * n).toLocaleString()})`;
             break;
         }
         case 'auto-domestic': {
@@ -2712,24 +4261,30 @@ function runCityAction(cityId: string, action: string): void {
         }
         case 'develop': {
             // 개발: 골드 250 소모 → 상업+3, 농업+3
-            if (city.funds < 250) { resultMsg = '골드가 부족합니다 (250 필요)'; break; }
-            ds.commerce = Math.min(ds.maxCommerce, ds.commerce + 3);
-            ds.farming = Math.min(ds.maxFarming, ds.farming + 3);
-            store.updateCity(city.id, { funds: city.funds - 250, developmentStats: ds });
-            resultMsg = `개발 완료 — 상업 ${ds.commerce} · 농업 ${ds.farming} (골드 -250)`;
+            if (city.funds < 250 * n) { resultMsg = `골드가 부족합니다 (${250 * n} 필요)`; break; }
+            ds.commerce = Math.min(ds.maxCommerce, ds.commerce + 3 * n);
+            ds.farming = Math.min(ds.maxFarming, ds.farming + 3 * n);
+            store.updateCity(city.id, { funds: city.funds - 250 * n, developmentStats: ds });
+            resultMsg = `개발 완료 — 상업 ${ds.commerce} · 농업 ${ds.farming} (골드 -${(250 * n).toLocaleString()})`;
             break;
         }
     }
 
-    const actionResult = document.getElementById('cdp-action-result')!;
-    actionResult.textContent = resultMsg;
+    // [2026-10-03] 레일이 없어 이 요소는 시트가 열려 있을 때만 존재한다(동적으로 만든다).
+    //   닫혀 있으면 참조가 null 이라 조용히 넘어간다 — 결과는 로그로도 남는다.
+    const actionResult = document.getElementById('cdp-action-result');
+    if (actionResult) actionResult.textContent = resultMsg;
 
     // 패널 + 사이드바 + 전도 갱신
     const refreshed = store.getCity(cityId);
     if (refreshed) {
         const fac2 = refreshed.ownerId ? store.getFaction(refreshed.ownerId) : null;
         renderCityDetailPanel(refreshed, fac2, false);
-        actionResult.textContent = resultMsg; // 렌더 후 다시 세팅 (innerHTML 리셋 방지)
+        // [2026-10-03] 명령은 시트 안에서 누른다. renderCityDetailPanel 가 시트를 닫지
+        //   않도록(닫으면 누르던 손이 사라진다) 여기서 시트를 다시 채운다.
+        if (!document.getElementById('cdp-scene-sheet')?.hidden) openCitySceneSheet(refreshed);
+        const el2 = document.getElementById('cdp-action-result');
+        if (el2) el2.textContent = resultMsg; // 렌더 후 다시 세팅 (innerHTML 리셋 방지)
         factionDetail.textContent = fac2
             ? `${fac2.name} — 병력 ${refreshed.development} · 충성 ${refreshed.loyalty}`
             : '무주공산';
@@ -2738,7 +4293,12 @@ function runCityAction(cityId: string, action: string): void {
 }
 
 // 내정 명령 버튼 이벤트 위임
-document.getElementById('cdp-actions')!.addEventListener('click', (e) => {
+// [2026-10-03] 대상이 #cdp-command-groups → #cdp-sheet-body 로 바뀌었다(레일 제거).
+//   레일은 도시를 열 때마다 새로 만들어지고 시트는 매번 지워졌다가 다시 차므로,
+//   요소에 직접 걸면 두 번째 도시를 열 때 죽는다(리스너가 옛 DOM 에 남는다).
+//   그래서 살아 있는 상위(#cdp-sheet-body)에 위임한다 — 안쪽이 바뀌어도 그대로 듣는다.
+//   왼쪽에 #cdp-sheet-body 가 없으면 도시 화면이 아니라 다른 흐름이므로 아무것도 하지 않는다.
+document.getElementById('cdp-sheet-body')?.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('.cdp-action-btn') as HTMLElement | null;
     if (!btn) return;
     const action = btn.dataset.action;
@@ -2798,13 +4358,43 @@ function resizeCanvas(): void {
     canvas.height = nextHeight;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    // 도시 최소 간격이 창 크기에 따라 달라지므로 배치를 다시 계산한다.
+    if (typeof chinaMap !== 'undefined' && chinaMap) chinaMap.onCanvasResized();
 }
 
 const mapResizeObserver = typeof ResizeObserver !== 'undefined'
-    ? new ResizeObserver(() => resizeCanvas())
+    // [2026-10-03] 레일 접힘 재계산 삭제 — 아래 resize 리스너가 시트 열림 상태를 본다.
+    //   도시 캔버스 재생성도 여기로 모았다(캔버스가 창 크기를 따라가야 하므로).
+    ? new ResizeObserver(() => { resizeCanvas(); syncSidebarTopOffset(); redrawCitySceneCanvas(); })
     : null;
 if (mapResizeObserver && canvas.parentElement) mapResizeObserver.observe(canvas.parentElement);
-window.addEventListener('resize', resizeCanvas, { passive: true });
+// [2026-10-03] 창 크기가 바뀌면 도시 캔버스도 다시 그린다. backing-store 를 재설정하면
+//   이전 그림이 지워지므로 크기를 바꾼 뒤 다시 칠해야 한다. (이게 없으면 캔버스가 이전
+//   창 크기로 남아 "좌우 리사이징이 안 된다" 고 보인다.) 배지 좌표도 함께 다시 계산한다.
+window.addEventListener('resize', () => {
+    resizeCanvas();
+    syncSidebarTopOffset();
+    redrawCitySceneCanvas();
+    applyCitySceneBadgePositions();
+}, { passive: true });
+
+/**
+ * 도시 씬 캔버스를 현재 창 크기로 다시 그린다.
+ *
+ * 도시가 열려 있고 씬이 활성화된 경우에만 동작한다 — 닫힌 화면에서 불필요한
+ * 작업을 하지 않도록. `drawCityCanvas` 가 backing-store 를 크기에 맞춘 뒤
+ * 지우고 다시 칠하므로, 리사이즈가 눈에 보이게 반영된다.
+ */
+function redrawCitySceneCanvas(): void {
+    if (!citySceneCanvas || !citySceneCityId) return;
+    if (!citySceneCanvas.classList.contains('is-active')) return;
+    const city = engine?.['store'].getCity(citySceneCityId);
+    if (!city) return;
+    drawCityCanvas(city);
+    // 배지·초상은 CSS % 좌표라 자동 따라가지만, 툴팁 라벨 등은 캔버스 좌표에
+    // 얹히므로 씬을 통째로 다시 그려 앵커를 맞춘다.
+    applyCitySceneBadgePositions();
+}
 
 // ============================================================
 // Render Frame
@@ -2825,7 +4415,7 @@ function renderFrame(_dt: number): void {
         ctx.fillStyle = '#e94560';
         ctx.font = 'bold 36px "Malgun Gothic", sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('삼국지 8 리메이크', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillText('삼국지리턴', canvas.width / 2, canvas.height / 2 - 20);
         ctx.fillStyle = '#8080a0';
         ctx.font = '16px sans-serif';
         ctx.fillText('게임 시작을 눌러주세요', canvas.width / 2, canvas.height / 2 + 30);
@@ -2877,7 +4467,6 @@ function updateUI(): void {
         const gs = engine['store'].getGlobalState();
         turnDisplay.textContent = `턴 ${gs.turnCount}`;
         dateDisplay.textContent = `${gs.time.year}년 ${gs.time.month}월`;
-        phaseDisplay.textContent = engine.getCurrentPhase();
         const season = monthToSeason(gs.time.month);
         document.body.dataset.season = season;
         titleScreen?.setSeason(season);
@@ -2890,7 +4479,7 @@ function updateUI(): void {
 // Button Handlers
 // ============================================================
 
-async function startGame(world: BuiltWorld | null = null): Promise<void> {
+async function startGame(world: BuiltWorld | null = null, selectedOfficerId: string | null = null): Promise<void> {
     if (isRunning) return;
 
     if (world) {
@@ -2899,7 +4488,18 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
 
         // 시나리오 기반 월드 구성
         try {
-            engine.initWorld(world.officers, world.factions, world.cities, [], world.scenario?.id);
+            engine.initWorld(world.officers, world.factions, world.cities, [], world.scenario?.id, world.mapFeatures);
+            // 이민족 배치 — 북방 접경지에 실제로 존재하던 부족을 둔다.
+            // 도시 이름 → id 해석을 여기서 끝내야 store 에 고아 인덱스가 생기지 않는다.
+            const tribeNameToId: Record<string, string> = {};
+            for (const c of world.cities) tribeNameToId[c.name] = c.id;
+            engine['store'].setMigrationTribes(buildTribeRoster(tribeNameToId));
+            // 황제 거처 — 황제 엔티티가 아직 없어, 가장 넓은 세력의 수도로 결정론적으로 정한다.
+            // 알현은 이 도시에서만 열린다(아래 maybeOpenImperialAudience).
+            const strongestFaction = [...world.factions].sort((a, b) => b.cities.length - a.cities.length)[0];
+            if (strongestFaction?.capitalCityId) {
+                engine['store'].setImperialCourt(createCourt('황제', strongestFaction.capitalCityId));
+            }
             // [269][33] 시나리오 데이터에 포함된 초기 인맥을 정규화 스토어와 그래프 인덱스에 주입
             for (const relationship of world.relationships) engine['store'].addRelationship(relationship);
             engine['store'].rebuildGraphIndex();
@@ -2909,7 +4509,7 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
             engine['store'].setGlobalState({
                 ...engine['store'].getGlobalState(),
                 playerFactionId: world.playerFactionId,
-                selectedOfficerId: world.factions.find(f => f.id === world.playerFactionId)?.leaderId ?? null,
+                selectedOfficerId: resolveProtagonistId(world, selectedOfficerId),
                 difficulty,
                 // 시나리오 시작 연월 주입 [300] — 누락 시 기본값(192년)으로 남아
                 // 연의전 이벤트의 연도 조건이 전부 어긋난다
@@ -2941,25 +4541,36 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
     // 신규/이어하기 공통: 중국 전도에 도시 배치 (소속/영토 포함) [9][17]
     syncChinaMapCities();
 
+    // [강화] 시작 직후 현재 도시를 지도에서 자동으로 선택/강조한다.
+    //   세력 선택 → 무장 선택 → 게임 시작 직후, 전국지도에서
+    //   - 내 세력 도시가 글로우/영향 링/라벨 색으로 더 잘 보이고
+    //   - 내가 지금 있는 도시(플레이어 세력 수도)가 선택 하이라이트로 뜨게 한다.
+    //   도시 패널까지 열지 않고 지도 강조만 반영한다.
+    try {
+        const gsNow = engine['store'].getGlobalState();
+        const playerCapitalId = gsNow.playerFactionId
+            ? engine['store'].getFaction(gsNow.playerFactionId)?.capitalCityId ?? null
+            : null;
+        if (playerCapitalId) {
+            currentPanelCityId = playerCapitalId;
+            worldCities = worldCities.map(city => ({ ...city, isSelected: city.id === playerCapitalId }));
+            chinaMap.setCities(worldCities);
+        }
+    } catch {
+        // 엔진/지도 미준비 시 조용히 건너뛴다.
+    }
+
     // 정산 증감의 기준선 — 이 시점의 재고로 두어야 첫 턴이 실제 증감으로 표시된다
     prevSettlement = computeSettlement(engine['store']);
     latestSettlement = prevSettlement;
 
-    // 첫 플레이 자동 튜토리얼 [461-480] — 신규 시작에서만 표시.
-    // 온보딩이 활성 상태면 그 패널이 우선한다(안내 범위가 더 넓고 취향 선택까지 한다).
-    if (world && (isOnboardingActive() || tutorial.shouldShowOnStart())) {
-        if (isOnboardingActive()) {
-            renderGuidedStep();
-            tutorialPanel.style.display = 'block';
-            addLog('첫 플레이군요 — 온보딩을 시작합니다. 「❓ 도움말」로 언제든 다시 볼 수 있습니다.');
-        } else {
-            openTutorial(true);
-        }
-    }
+    // [2026-10-03 제거] 첫 플레이 자동 튜토리얼 — 안내를 통째로 뺐다(사용자 요청).
+    //   시작하자마자 안내 창이 뜨던 동작이 사라졌다. 별도 로그도 내지 않는다 —
+    //   뺀 기능을 다시 조용히 안내하지 않는다.
 
     isRunning = true;
     isPaused = false;
-    btnPause.textContent = '일시정지';
+    setPauseButton(false);
     btnStart.disabled = true;
     btnPause.disabled = false;
     btnSave.disabled = false;
@@ -2969,6 +4580,8 @@ async function startGame(world: BuiltWorld | null = null): Promise<void> {
     btnDiplomacy.disabled = false;
     btnNextMonth.disabled = false;
     btnGraph.disabled = false;
+    // [트레이스] 턴 기록을 볼 수 있게 되면 버튼을 연다.
+    btnTrace.disabled = false;
     btnMapVisibility.disabled = false;
     statusText.textContent = '게임 실행 중';
     lastFrameTime = 0;
@@ -2986,7 +4599,7 @@ btnMapVisibility.addEventListener('click', () => {
 btnPause.addEventListener('click', () => {
     if (!isRunning) return;
     isPaused = !isPaused;
-    btnPause.textContent = isPaused ? '재개' : '일시정지';
+    setPauseButton(isPaused);
     statusText.textContent = isPaused ? '일시정지' : '게임 실행 중';
     if (isPaused) {
         // RAF 루프 정지 (재개 시 lastFrameTime 리셋으로 급강 점프 방지)
@@ -3385,31 +4998,35 @@ const shortcutButtons: Record<string, HTMLButtonElement> = {
     n: btnNextMonth,
     s: btnSave,
     g: btnGraph,
-    h: btnHelp,
     d: btnDiplomacy,
     r: btnReport,
     p: btnPause,
 };
 
+const dialogueSurface = dialogueScene.surface();
+
 function closeTopOverlay(): boolean {
     const overlays: Array<[string, HTMLElement, HTMLElement]> = [
-        ['dialogue-modal', dialogueModal, document.getElementById('dialogue-close')!],
-        ['roaming-modal', document.getElementById('roaming-modal')!, btnHelp],
+        ['dialogue-modal', dialogueSurface.panel, dialogueSurface.closeButton],
+        // [2026-10-03] btnHelp(도움말) 삭제로 roaming-modal 의 트리거가 비었다.
+        //   돌아갈 포커스 대상이 없어 btnSettings(설정)로 대체한다 — 방랑군 창을 닫은 뒤
+        //   포커스를 받을 수 있는 실제 버튼이어야 한다.
+        ['roaming-modal', document.getElementById('roaming-modal')!, btnSettings],
         ['replay-panel', document.getElementById('replay-panel')!, btnBattleReplay],
         ['vengeance-modal', document.getElementById('vengeance-modal')!, btnBattle],
-        ['tutorial-panel', tutorialPanel, btnHelp],
         ['a11y-panel', a11yPanel, btnSettings],
         ['graph-panel', graphPanel, btnGraph],
+        ['trace-panel', tracePanel, btnTrace],
         ['save-slots-panel', saveSlotsPanel, btnSlots],
         ['diplomacy-panel', diplomacyPanel, btnDiplomacy],
         ['monthly-report-panel', document.getElementById('monthly-report-panel')!, btnReport],
         ['city-detail-panel', cityDetailPanel, canvas],
+        ['auth-panel', document.getElementById('auth-panel-container')!, btnAuth],
     ];
     for (const [id, panel, trigger] of overlays) {
         if (panel.style.display !== 'none' && panel.style.display !== '') {
             if (id === 'roaming-modal' && !rmState?.resolved) return true;
             if (id === 'dialogue-modal') closeDialogue();
-            else if (id === 'tutorial-panel') closeTutorial(false);
             else if (id === 'roaming-modal') document.getElementById('rm-close')?.click();
             else if (id === 'replay-panel') document.getElementById('rp-close')?.dispatchEvent(new Event('click'));
             else if (id === 'vengeance-modal') document.getElementById('vm-close')?.click();
@@ -3466,9 +5083,9 @@ function saveToSlot(slot: SlotId): void {
         const compressed = engine.saveCompressed();
         const gs = engine['store'].getGlobalState();
         const faction = gs.playerFactionId ? engine['store'].getFaction(gs.playerFactionId) : null;
-        // [461-480] UI 설정 스냅샷 — 접근성·색약 모드·튜토리얼 상태 동반 저장
-        let tutorialDone = false;
-        try { tutorialDone = localStorage.getItem('rtk8_tutorial_done') !== null; } catch { /* 무시 */ }
+        // [461-480] UI 설정 스냅샷 — 접근성·색약 모드 동반 저장
+        // [2026-10-03] tutorialDone 항목 제거 — 안내를 통째로 뺐다. 저장 스키마는
+        //   읽는 쪽이 없는 필드를 그냥 무시하므로 구형 세이브를 못 읽게 하진 않는다.
         const ok = slotManager.save(slot, compressed, {
             year: gs.time.year,
             month: gs.time.month,
@@ -3481,7 +5098,6 @@ function saveToSlot(slot: SlotId): void {
                 showStatNumbers: a11ySettings.showStatNumbers,
                 colorblindMode,
                 colorPattern,
-                tutorialDone,
             },
         });
         addLog(ok
@@ -3569,7 +5185,41 @@ function loadFromSlot(slot: SlotId): void {
     restoreUiSettings(slotManager.getUiSettings(slot));
     saveSlotsPanel.style.display = 'none';
     addLog(`슬롯 ${slot === 'auto' ? '자동' : slot}에서 불러왔습니다`);
+
+    // [2026-10-04] 오프라인 진행 — 로드는 즉시 끝내고, 턴 돌리기는 백그라운드로.
+    //   최대 24턴이라 몇 초가 걸릴 수 있어 await 하면 화면이 멈춘다.
+    void catchUpOfflineAfterLoad();
     void startGame(null);
+}
+
+/**
+ * 로드 직후 오프라인 진행. [2026-10-04]
+ *
+ * [왜 UI 를 먼저 띄우는가]
+ * 24턴 몰아 돌리기는 AI 포함 수 초가 걸린다. 화면이 멈추면 사용자가 "죽었다"
+ * 고 판단한다. 먼저 게임을 띄우고 진행을 뒤에 돌리면, 로그에서 "동안 N턴
+ * 진행" 을 읽으며 자연스럽게 기다린다.
+ */
+async function catchUpOfflineAfterLoad(): Promise<void> {
+    if (!engine) return;
+    try {
+        const { turns, message } = await catchUpOfflineTurns(engine);
+        if (turns <= 0) return;
+        addLog(`🌙 ${message}`);
+        // 진행 결과를 화면에 반영한다 — 턴 끝 처리와 같은 갱신.
+        syncChinaMapCities();
+        if (currentPanelCityId) {
+            const store = engine['store'];
+            const city = store.getCity(currentPanelCityId);
+            if (city) {
+                renderCityDetailPanel(city, city.ownerId ? store.getFaction(city.ownerId) : null, false);
+            }
+        }
+        updateSettlementPanel();
+    } catch (err) {
+        // 오프라인 진행은 실패해도 게임이 죽으면 안 된다. 로드된 상태는 그대로.
+        addLog(`🌙 오프라인 진행 실패 (세계는 저장 시점 그대로): ${err}`);
+    }
 }
 
 /** 세이브에 포함된 UI 설정 복원 (구버전 세이브: null이면 무시) [461-480] */
@@ -3641,183 +5291,6 @@ saveSlotList.addEventListener('click', (e) => {
 });
 
 // ============================================================
-// 튜토리얼 패널 [461-480] — 첫 플레이 자동 표시 + 도움말 버튼 재오픈
-// ============================================================
-const tutorialPanel = document.getElementById('tutorial-panel')!;
-const tutorial = new TutorialSystem();
-
-function renderTutorialStep(): void {
-    const r = tutorial.renderStep();
-    document.getElementById('tut-step-content')!.innerHTML = r.html;
-    (document.getElementById('tut-prev') as HTMLButtonElement).disabled = r.isFirst;
-    document.getElementById('tut-next')!.style.display = r.isLast ? 'none' : '';
-    document.getElementById('tut-skip')!.style.display = r.isLast ? 'none' : '';
-    document.getElementById('tut-finish')!.style.display = r.isLast ? '' : 'none';
-    applyTutorialSpotlight();
-}
-
-// 스포트라이트 대상 추적 — 단계 이동/종료 시 정리
-let tutSpotlightEl: HTMLElement | null = null;
-
-function applyTutorialSpotlight(): void {
-    if (tutSpotlightEl) {
-        tutSpotlightEl.classList.remove('tut-spotlight');
-        tutSpotlightEl = null;
-    }
-    const sel = tutorial.currentSpotlightSelector();
-    const el = sel ? document.querySelector<HTMLElement>(sel) : null;
-    if (el) {
-        el.classList.add('tut-spotlight');
-        tutSpotlightEl = el;
-        try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { /* 구형 브라우저 무시 */ }
-    }
-    // 대상을 못 찾으면 위치 설명으로 대체 안내 [461-480]
-    const note = document.getElementById('tut-spotlight-note');
-    if (note) {
-        const fb = tutorial.currentSpotlightFallback();
-        note.textContent = !el && fb ? `▸ ${fb}을(를) 찾아보세요` : '';
-    }
-}
-
-function clearTutorialSpotlight(): void {
-    if (tutSpotlightEl) {
-        tutSpotlightEl.classList.remove('tut-spotlight');
-        tutSpotlightEl = null;
-    }
-}
-
-function openTutorial(auto = false): void {
-    tutorial.start();
-    renderTutorialStep();
-    tutorialPanel.style.display = 'block';
-    if (auto) addLog('첫 플레이군요 — 게임 안내를 표시합니다. 「❓ 도움말」로 언제든 다시 볼 수 있습니다.');
-}
-
-function closeTutorial(markDone: boolean): void {
-    tutorialPanel.style.display = 'none';
-    clearTutorialSpotlight();
-    if (markDone) tutorial.complete();
-}
-
-btnHelp.addEventListener('click', () => {
-    if (!tutorialPanel.style.display || tutorialPanel.style.display === 'none') openGuidedPanel();
-    else closeTutorial(false);
-});
-document.getElementById('tut-prev')!.addEventListener('click', () => { tutorial.prev(); renderTutorialStep(); });
-document.getElementById('tut-next')!.addEventListener('click', () => { tutorial.next(); renderTutorialStep(); });
-document.getElementById('tut-skip')!.addEventListener('click', () => closeTutorial(true));
-document.getElementById('tut-finish')!.addEventListener('click', () => {
-    closeTutorial(true);
-    addLog('게임 안내 완료 — 중원 통일을 향해 나아가세요!');
-});
-document.getElementById('tut-close')!.addEventListener('click', () => closeTutorial(false));
-
-// ============================================================
-// 온보딩 상태 ↔ 튜토리얼 패널 배선 [461-480]
-// ============================================================
-// 4-PR 분할의 통합 지점. 이 블록이 없으면 상태·패널·카피가 서로 모른다.
-//
-// 설계:
-// - 상태는 src/core/onboarding_state.ts 가 단독 소유. 여기서 로컬 복제하지 않는다.
-// - 렌더는 src/ui/onboarding_panel.ts 가 단독 소유. DOM에 손대지 않는다.
-// - 이 블록은 그 둘을 잇는 배선만 한다: innerHTML 주입, 클릭 바인딩, 스포트라이트.
-// - 온보딩은 기본적으로 비활성이다. 온보딩 상태가 존재할 때만 기존 튜토리얼을 대체한다.
-
-const ONBOARDING_COPY: readonly OnboardingStepCopy[] = onboardingCopyEntries;
-
-/** 온보딩을 실제로 보여줄지. 완료·철회하면 영구적으로 false. */
-function isOnboardingActive(): boolean {
-    return shouldShowOnboarding(getOnboardingState());
-}
-
-/**
- * 튜토리얼 패널을 온보딩 모드로 렌더한다.
- * 온보딩이 비활성이면 기존 TutorialSystem 경로로 되돌린다.
- */
-function renderGuidedStep(): void {
-    if (!isOnboardingActive()) {
-        renderTutorialStep();
-        return;
-    }
-    const state = getOnboardingState();
-    const html = renderOnboardingPanel(state, {
-        steps: ONBOARDING_COPY,
-        totalSteps: ONBOARDING_TOTAL_STEPS,
-        factionNames: Object.fromEntries(
-            ONBOARDING_FACTION_OPTIONS.map((f) => [f.id, `${f.name} ${f.leader}`]),
-        ),
-    });
-    document.getElementById('tut-step-content')!.innerHTML = html;
-
-    // 버튼 표시 제어 — 패널이 계산한 바인딩을 그대로 따른다.
-    const bindings = parseOnboardingPanel(html);
-    if (!bindings) return;
-    (document.getElementById('tut-prev') as HTMLButtonElement).disabled = bindings.isFirst;
-    document.getElementById('tut-next')!.style.display = bindings.isLast ? 'none' : '';
-    document.getElementById('tut-skip')!.style.display = bindings.isLast ? 'none' : '';
-    document.getElementById('tut-finish')!.style.display = bindings.isLast ? '' : 'none';
-
-    // 클릭 바인딩 — 패널이 낸 data-onboarding-action 을 상태 전이로 잇는다.
-    for (const el of Array.from(
-        document.querySelectorAll<HTMLElement>('[data-onboarding-action]'),
-    )) {
-        const action = el.dataset.onboardingAction as OnboardingPanelAction | undefined;
-        if (!action) continue;
-        el.addEventListener('click', () => {
-            const s = getOnboardingState();
-            if (action === 'prev') setOnboardingStep(s.stepIndex - 1);
-            else if (action === 'next') setOnboardingStep(s.stepIndex + 1);
-            else if (action === 'skip') { dismissOnboardingFlow(); closeTutorial(true); return; }
-            else if (action === 'defer') { deferOnboardingFlow(); closeTutorial(false); return; }
-            else if (action === 'finish') {
-                completeOnboardingFlow();
-                closeTutorial(true);
-                addLog('온보딩 완료 — 선택하신 설정으로 시작합니다.');
-                return;
-            }
-            renderGuidedStep();
-        });
-    }
-
-    // 폴백 문구는 단계 카피의 제목 — spotlight 을 못 찾았을 때 무엇을 찾는지 알려준다.
-    const stepCopy = ONBOARDING_COPY[state.stepIndex];
-    applyOnboardingSpotlight(bindings.spotlight, stepCopy?.title ?? '');
-}
-
-/** 온보딩 스포트라이트 — 기존 튜토리얼과 같은 클래스와 폴백 문구를 쓴다. */
-let obSpotlightEl: HTMLElement | null = null;
-
-function applyOnboardingSpotlight(selector: string | null, fallbackNote: string): void {
-    clearOnboardingSpotlight();
-    const el = selector ? document.querySelector<HTMLElement>(selector) : null;
-    if (el) {
-        el.classList.add('tut-spotlight');
-        obSpotlightEl = el;
-        try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { /* 구형 브라우저 무시 */ }
-    }
-    // 대상을 못 찾으면 위치 설명으로 대체 안내 [461-480] — 기존 튜토리얼과 같은 계약.
-    const note = document.getElementById('tut-spotlight-note');
-    if (note) note.textContent = !el && fallbackNote ? `▸ ${fallbackNote}` : '';
-}
-
-function clearOnboardingSpotlight(): void {
-    if (obSpotlightEl) {
-        obSpotlightEl.classList.remove('tut-spotlight');
-        obSpotlightEl = null;
-    }
-}
-
-/** 온보딩이 있으면 그것을, 없으면 기존 튜토리얼을 연다. */
-function openGuidedPanel(): void {
-    if (isOnboardingActive()) {
-        renderGuidedStep();
-    } else {
-        openTutorial(false);
-    }
-    tutorialPanel.style.display = 'block';
-}
-
-// ============================================================
 // 접근성 설정 패널 [461-480] — 글꼴 전환·글자 크기·화면 흔들림
 // ============================================================
 // 접근성 설정 패널 [461-480] 상태 — 색약 친화 팔레트 포함
@@ -3861,10 +5334,18 @@ function renderA11yPanel(): void {
             const stat = el.dataset['stat'];
             const cb = el.dataset['cb'] as ColorblindMode | undefined;
             const pat = el.dataset['pattern'] as PatternOption | undefined;
+            const typewriter = el.dataset['typewriter'];
+            const speech = el.dataset['speech'];
             if (font) a11ySettings = { ...a11ySettings, fontMode: font };
             else if (scale) a11ySettings = { ...a11ySettings, textScale: Number(scale) as AccessibilitySettings['textScale'] };
             else if (shake) a11ySettings = { ...a11ySettings, screenShake: shake === 'on' };
             else if (stat) a11ySettings = { ...a11ySettings, showStatNumbers: stat === 'on' };
+            else if (typewriter) a11ySettings = { ...a11ySettings, typewriter: typewriter === 'on' };
+            else if (speech) {
+                a11ySettings = { ...a11ySettings, speech: speech === 'on' };
+                // 켰다가 끄면 지금 읽는 소리를 바로 멈춘다.
+                if (!a11ySettings.speech) stopSpeech();
+            }
             else if (cb) colorblindMode = cb;
             else if (pat) colorPattern = pat;
             saveAccessibilitySettings(a11ySettings);
@@ -3884,6 +5365,51 @@ btnSettings.addEventListener('click', () => {
     }
 });
 document.getElementById('a11y-close')!.addEventListener('click', () => { a11yPanel.style.display = 'none'; });
+
+// 타이틀바 로그인 아이콘 — 인증 패널 토글
+const authPanelBox = document.getElementById('auth-panel-container')!;
+btnAuth.addEventListener('click', () => {
+    const open = authPanelBox.style.display === 'none' || authPanelBox.style.display === '';
+    authPanelBox.style.display = open ? 'block' : 'none';
+});
+
+// ============================================================
+// 턴 실행 트레이스 패널 [디버그]
+// executeTurn(AI 턴) 이 수행한 전체 과정을 번호가 붙은 트리로 보여준다.
+// "1턴을 돌렸는데 도대체 뭐가 일어났지" 를 되돌아보기 위한 창이다.
+// ============================================================
+const tracePanel = document.getElementById('trace-panel')!;
+const traceTreeEl = document.getElementById('trace-tree')!;
+const traceSummaryEl = document.getElementById('trace-summary')!;
+const traceDeepEl = document.getElementById('trace-deep') as HTMLInputElement;
+
+function refreshTracePanel(): void {
+    if (!engine) {
+        traceSummaryEl.textContent = '게임이 아직 시작되지 않았습니다';
+        traceTreeEl.innerHTML = '<div class="trace-detail">시나리오를 선택하면 턴 기록이 여기에 쌓입니다.</div>';
+        return;
+    }
+    const trace = engine.getTurnTrace();
+    const tree = trace.getTree();
+    const deep = traceDeepEl.checked;
+    const total = tree.children.length;
+    traceSummaryEl.textContent = tree.children.length === 0
+        ? '아직 실행된 턴이 없습니다 — 「다음 달」을 눌러 보세요'
+        : `${tree.label} · ${total}단계 · ${tree.detail || '진행 중'}`;
+    traceTreeEl.innerHTML = renderTraceTreeHtml(tree, deep ? 3 : 1);
+}
+
+function openTracePanel(): void {
+    refreshTracePanel();
+    tracePanel.style.display = 'block';
+}
+
+btnTrace.addEventListener('click', () => {
+    if (tracePanel.style.display === 'block') tracePanel.style.display = 'none';
+    else openTracePanel();
+});
+document.getElementById('trace-close')!.addEventListener('click', () => { tracePanel.style.display = 'none'; });
+traceDeepEl.addEventListener('change', refreshTracePanel);
 
 // ============================================================
 // 인맥 그래프 패널 [269][33] — 줌/팬/클릭 인터랙션 + 노드 상세
@@ -4122,7 +5648,8 @@ btnNextMonth.addEventListener('click', async () => {
     if (!engine || isAdvancingTurn || !isRunning) return;
     isAdvancingTurn = true;
     btnNextMonth.disabled = true;
-    btnNextMonth.textContent = '⏳ 진행 중...';
+    btnNextMonth.dataset.icon = '⏳';
+    btnNextMonth.setAttribute('aria-label', '턴 진행 중');
     try {
         await engine.executeTurn();
         const gs = engine['store'].getGlobalState();
@@ -4139,12 +5666,18 @@ btnNextMonth.addEventListener('click', async () => {
             }
         }
         if (diplomacyPanel.style.display === 'block') renderDiplomacyPanel();
+        // [2026-10-04] 진행 중인 이동 1일 경과. 도착하면 목적지 도시를 연다.
+        //   턴이 한 달(한 기) 진행될 때 1일만 줄어든다는 점이 규칙의 핵심이다 —
+        //   가까운 도시는 1~2개월, 먼 곳은 여러 달 걸린다.
+        const arrived = advanceActiveTravelOneTurn();
+        if (arrived) enterCity(arrived);
     } catch (err) {
         addLog(`턴 진행 실패: ${err}`);
     } finally {
         isAdvancingTurn = false;
         btnNextMonth.disabled = false;
-        btnNextMonth.textContent = '▸ 다음 月';
+        btnNextMonth.dataset.icon = '⏭';
+        btnNextMonth.setAttribute('aria-label', '다음 月');
     }
 });
 
@@ -4157,6 +5690,7 @@ function init(): void {
     statusText.textContent = '엔진 초기화 중...';
 
     resizeCanvas();
+    syncSidebarTopOffset();
 
     // Create engine and bootstrap
     engine = getGameEngine();
@@ -4547,7 +6081,7 @@ if (hasAnySave) {
 
 const titleScreen = new TitleScreen({
     onNewGame: () => { openScenarioScreen(); },
-    onRecruit: () => { openEditorScreen(); },
+    onRecruit: () => { void openEditorScreen(); },
     onContinue: () => {
         try {
             // 최근 저장 슬롯(auto 폴백 포함)을 찾아 복원
@@ -4934,8 +6468,28 @@ function paintEditorPanels(): void {
     else paintExistingPanels();
 }
 
-function openEditorScreen(): void {
+/**
+ * 무장 편집 화면을 연다.
+ *
+ * [결함 수정] 시나리오를 먼저 로드한 뒤 연다.
+ * renderRoster() → renderPickScenarios() → openPickScenarioScreen() 경로가
+ * getCachedScenarios() 만 믿고 있다. 페이지가 새로고침된 직후(캐시 없음)에
+ * 이 경로로 들어오면 시나리오 0건으로 평가되어 카드 자체가 그려지지 않는다.
+ * 같은 버그가 openScenarioScreen(일반 시작)·openPickScenarioScreen(편집 확정)
+ * 두 곳에 따로 있었고, 여기서는 편집 화면 진입 지점이다.
+ *
+ * 주의: searchRoster 의 playableYears 가 비면 정렬 점수만 낮아질 뿐 카드는
+ * 그려진다. 카드 목록(searchRoster)과 시나리오 목록(renderPickScenarios)은
+ * 서로 다른 목록이라, 어느 쪽이 빈 배열을 만들지는 경로를 따라가 봐야 한다.
+ * 여기서는 "캐시 없는 상태로 진입하면 안 된다" 만 보장한다.
+ */
+async function openEditorScreen(): Promise<void> {
     setEditorWarn('');
+    try {
+        await loadScenarios();
+    } catch (err) {
+        addLog(`시나리오 로드 실패: ${err}`);
+    }
     editorScreen.classList.add('open');
     editorScreen.focus();
     if (edName.value.trim() === '') {
@@ -5019,8 +6573,27 @@ function renderPickScenarios(): void {
     }
 }
 
-function openPickScenarioScreen(): void {
+/**
+ * 확정한 무장으로 시나리오 선택 화면을 연다.
+ *
+ * [결함 수정] loadScenarios() 를 await 한다.
+ * 예전엔 renderPickScenarios() 만 동기 호출했는데, 그 안의
+ * getCachedScenarios() 는 "이미 로드된 것"만 돌려준다. 페이지가 새로고침된
+ * 직후(캐시 없음) 편집 화면에서 이 경로로 들어오면 시나리오가 0건이라
+ * 카드가 하나도 그려지지 않았다. E2E 의 "실제무장편집 경로에서 시나리오가
+ * 뜨지 않는다" 가 정확히 이 증상이다.
+ *
+ * openScenarioScreen(일반 시작 흐름)에서 고친 것과 같은 결함이다. 같은
+ * 버그가 두 곳에 따로 있던 셈이라 여기서도 고친다 — 한 곳만 고치고
+ * 넘어가면 다른 경로에서 그대로 남는다.
+ */
+async function openPickScenarioScreen(): Promise<void> {
     editorScreen.classList.remove('open');
+    try {
+        await loadScenarios();
+    } catch (err) {
+        addLog(`시나리오 로드 실패: ${err}`);
+    }
     renderPickScenarios();
     pickScreen.style.display = 'flex';
 }
@@ -5046,7 +6619,9 @@ function applyNewOfficer(): void {
     }
     setEditorWarn('');
     editorChoice = { kind: 'new', name: name.trim() };
-    openPickScenarioScreen();
+    // async — 시나리오를 먼저 로드한다. E2E 는 500ms 만 기다리므로
+    // 로드보다 늦게 뜨면 안 된다(아래에서 로딩 표시로 덮인다).
+    void openPickScenarioScreen();
 }
 
 /** 기존 무장 확정 — 고른 프로필이 있어야 한다. */
@@ -5058,7 +6633,7 @@ function applyExistingOfficer(): void {
     }
     setEditorWarn('');
     editorChoice = { kind: 'existing', id: editorSelectedProfile.id };
-    openPickScenarioScreen();
+    void openPickScenarioScreen();
 }
 
 // ---------------------------------------------------------- 무장편집 이벤트
@@ -5189,7 +6764,11 @@ const scenarioScreen = document.getElementById('scenario-screen')!;
 const factionScreen = document.getElementById('faction-screen')!;
 const scenarioList = document.getElementById('scenario-list')!;
 const factionList = document.getElementById('faction-list')!;
+const officerScreen = document.getElementById('officer-screen')!;
+const officerList = document.getElementById('officer-list')!;
 let selectedScenario: ScenarioData | null = null;
+let selectedFactionIdx = 0;
+let pendingWorld: BuiltWorld | null = null;
 
 async function openScenarioScreen(): Promise<void> {
     // [결함 수정] 화면을 먼저 띄우고 데이터를 나중에 채운다.
@@ -5323,8 +6902,56 @@ factionList.addEventListener('click', (e) => {
         return;
     }
 
-    const world = buildWorld(selectedScenario, idx);
-    void startGame(world);
+    selectedFactionIdx = idx;
+    pendingWorld = buildWorld(selectedScenario, idx);
+    renderOfficerList(pendingWorld, idx);
+    factionScreen.style.display = 'none';
+    officerScreen.style.display = 'flex';
+});
+
+function renderOfficerList(world: BuiltWorld, factionIdx: number): void {
+    const faction = world.factions[factionIdx];
+    if (!faction) return;
+    document.getElementById('officer-screen-sub')!.textContent =
+        `${faction.name} — 플레이할 무장을 고르십시오`;
+    const byId = new Map(world.officers.map(o => [o.id, o]));
+    const roster = faction.officers
+        .map(id => byId.get(id))
+        .filter((o): o is NonNullable<typeof o> => o !== null && o !== undefined);
+    // 무장 선택 카드용 성향 한글 — 로직 값(영문)은 그대로 두고 표시만 바꾼다.
+    const PERSONALITY_KO: Record<Personality, string> = {
+        AGGRESSIVE: '호전', CALM: '냉정', CAUTIOUS: '신중', TIMID: '소심',
+        LOYAL: '충성', AMBITIOUS: '야심', RIGHTEOUS: '의리', GREEDY: '탐욕',
+    };
+    officerList.innerHTML = roster.map(o => {
+        const isLeader = o.id === faction.leaderId;
+        return `<button class="officer-card" data-officer-id="${o.id}">
+            <span class="officer-portrait">${renderPortraitSvg({
+                id: o.id, name: o.name, gender: o.gender === 'F' ? 'F' : 'M',
+                grade: Math.max(0, Math.min(9, o.rank)),
+            })}</span>
+            <span class="officer-info">
+                <span class="officer-card-name">${o.name}${isLeader ? '<span class="officer-lord-mark">군주</span>' : ''}<span class="officer-card-trait">${PERSONALITY_KO[o.personality]}</span></span>
+                <span class="officer-card-stats">統${o.stats.leadership} 武${o.stats.might} 智${o.stats.intelligence} 政${o.stats.politics} 魅${o.stats.charisma}</span>
+            </span>
+        </button>`;
+    }).join('');
+}
+
+officerList.addEventListener('click', (e) => {
+    const card = (e.target as HTMLElement).closest('.officer-card') as HTMLElement | null;
+    if (!card || !pendingWorld) return;
+    const officerId = card.dataset.officerId ?? null;
+    const world = pendingWorld;
+    pendingWorld = null;
+    officerScreen.style.display = 'none';
+    void startGame(world, officerId);
+});
+
+document.getElementById('btn-officer-back')!.addEventListener('click', () => {
+    pendingWorld = null;
+    officerScreen.style.display = 'none';
+    factionScreen.style.display = 'flex';
 });
 
 document.getElementById('btn-scenario-back')!.addEventListener('click', () => {
@@ -5384,12 +7011,45 @@ window.__game = {
     getVisibleCityIds: () => chinaMap?.getVisibleCityIds() ?? [],
     getFactionLabels: () => chinaMap?.getFactionLabels() ?? [],
     getCityVisibilityMode: () => cityVisibilityMode,
+    // [2026-10-04] 이동 상태 — E2E 가 "경로가 그려졌나 / 도착했나" 를 읽는다.
+    //   군단 위치 모델은 아직 없어 진행도는 0~1 시각 값일 뿐이다.
+    isTravelModeActive: () => travelModeActive,
+    getTravelRoute: () => (travelRoute ? { ...travelRoute } : null),
+    hasTravelRoute: () => chinaMap?.hasTravelRoute() ?? false,
+    getTravelRoutePoints: () => chinaMap?.getTravelRoutePoints() ?? [],
+    // [2026-10-04] 이동 계획 — 육로/해로 구간별 소요 일수
+    getTravelPlan: () => chinaMap?.getTravelPlan() ?? null,
+    getActiveTravel: () => engine?.['store'].getGlobalState().activeTravel ?? null,
+    // [2026-10-04] 진행도(0~1) — 턴마다 마커가 실제로 전진하는지 E2E 가 확인한다.
+    getTravelProgress: () => (chinaMap as unknown as { travelProgress?: number } | undefined)?.travelProgress ?? 0,
+    // [2026-10-04] 검증용 — 두 도시 id 사이 경로를 즉시 세운다(UI 를 거치지 않고).
+    setTravelRouteForTest: (fromId: string, toId: string) => {
+        chinaMap?.setTravelRoute(fromId, toId);
+        return chinaMap?.getTravelRoutePoints() ?? [];
+    },
+    getRoadCount: () => (chinaMap as unknown as { roads?: unknown[] } | undefined)?.roads?.length ?? 0,
+    getCurrentPanelCityId: () => currentPanelCityId,
     getCityScreenPosition: (cityId: string) => chinaMap?.getCityScreenPosition(cityId) ?? null,
     getEngine: () => engine,
     getStore: () => engine?.['store'] ?? null,
+    /** [디버그] 마지막 턴의 실행 트리(번호가 붙은 계층 구조) */
+    getTurnTrace: () => engine ? engine.getTurnTrace().getTree() : null,
+    /** [디버그] 턴 트리를 텍스트로 — 콘솔에서 바로 보려면 이게 편하다 */
+    getTurnTraceText: (maxDepth = 2) => engine ? engine.getTurnTrace().toText(maxDepth) : '',
+    /** [디버그] 트레이스 패널을 연다 — E2E/수동 확인용 */
+    openTracePanel: () => { openTracePanel(); return true; },
+    closeTracePanel: () => { tracePanel.style.display = 'none'; return true; },
     openCity: (cityId: string) => { showCityInfo(cityId); return true; },
     /** E2E/디버그용: 교역소 대화를 직접 연다. */
     openTradeDialogue: (cityId: string) => { openTradeDialogue(cityId); return true; },
+    /**
+     * E2E/디버그용: 대사를 한 번에 다 보여준다(타이포그래피 끄기).
+     * E2E 는 창을 연 직후 dialogue-text 의 textContent 를 읽는다.
+     * 글자가 덜 나왔으면 길이 검사에 걸리므로, 검사용으로 명시적으로 끈다.
+     */
+    setDialogueInstant: (instant: boolean) => { revealForceInstant = instant; return revealForceInstant; },
+    /** E2E/디버그용: 타이포그래피가 지금 끝났는지. */
+    isDialogueRevealDone: () => dialogueScene.isRevealDone(),
     getCitySceneBuildings: () => citySceneBuildings.map(building => ({
         id: building.id, type: building.type, level: building.level,
         investment: building.investment, active: building.active, label: building.label,
@@ -5405,6 +7065,7 @@ window.__game = {
     getCityBuildingStates: () => engine?.['store'].getGlobalState().cityBuildingStates ?? {},
     getMapView: () => chinaMap.getView(),
     closeCity: () => { document.getElementById('cdp-close')?.dispatchEvent(new Event('click')); return true; },
+    debugCityTime: (offsetMs: number) => { cityTimeOffsetMs = offsetMs; return true; },
     /** 포팅 시스템 접근자 [76-85][213-214][321-340][341-360][421-438][431-432][441-460] */
     getPortedSystems: () => engine ? {
         strategicCommand: engine.strategicCommand,

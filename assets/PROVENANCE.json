@@ -1,0 +1,151 @@
+{
+    "$comment": [
+        "바이너리 자산 출처 대장 — 저작권 문제를 실제로 한 치도 없애기 위한 근거 문서.",
+        "차단 목록(denylist)은 이미 들어온 것만 막으므로 새 자산이 조용히 추가되면 못 잡는다.",
+        "대장(allowlist) 방식은 규칙을 뒤집어 '등록되지 않은 자산 = 위반'으로 만든다.",
+        "그러면 출처 확인이 안 된 자산이 커밋되는 순간 CI 가 red 가 된다.",
+        "",
+        "규칙:",
+        "  - 아래 두 경로의 모든 바이너리 파일은 반드시 이 대장에 등록되어야 한다.",
+        "  - license 가 비어 있거나 UNVERIFIED 면 위반이다 — 근거 없는 자산은 배포되면 안 된다.",
+        "  - sha256 은 파일 내용의 해시다. 값이 다르면 파일이 바뀐 것이니 라이선스를 다시 확인한다."
+    ],
+    "version": 1,
+    "assets": [
+        {
+            "path": "assets/map-china-4096.webp",
+            "sha256": "ce0789e00bedee57a0411dc7145c9254016c04193d44c6c8e75394d134b675f0",
+            "bytes": 252444,
+            "source": "Natural Earth vector GeoJSON (public domain) — scripts/generate_map.py 로 렌더",
+            "license": "Public Domain (Natural Earth)",
+            "method": "generated",
+            "note": "파생 지도 비트맵을 대체한 지도. 생성 스크립트가 커밋에 있어 재현 가능하다."
+        },
+        {
+            "path": "assets/map-china-guide-4096.png",
+            "sha256": "1c2412a10ecbcefff86f778cde2f224844c8639d81218900ae70fa11295e27b2",
+            "bytes": 290878,
+            "source": "scripts/generate_map.py 출력 (Natural Earth 기반)",
+            "license": "Public Domain (Natural Earth)",
+            "method": "generated",
+            "note": "안내용 지도. 실사용은 아니고 미리보기용."
+        },
+        {
+            "path": "assets/map-preview-1024.png",
+            "sha256": "bf0bbc8669dbd448cb27deb6ca8c83b05c1f9028c41c3a56303b7f5a470f118b",
+            "bytes": 182013,
+            "source": "scripts/generate_map.py 출력 (Natural Earth 기반)",
+            "license": "Public Domain (Natural Earth)",
+            "method": "generated",
+            "note": "미리보기용 축소본."
+        },
+        {
+            "path": "assets/map-parchment-1024.webp",
+            "sha256": "f788701120412f6c90034de8fe4c055705d3eb6badada4cbaad5c05b263f2e81",
+            "bytes": 88646,
+            "source": "로컬 ComfyUI + Krea2 Int4 turbo 모델로 생성한 양피지 텍스처 (커밋 f853d89 에 기재)",
+            "license": "AI 생성 — 원본 사진·아트워크 없음. 무표지 절차적 질감 텍스처.",
+            "method": "ai-generated",
+            "note": "렌더러에서 0.38 알파로 합성. 커밋 메시지에 생성 경위가 있다."
+        },
+        {
+            "path": "assets/map-china-ai-4096.webp",
+            "sha256": "e17932dd2a112db83870a88912a737abc27f1689faf7eaf45d7bf7af25e86f0e",
+            "bytes": 1994482,
+            "source": "ChatGPT 이미지 생성(txt2img), 텍스트 프롬프트로부터 신규 생성 — 2026-09-30 작성자 진술",
+            "license": "AI 생성물. txt2img 이므로 저작권된 원본 입력이 없다(작성자 진술). 사용 저장은 AI 생성 결과물 이용 약관에 따른다.",
+            "method": "ai-generated",
+            "note": "커밋 73ff928 이 추가했다. 처음에는 출처 기록 없이 커밋되어 게이트를 통과했으나, allowlist 로 전환하면서 미확인으로 걸렸다. 2026-09-30 작성자가 txt2img 임을 확인했다. 주의: 이 source 는 작성자가 직접 진술한 것이며 스크립트가 독립 검증한 결과가 아니다. txt2img 은 텍스트 프롬프트만 받으므로 특정 게임의 지도 이미지를 입력으로 넣을 수 없고, 따라서 파생작 위험이 없다. 도시 위치·경계 데이터는 Natural Earth 공개도메인 좌표(map-coordinates-4096.json)에서 따로 얹는다. 근거 자료: docs/ip-evidence/map-china-ai-4096-provenance.png (ChatGPT 생성 대화 캡처, sha256 ab430f19f3976c6aef69c13089464458e72fa93b5c90298f55a7a305d70feac6). 비공개 원본은 D:\\samkukzi-re_DATA\\ip-evidence\\ 에 동일 해시로 보관한다."
+        },
+        {
+            "path": "src-tauri/icons/32x32.png",
+            "sha256": "eead093cd01a11118bac6a05f89f324cc4ce1f1228729a62012a6e189308fcb7",
+            "bytes": 146,
+            "source": "scripts/make_icons.mjs — 코드에 정의한 9×9 픽셀 三 글자를 스케일링",
+            "license": "본 저장소 원작 (외부 자산 없음)",
+            "method": "generated",
+            "note": "절차 생성이라 저작권 대상이 아니다."
+        },
+        {
+            "path": "src-tauri/icons/128x128.png",
+            "sha256": "2b82a245e888288fb9914804debca83c4faae74f9d894c6d20161e0788ed79da",
+            "bytes": 444,
+            "source": "scripts/make_icons.mjs",
+            "license": "본 저장소 원작 (외부 자산 없음)",
+            "method": "generated",
+            "note": ""
+        },
+        {
+            "path": "src-tauri/icons/128x128@2x.png",
+            "sha256": "bed92533aba9b370a126abe1605c5093312de125edf48162734c18273d827f1b",
+            "bytes": 1101,
+            "source": "scripts/make_icons.mjs",
+            "license": "본 저장소 원작 (외부 자산 없음)",
+            "method": "generated",
+            "note": ""
+        },
+        {
+            "path": "src-tauri/icons/icon.png",
+            "sha256": "04012c625cbead2fe389a6ab93427e99a0e02f8d11979481ec16a608d9d41e66",
+            "bytes": 3615,
+            "source": "scripts/make_icons.mjs",
+            "license": "본 저장소 원작 (외부 자산 없음)",
+            "method": "generated",
+            "note": ""
+        },
+        {
+            "path": "assets/city-scene-base.webp",
+            "sha256": "401fafeb8ec2dc3c0cf9577d5a2add3ce49ae5939023286003bf6a6bfa9d010b",
+            "bytes": 689860,
+            "source": "ChatGPT 이미지 생성(txt2img) — 도시 진입 화면 배경. 원본: D:\\samkukzi-re_DATA\\도시 화면 ChatGPT Image 2026년 10월 3일 오후 12_27_07.png (1672x940, 16:9)",
+            "license": "AI 생성물. txt2img 이므로 저작권된 원본 입력이 없다(작성자 진술). 사용 저장은 AI 생성 결과물 이용 약관에 따른다.",
+            "method": "ai-generated",
+            "note": "도시 진입 화면을 16:9 무대로 가득 채운다. ffmpeg libwebp q88 로 3494KB → 674KB 변환했다. 2026-10-03 에 이전 그림(2026-09-30 판)을 새 그림으로 교체했다. 캔버스는 밤 안개만 얹는 층으로 남기고 그림은 <img> 가 밑에 깔린다. 라벨 앵커는 src/core/city_scene_art.ts 한 곳에 있으며 그림을 바꾸면 그 표만 고치면 된다. 화면에 글자는 없다(게임이 라벨을 얹는다). [2026-10-03 앵커 전면 재실측] 새 원본 PNG(1672x940)에 좌표 격자를 겹쳐 직접 판독했다. 그림 규격이 게임 자산과 같아 픽셀→% 변환 계수가 1:1 이다(px/16.72, py/9.4). 판독된 12개 건물의 좌표 중 코드 타입(CityBuildingType 9종)과 이름이 겹치는 6종은 판독값을 그대로 적용했고, 남는 3종(사원·주택·주막)은 그림에 동명이 없어 위치·용도가 가까운 건물에 배정했다. 이전 추정치에서 크게 어긋난 곳: 성문은 우측 성벽망루(75,27)가 아니라 하단 중앙 정문(50,80.3), 공방은 하단 중앙이 아니라 우측 중단(71.2,44.7), 농지는 좌측이 아니라 우측 하단(76.0,72.3)이다. [2026-10-03 CityBuildingType 9→12] 그림 12개 건물을 타입으로 모두 표현했다. PALACE(궁전, px 836/126)·ACADEMY(태학, 1115/253)·BLACKSMITH(대장간, 405/423) 3종을 추가해 12개 앵커와 좌표표 12행이 1:1 로 맞물린다. PALACE·BLACKSMITH 는 FacilityType 과 같은 이름이라 시설줄과 어긋나지 않는다. 남는 TEMPLE·HOUSE·TAVERN 3종은 그림에 동명이 없어(서원/마구간/교역소) 자리를 유지했다. 함께 generateCityLayout 을 고쳤다: 이전엔 15칸 풀이지만 최대 도시가 10채(lv5*2)여서 대장간과 주택이 배치되지 않았다. 앞 8칸은 저장 키 cityId:i 호환을 위해 그대로 뒀다. [2026-10-03 이름 통일] 배지 라벨을 그림 좌표표 12행과 이름까지 1:1 로 맞췄다. 이전엔 그림에 없는 이름이 자리를 빌려 쓰고 있었다: 서원 자리에 사원(TEMPLE), 교역소 자리에 주막(TAVERN), 마구간 자리에 주택(HOUSE), 농장에 농지, 성문에 성벽. 그래서 화면이 \"교역소 위에 주막이라 써 있다\" 고 읽혔다. TEMPLE/HOUSE/TAVERN 을 그림 이름 타입 SEOUN/ TRADING_HOUSE /STABLE 로 교체했다(타입 수 12는 그대로 — 그림 자리가 12칸이므로). 인덱스별 자리는 유지해 저장 호환도 지켰다(4번 서원, 7번 교역소, 11번 마구간). [2026-10-03 라벨 정정] FARM 라벨을 \"농지\" 로 바꿨다가 사용자 요청으로 \"농장\" 으로 되돌렸다. 같은 밭을 가리키는 말이지만 게임 표준 용어가 농장이라 배지·시설줄·재배 수치를 잇는 이름이 일관된다. 앵커 좌표(px 1370/637)는 그대로다."
+        },
+        {
+            "path": "assets/city-icons.webp",
+            "sha256": "95c67fcf69470d0a4a56b1787e305602afb43756e57d409e467413f59242ec98",
+            "bytes": 8442,
+            "source": "Local ComfyUI txt2img 4 frames (2026-10-05): Krea2 turbo unet krea2_turbo_fp8_scaled + Qwen3-VL-4B encoder + Krea2 VAE, original prompts (premium minimal Chinese fortress icons, white bg), seeds 1001-1004, 512px, no reference images, no third-party LoRA; atlas via scripts/build_city_icon_atlas.mjs",
+            "license": "Project-owned original AI asset. Generated locally with ComfyUI (Krea2 turbo) from original prompts; no copyrighted reference or style model used. Free for this project.",
+            "method": "ai-generated",
+            "note": "확대 구간(zoom >= 1.6) 전용 도시 아이콘. 512×128 WebP 무손실 알파, 셀 128×128 × 4: 0 SMALL(망루) / 1 MEDIUM(성곽) / 2 LARGE(대성) / 3 CAPITAL(대성+깃발). 백색 실루엣이며 세력색은 런타임에 source-atop 으로 입힌다(china_map_renderer.ts 의 CITY_ICON_*). 축소 구간은 같은 tier 판정을 쓰는 벡터로 그린다. 원본 4장은 assets/city-icons-src/ 에 두고 변환 스크립트로 재현 가능하다."
+        },
+        {
+            "path": "assets/city-icons-src/small.png",
+            "sha256": "449744a976c6d7e814e4a977c301b2df919088d538de04e674e8b98d2239b7a5",
+            "bytes": 35994,
+            "source": "Local ComfyUI txt2img (2026-10-05): Krea2 turbo krea2_turbo_fp8_scaled + Qwen3-VL-4B, original prompt, 512px, seed 1001",
+            "license": "Project-owned original AI asset. Generated locally from original prompts; no copyrighted reference used.",
+            "method": "ai-generated",
+            "note": "city-icons.webp 아틀라스 셀 원본 (SMALL 망루). scripts/build_city_icon_atlas.mjs 입력. [2026-10-09 재인코딩] ffmpeg RGBA 디코드 비교로 픽셀 동일 확인 — 바이트만 축소. 출처·라이선스 변경 없음."
+        },
+        {
+            "path": "assets/city-icons-src/medium.png",
+            "sha256": "e83e2be5a6ef8e192e51621bf3df3c63c2f8b741275638043f05241aa9fab12f",
+            "bytes": 45439,
+            "source": "Local ComfyUI txt2img (2026-10-05): Krea2 turbo krea2_turbo_fp8_scaled + Qwen3-VL-4B, original prompt, 512px, seed 1002",
+            "license": "Project-owned original AI asset. Generated locally from original prompts; no copyrighted reference used.",
+            "method": "ai-generated",
+            "note": "city-icons.webp 아틀라스 셀 원본 (MEDIUM 성곽). scripts/build_city_icon_atlas.mjs 입력. [2026-10-09 재인코딩] ffmpeg RGBA 디코드 비교로 픽셀 동일 확인 — 바이트만 축소. 출처·라이선스 변경 없음."
+        },
+        {
+            "path": "assets/city-icons-src/large.png",
+            "sha256": "f9ddc927420ee79eb38401e4cb8ce83ed9d35508f7497ebd08a01e7e661c9a73",
+            "bytes": 62810,
+            "source": "Local ComfyUI txt2img (2026-10-05): Krea2 turbo krea2_turbo_fp8_scaled + Qwen3-VL-4B, original prompt, 512px, seed 1003",
+            "license": "Project-owned original AI asset. Generated locally from original prompts; no copyrighted reference used.",
+            "method": "ai-generated",
+            "note": "city-icons.webp 아틀라스 셀 원본 (LARGE 대성). scripts/build_city_icon_atlas.mjs 입력. [2026-10-09 재인코딩] ffmpeg RGBA 디코드 비교로 픽셀 동일 확인 — 바이트만 축소. 출처·라이선스 변경 없음."
+        },
+        {
+            "path": "assets/city-icons-src/capital.png",
+            "sha256": "1c584769694779cd0c4fd99dd47f4813f673eda4809a0319f214c2531cf2d98a",
+            "bytes": 54978,
+            "source": "Local ComfyUI txt2img (2026-10-05): Krea2 turbo krea2_turbo_fp8_scaled + Qwen3-VL-4B, original prompt, 512px, seed 1004",
+            "license": "Project-owned original AI asset. Generated locally from original prompts; no copyrighted reference used.",
+            "method": "ai-generated",
+            "note": "city-icons.webp 아틀라스 셀 원본 (CAPITAL 대성+깃발). scripts/build_city_icon_atlas.mjs 입력. [2026-10-09 재인코딩] ffmpeg RGBA 디코드 비교로 픽셀 동일 확인 — 바이트만 축소. 출처·라이선스 변경 없음."
+        }
+    ]
+}

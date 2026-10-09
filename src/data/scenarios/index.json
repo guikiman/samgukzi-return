@@ -7,12 +7,56 @@
     "description": "한나라의 쇠락과 함께 장각이 이끄는 황건적이 봉기하여 천하가 혼란에 빠집니다.",
     "difficulty": 1,
     "factions": [
-      { "name": "하진", "capital": "낙양", "leader_id": "he_jin", "color": "#a8783c" },
-      { "name": "장각", "capital": "거록", "leader_id": "zhang_jiao", "color": "#d8b93a" }
+      {
+        "name": "하진",
+        "capital": "낙양",
+        "leader_id": "he_jin",
+        "color": "#a8783c"
+      },
+      {
+        "name": "장각",
+        "capital": "거록",
+        "leader_id": "zhang_jiao",
+        "color": "#d8b93a"
+      }
     ],
     "cities": [
-      { "name": "진류", "faction_index": 0, "profile": { "population": 46000, "defense": 44, "gold_income": 96, "food_income": 268, "funds": 540, "development": 2710, "commerce": 41, "farming": 46, "technology": 35, "public_order": 52, "loyalty": 58, "danger": 34 } },
-      { "name": "업", "faction_index": 1, "profile": { "population": 38000, "defense": 39, "gold_income": 84, "food_income": 232, "funds": 420, "development": 2205, "commerce": 30, "farming": 37, "technology": 24, "public_order": 44, "loyalty": 82, "danger": 58 } }
+      {
+        "name": "진류",
+        "faction_index": 0,
+        "profile": {
+          "population": 46000,
+          "defense": 44,
+          "gold_income": 96,
+          "food_income": 268,
+          "funds": 540,
+          "development": 2710,
+          "commerce": 41,
+          "farming": 46,
+          "technology": 35,
+          "public_order": 52,
+          "loyalty": 58,
+          "danger": 34
+        }
+      },
+      {
+        "name": "업",
+        "faction_index": 1,
+        "profile": {
+          "population": 38000,
+          "defense": 39,
+          "gold_income": 84,
+          "food_income": 232,
+          "funds": 420,
+          "development": 2205,
+          "commerce": 30,
+          "farming": 37,
+          "technology": 24,
+          "public_order": 44,
+          "loyalty": 82,
+          "danger": 58
+        }
+      }
     ],
     "special_conditions": {
       "victory": "황건적 세력의 전멸 또는 낙양 수호",
@@ -28,19 +72,158 @@
     "description": "동탁이 낙양을 장악하고 헌제를 옹립하자, 조조의 격문에 각지의 제후들이 반동탁 연합을 결성합니다.",
     "difficulty": 2,
     "factions": [
-      { "name": "동탁", "capital": "낙양", "leader_id": "dong_zhuo", "color": "#8a4a3a" },
-      { "name": "원소", "capital": "업", "leader_id": "yuan_shao", "color": "#5a6a9a" },
-      { "name": "조조", "capital": "진류", "leader_id": "cao_cao", "color": "#2a5a8a" },
-      { "name": "손견", "capital": "장사", "leader_id": "sun_jian", "color": "#b04a2a" }
+      {
+        "name": "동탁",
+        "capital": "낙양",
+        "leader_id": "dong_zhuo",
+        "color": "#8a4a3a"
+      },
+      {
+        "name": "원소",
+        "capital": "업",
+        "leader_id": "yuan_shao",
+        "color": "#5a6a9a"
+      },
+      {
+        "name": "조조",
+        "capital": "진류",
+        "leader_id": "cao_cao",
+        "color": "#2a5a8a"
+      },
+      {
+        "name": "손견",
+        "capital": "장사",
+        "leader_id": "sun_jian",
+        "color": "#b04a2a"
+      }
     ],
     "cities": [
-      { "name": "남양", "faction_index": 0, "profile": { "population": 52000, "defense": 50, "gold_income": 108, "food_income": 292, "funds": 760, "development": 3120, "commerce": 45, "farming": 44, "technology": 40, "public_order": 46, "loyalty": 61, "danger": 32 } },
-      { "name": "진주", "faction_index": 0, "profile": { "population": 44000, "defense": 46, "gold_income": 95, "food_income": 246, "funds": 600, "development": 2608, "commerce": 40, "farming": 42, "technology": 36, "public_order": 52, "loyalty": 74, "danger": 28 } },
-      { "name": "하비", "faction_index": 1, "profile": { "population": 58000, "defense": 55, "gold_income": 117, "food_income": 310, "funds": 880, "development": 3532, "commerce": 48, "farming": 52, "technology": 42, "public_order": 62, "loyalty": 76, "danger": 18 } },
-      { "name": "서주", "faction_index": 1, "profile": { "population": 50000, "defense": 51, "gold_income": 102, "food_income": 268, "funds": 680, "development": 3016, "commerce": 44, "farming": 43, "technology": 38, "public_order": 58, "loyalty": 73, "danger": 24 } },
-      { "name": "연주", "faction_index": 2, "profile": { "population": 61000, "defense": 57, "gold_income": 121, "food_income": 320, "funds": 860, "development": 3737, "commerce": 50, "farming": 54, "technology": 44, "public_order": 64, "loyalty": 74, "danger": 20 } },
-      { "name": "여남", "faction_index": 2, "profile": { "population": 49000, "defense": 48, "gold_income": 99, "food_income": 260, "funds": 620, "development": 2954, "commerce": 42, "farming": 43, "technology": 36, "public_order": 54, "loyalty": 77, "danger": 32 } },
-      { "name": "여강", "faction_index": 3, "profile": { "population": 44000, "defense": 46, "gold_income": 95, "food_income": 246, "funds": 600, "development": 2608, "commerce": 39, "farming": 43, "technology": 35, "public_order": 57, "loyalty": 71, "danger": 28 } }
+      {
+        "name": "남양",
+        "faction_index": 0,
+        "profile": {
+          "population": 52000,
+          "defense": 50,
+          "gold_income": 108,
+          "food_income": 292,
+          "funds": 760,
+          "development": 3120,
+          "commerce": 45,
+          "farming": 44,
+          "technology": 40,
+          "public_order": 46,
+          "loyalty": 61,
+          "danger": 32
+        }
+      },
+      {
+        "name": "진주",
+        "faction_index": 0,
+        "profile": {
+          "population": 44000,
+          "defense": 46,
+          "gold_income": 95,
+          "food_income": 246,
+          "funds": 600,
+          "development": 2608,
+          "commerce": 40,
+          "farming": 42,
+          "technology": 36,
+          "public_order": 52,
+          "loyalty": 74,
+          "danger": 28
+        }
+      },
+      {
+        "name": "하비",
+        "faction_index": 1,
+        "profile": {
+          "population": 58000,
+          "defense": 55,
+          "gold_income": 117,
+          "food_income": 310,
+          "funds": 880,
+          "development": 3532,
+          "commerce": 48,
+          "farming": 52,
+          "technology": 42,
+          "public_order": 62,
+          "loyalty": 76,
+          "danger": 18
+        }
+      },
+      {
+        "name": "서주",
+        "faction_index": 1,
+        "profile": {
+          "population": 50000,
+          "defense": 51,
+          "gold_income": 102,
+          "food_income": 268,
+          "funds": 680,
+          "development": 3016,
+          "commerce": 44,
+          "farming": 43,
+          "technology": 38,
+          "public_order": 58,
+          "loyalty": 73,
+          "danger": 24
+        }
+      },
+      {
+        "name": "연주",
+        "faction_index": 2,
+        "profile": {
+          "population": 61000,
+          "defense": 57,
+          "gold_income": 121,
+          "food_income": 320,
+          "funds": 860,
+          "development": 3737,
+          "commerce": 50,
+          "farming": 54,
+          "technology": 44,
+          "public_order": 64,
+          "loyalty": 74,
+          "danger": 20
+        }
+      },
+      {
+        "name": "여남",
+        "faction_index": 2,
+        "profile": {
+          "population": 49000,
+          "defense": 48,
+          "gold_income": 99,
+          "food_income": 260,
+          "funds": 620,
+          "development": 2954,
+          "commerce": 42,
+          "farming": 43,
+          "technology": 36,
+          "public_order": 54,
+          "loyalty": 77,
+          "danger": 32
+        }
+      },
+      {
+        "name": "여강",
+        "faction_index": 3,
+        "profile": {
+          "population": 44000,
+          "defense": 46,
+          "gold_income": 95,
+          "food_income": 246,
+          "funds": 600,
+          "development": 2608,
+          "commerce": 39,
+          "farming": 43,
+          "technology": 35,
+          "public_order": 57,
+          "loyalty": 71,
+          "danger": 28
+        }
+      }
     ],
     "special_conditions": {
       "victory": "연합 해체 후 중원 패권 장악",
@@ -56,18 +239,128 @@
     "description": "여포의 선전포고와 조조의 연주 침공으로 연합은 완전히 해체되고, 각지의 군웅들이 생존을 걸고 다툽니다.",
     "difficulty": 2,
     "factions": [
-      { "name": "조조", "capital": "연주", "leader_id": "cao_cao", "color": "#2a5a8a" },
-      { "name": "유비", "capital": "서주", "leader_id": "liu_bei", "color": "#4a9a5a" },
-      { "name": "여포", "capital": "하비", "leader_id": "lv_bu", "color": "#9a3a5a" },
-      { "name": "손책", "capital": "여강", "leader_id": "sun_ce", "color": "#b04a2a" },
-      { "name": "원술", "capital": "수춘", "leader_id": "yuan_shu", "color": "#7a5a9a" }
+      {
+        "name": "조조",
+        "capital": "연주",
+        "leader_id": "cao_cao",
+        "color": "#2a5a8a"
+      },
+      {
+        "name": "유비",
+        "capital": "서주",
+        "leader_id": "liu_bei",
+        "color": "#4a9a5a"
+      },
+      {
+        "name": "여포",
+        "capital": "하비",
+        "leader_id": "lv_bu",
+        "color": "#9a3a5a"
+      },
+      {
+        "name": "손책",
+        "capital": "여강",
+        "leader_id": "sun_ce",
+        "color": "#b04a2a"
+      },
+      {
+        "name": "원술",
+        "capital": "수춘",
+        "leader_id": "yuan_shu",
+        "color": "#7a5a9a"
+      }
     ],
     "cities": [
-      { "name": "진류", "faction_index": 0, "profile": { "population": 64000, "defense": 61, "gold_income": 128, "food_income": 336, "funds": 980, "development": 3967, "commerce": 52, "farming": 56, "technology": 46, "public_order": 66, "loyalty": 72, "danger": 26 } },
-      { "name": "여남", "faction_index": 1, "profile": { "population": 47000, "defense": 45, "gold_income": 96, "food_income": 250, "funds": 540, "development": 2778, "commerce": 37, "farming": 42, "technology": 33, "public_order": 52, "loyalty": 75, "danger": 38 } },
-      { "name": "업", "faction_index": 2, "profile": { "population": 55000, "defense": 52, "gold_income": 112, "food_income": 296, "funds": 700, "development": 3320, "commerce": 43, "farming": 47, "technology": 37, "public_order": 48, "loyalty": 63, "danger": 42 } },
-      { "name": "오", "faction_index": 3, "profile": { "population": 51000, "defense": 49, "gold_income": 104, "food_income": 272, "funds": 640, "development": 3051, "commerce": 42, "farming": 41, "technology": 36, "public_order": 56, "loyalty": 73, "danger": 30 } },
-      { "name": "항양", "faction_index": 4, "profile": { "population": 49000, "defense": 47, "gold_income": 99, "food_income": 260, "funds": 580, "development": 2914, "commerce": 40, "farming": 39, "technology": 34, "public_order": 50, "loyalty": 69, "danger": 34 } }
+      {
+        "name": "진류",
+        "faction_index": 0,
+        "profile": {
+          "population": 64000,
+          "defense": 61,
+          "gold_income": 128,
+          "food_income": 336,
+          "funds": 980,
+          "development": 3967,
+          "commerce": 52,
+          "farming": 56,
+          "technology": 46,
+          "public_order": 66,
+          "loyalty": 72,
+          "danger": 26
+        }
+      },
+      {
+        "name": "여남",
+        "faction_index": 1,
+        "profile": {
+          "population": 47000,
+          "defense": 45,
+          "gold_income": 96,
+          "food_income": 250,
+          "funds": 540,
+          "development": 2778,
+          "commerce": 37,
+          "farming": 42,
+          "technology": 33,
+          "public_order": 52,
+          "loyalty": 75,
+          "danger": 38
+        }
+      },
+      {
+        "name": "업",
+        "faction_index": 2,
+        "profile": {
+          "population": 55000,
+          "defense": 52,
+          "gold_income": 112,
+          "food_income": 296,
+          "funds": 700,
+          "development": 3320,
+          "commerce": 43,
+          "farming": 47,
+          "technology": 37,
+          "public_order": 48,
+          "loyalty": 63,
+          "danger": 42
+        }
+      },
+      {
+        "name": "오",
+        "faction_index": 3,
+        "profile": {
+          "population": 51000,
+          "defense": 49,
+          "gold_income": 104,
+          "food_income": 272,
+          "funds": 640,
+          "development": 3051,
+          "commerce": 42,
+          "farming": 41,
+          "technology": 36,
+          "public_order": 56,
+          "loyalty": 73,
+          "danger": 30
+        }
+      },
+      {
+        "name": "항양",
+        "faction_index": 4,
+        "profile": {
+          "population": 49000,
+          "defense": 47,
+          "gold_income": 99,
+          "food_income": 260,
+          "funds": 580,
+          "development": 2914,
+          "commerce": 40,
+          "farming": 39,
+          "technology": 34,
+          "public_order": 50,
+          "loyalty": 69,
+          "danger": 34
+        }
+      }
     ],
     "special_conditions": {
       "victory": "군웅 난립 속에서 중원 통일",
@@ -83,18 +376,140 @@
     "description": "북방의 패자 원소와 중원의 조조, 천하의 주도권을 건 대결이 관도에서 시작됩니다.",
     "difficulty": 3,
     "factions": [
-      { "name": "조조", "capital": "허창", "leader_id": "cao_cao", "color": "#2a5a8a" },
-      { "name": "원소", "capital": "업", "leader_id": "yuan_shao", "color": "#5a6a9a" },
-      { "name": "손책", "capital": "오", "leader_id": "sun_ce", "color": "#b04a2a" },
-      { "name": "유비", "capital": "여남", "leader_id": "liu_bei", "color": "#4a9a5a" }
+      {
+        "name": "조조",
+        "capital": "허창",
+        "leader_id": "cao_cao",
+        "color": "#2a5a8a"
+      },
+      {
+        "name": "원소",
+        "capital": "업",
+        "leader_id": "yuan_shao",
+        "color": "#5a6a9a"
+      },
+      {
+        "name": "손책",
+        "capital": "오",
+        "leader_id": "sun_ce",
+        "color": "#b04a2a"
+      },
+      {
+        "name": "유비",
+        "capital": "여남",
+        "leader_id": "liu_bei",
+        "color": "#4a9a5a"
+      }
     ],
     "cities": [
-      { "name": "진류", "faction_index": 0, "profile": { "population": 72000, "defense": 70, "gold_income": 142, "food_income": 372, "funds": 1180, "development": 4579, "commerce": 58, "farming": 62, "technology": 52, "public_order": 70, "loyalty": 80, "danger": 20 } },
-      { "name": "연주", "faction_index": 0, "profile": { "population": 78000, "defense": 74, "gold_income": 151, "food_income": 396, "funds": 1260, "development": 5017, "commerce": 60, "farming": 66, "technology": 55, "public_order": 72, "loyalty": 82, "danger": 18 } },
-      { "name": "하비", "faction_index": 1, "profile": { "population": 68000, "defense": 66, "gold_income": 134, "food_income": 352, "funds": 1040, "development": 4276, "commerce": 54, "farming": 58, "technology": 48, "public_order": 66, "loyalty": 74, "danger": 30 } },
-      { "name": "여강", "faction_index": 2, "profile": { "population": 56000, "defense": 54, "gold_income": 114, "food_income": 300, "funds": 720, "development": 3400, "commerce": 46, "farming": 45, "technology": 40, "public_order": 60, "loyalty": 76, "danger": 26 } },
-      { "name": "장사", "faction_index": 2, "profile": { "population": 62000, "defense": 58, "gold_income": 124, "food_income": 322, "funds": 840, "development": 3809, "commerce": 50, "farming": 49, "technology": 44, "public_order": 64, "loyalty": 77, "danger": 22 } },
-      { "name": "신야", "faction_index": 3, "profile": { "population": 34000, "defense": 33, "gold_income": 74, "food_income": 186, "funds": 380, "development": 1936, "commerce": 30, "farming": 33, "technology": 28, "public_order": 46, "loyalty": 80, "danger": 42 } }
+      {
+        "name": "진류",
+        "faction_index": 0,
+        "profile": {
+          "population": 72000,
+          "defense": 70,
+          "gold_income": 142,
+          "food_income": 372,
+          "funds": 1180,
+          "development": 4579,
+          "commerce": 58,
+          "farming": 62,
+          "technology": 52,
+          "public_order": 70,
+          "loyalty": 80,
+          "danger": 20
+        }
+      },
+      {
+        "name": "연주",
+        "faction_index": 0,
+        "profile": {
+          "population": 78000,
+          "defense": 74,
+          "gold_income": 151,
+          "food_income": 396,
+          "funds": 1260,
+          "development": 5017,
+          "commerce": 60,
+          "farming": 66,
+          "technology": 55,
+          "public_order": 72,
+          "loyalty": 82,
+          "danger": 18
+        }
+      },
+      {
+        "name": "하비",
+        "faction_index": 1,
+        "profile": {
+          "population": 68000,
+          "defense": 66,
+          "gold_income": 134,
+          "food_income": 352,
+          "funds": 1040,
+          "development": 4276,
+          "commerce": 54,
+          "farming": 58,
+          "technology": 48,
+          "public_order": 66,
+          "loyalty": 74,
+          "danger": 30
+        }
+      },
+      {
+        "name": "여강",
+        "faction_index": 2,
+        "profile": {
+          "population": 56000,
+          "defense": 54,
+          "gold_income": 114,
+          "food_income": 300,
+          "funds": 720,
+          "development": 3400,
+          "commerce": 46,
+          "farming": 45,
+          "technology": 40,
+          "public_order": 60,
+          "loyalty": 76,
+          "danger": 26
+        }
+      },
+      {
+        "name": "장사",
+        "faction_index": 2,
+        "profile": {
+          "population": 62000,
+          "defense": 58,
+          "gold_income": 124,
+          "food_income": 322,
+          "funds": 840,
+          "development": 3809,
+          "commerce": 50,
+          "farming": 49,
+          "technology": 44,
+          "public_order": 64,
+          "loyalty": 77,
+          "danger": 22
+        }
+      },
+      {
+        "name": "신야",
+        "faction_index": 3,
+        "profile": {
+          "population": 34000,
+          "defense": 33,
+          "gold_income": 74,
+          "food_income": 186,
+          "funds": 380,
+          "development": 1936,
+          "commerce": 30,
+          "farming": 33,
+          "technology": 28,
+          "public_order": 46,
+          "loyalty": 80,
+          "danger": 42
+        }
+      }
     ],
     "special_conditions": {
       "victory": "관도 결전 승리 후 화북 통일",
@@ -110,18 +525,152 @@
     "description": "삼고초려로 제갈량을 맞이한 유비, 강동을 안정시킨 손권, 화북을 통일한 조조. 천하는 삼분되기 직전입니다.",
     "difficulty": 3,
     "factions": [
-      { "name": "조조", "capital": "허창", "leader_id": "cao_cao", "color": "#2a5a8a" },
-      { "name": "손권", "capital": "건업", "leader_id": "sun_quan", "color": "#b04a2a" },
-      { "name": "유비", "capital": "신야", "leader_id": "liu_bei", "color": "#4a9a5a" }
+      {
+        "name": "조조",
+        "capital": "허창",
+        "leader_id": "cao_cao",
+        "color": "#2a5a8a"
+      },
+      {
+        "name": "손권",
+        "capital": "건업",
+        "leader_id": "sun_quan",
+        "color": "#b04a2a"
+      },
+      {
+        "name": "유비",
+        "capital": "신야",
+        "leader_id": "liu_bei",
+        "color": "#4a9a5a"
+      }
     ],
     "cities": [
-      { "name": "진류", "faction_index": 0, "profile": { "population": 98000, "defense": 82, "gold_income": 182, "food_income": 470, "funds": 1620, "development": 6444, "commerce": 68, "farming": 74, "technology": 64, "public_order": 78, "loyalty": 86, "danger": 14 } },
-      { "name": "연주", "faction_index": 0, "profile": { "population": 105000, "defense": 86, "gold_income": 194, "food_income": 498, "funds": 1740, "development": 6980, "commerce": 70, "farming": 78, "technology": 66, "public_order": 80, "loyalty": 88, "danger": 12 } },
-      { "name": "하비", "faction_index": 0, "profile": { "population": 88000, "defense": 76, "gold_income": 168, "food_income": 436, "funds": 1440, "development": 5692, "commerce": 64, "farming": 70, "technology": 60, "public_order": 74, "loyalty": 84, "danger": 16 } },
-      { "name": "오", "faction_index": 1, "profile": { "population": 92000, "defense": 78, "gold_income": 172, "food_income": 448, "funds": 1480, "development": 5984, "commerce": 67, "farming": 66, "technology": 62, "public_order": 76, "loyalty": 83, "danger": 15 } },
-      { "name": "강릉", "faction_index": 1, "profile": { "population": 74000, "defense": 68, "gold_income": 142, "food_income": 372, "funds": 1080, "development": 4680, "commerce": 58, "farming": 60, "technology": 54, "public_order": 68, "loyalty": 79, "danger": 20 } },
-      { "name": "여남", "faction_index": 2, "profile": { "population": 58000, "defense": 53, "gold_income": 110, "food_income": 292, "funds": 700, "development": 3511, "commerce": 45, "farming": 47, "technology": 40, "public_order": 58, "loyalty": 85, "danger": 34 } },
-      { "name": "남양", "faction_index": 2, "profile": { "population": 54000, "defense": 50, "gold_income": 102, "food_income": 274, "funds": 620, "development": 3240, "commerce": 43, "farming": 45, "technology": 39, "public_order": 56, "loyalty": 84, "danger": 36 } }
+      {
+        "name": "진류",
+        "faction_index": 0,
+        "profile": {
+          "population": 98000,
+          "defense": 82,
+          "gold_income": 182,
+          "food_income": 470,
+          "funds": 1620,
+          "development": 6444,
+          "commerce": 68,
+          "farming": 74,
+          "technology": 64,
+          "public_order": 78,
+          "loyalty": 86,
+          "danger": 14
+        }
+      },
+      {
+        "name": "연주",
+        "faction_index": 0,
+        "profile": {
+          "population": 105000,
+          "defense": 86,
+          "gold_income": 194,
+          "food_income": 498,
+          "funds": 1740,
+          "development": 6980,
+          "commerce": 70,
+          "farming": 78,
+          "technology": 66,
+          "public_order": 80,
+          "loyalty": 88,
+          "danger": 12
+        }
+      },
+      {
+        "name": "하비",
+        "faction_index": 0,
+        "profile": {
+          "population": 88000,
+          "defense": 76,
+          "gold_income": 168,
+          "food_income": 436,
+          "funds": 1440,
+          "development": 5692,
+          "commerce": 64,
+          "farming": 70,
+          "technology": 60,
+          "public_order": 74,
+          "loyalty": 84,
+          "danger": 16
+        }
+      },
+      {
+        "name": "오",
+        "faction_index": 1,
+        "profile": {
+          "population": 92000,
+          "defense": 78,
+          "gold_income": 172,
+          "food_income": 448,
+          "funds": 1480,
+          "development": 5984,
+          "commerce": 67,
+          "farming": 66,
+          "technology": 62,
+          "public_order": 76,
+          "loyalty": 83,
+          "danger": 15
+        }
+      },
+      {
+        "name": "강릉",
+        "faction_index": 1,
+        "profile": {
+          "population": 74000,
+          "defense": 68,
+          "gold_income": 142,
+          "food_income": 372,
+          "funds": 1080,
+          "development": 4680,
+          "commerce": 58,
+          "farming": 60,
+          "technology": 54,
+          "public_order": 68,
+          "loyalty": 79,
+          "danger": 20
+        }
+      },
+      {
+        "name": "여남",
+        "faction_index": 2,
+        "profile": {
+          "population": 58000,
+          "defense": 53,
+          "gold_income": 110,
+          "food_income": 292,
+          "funds": 700,
+          "development": 3511,
+          "commerce": 45,
+          "farming": 47,
+          "technology": 40,
+          "public_order": 58,
+          "loyalty": 85,
+          "danger": 34
+        }
+      },
+      {
+        "name": "남양",
+        "faction_index": 2,
+        "profile": {
+          "population": 54000,
+          "defense": 50,
+          "gold_income": 102,
+          "food_income": 274,
+          "funds": 620,
+          "development": 3240,
+          "commerce": 43,
+          "farming": 45,
+          "technology": 39,
+          "public_order": 56,
+          "loyalty": 84,
+          "danger": 36
+        }
+      }
     ],
     "special_conditions": {
       "victory": "적벽 대전 후 삼국 정립 완성",
@@ -137,18 +686,134 @@
     "description": "제갈량이 출사표를 올리고 오장원에서 북벌을 개시합니다. 옛 한나라의 부흥을 꿈꾸는 마지막 대원정입니다.",
     "difficulty": 4,
     "factions": [
-      { "name": "촉", "capital": "한중", "leader_id": "liu_bei", "color": "#4a9a5a" },
-      { "name": "위", "capital": "낙양", "leader_id": "cao_cao", "color": "#2a5a8a" },
-      { "name": "오", "capital": "건업", "leader_id": "sun_quan", "color": "#b04a2a" }
+      {
+        "name": "촉",
+        "capital": "한중",
+        "leader_id": "liu_bei",
+        "color": "#4a9a5a"
+      },
+      {
+        "name": "위",
+        "capital": "낙양",
+        "leader_id": "cao_cao",
+        "color": "#2a5a8a"
+      },
+      {
+        "name": "오",
+        "capital": "건업",
+        "leader_id": "sun_quan",
+        "color": "#b04a2a"
+      }
     ],
     "cities": [
-      { "name": "청두", "faction_index": 0, "profile": { "population": 96000, "defense": 80, "gold_income": 180, "food_income": 466, "funds": 1560, "development": 6278, "commerce": 66, "farming": 74, "technology": 63, "public_order": 77, "loyalty": 88, "danger": 13 } },
-      { "name": "성도", "faction_index": 0, "profile": { "population": 62000, "defense": 70, "gold_income": 134, "food_income": 352, "funds": 940, "development": 3943, "commerce": 55, "farming": 57, "technology": 52, "public_order": 68, "loyalty": 85, "danger": 19 } },
-      { "name": "장안", "faction_index": 1, "profile": { "population": 88000, "defense": 78, "gold_income": 168, "food_income": 436, "funds": 1400, "development": 5724, "commerce": 64, "farming": 66, "technology": 60, "public_order": 72, "loyalty": 82, "danger": 17 } },
-      { "name": "허창", "faction_index": 1, "profile": { "population": 94000, "defense": 82, "gold_income": 178, "food_income": 458, "funds": 1520, "development": 6181, "commerce": 66, "farming": 70, "technology": 62, "public_order": 75, "loyalty": 84, "danger": 15 } },
-      { "name": "진류", "faction_index": 1, "profile": { "population": 81000, "defense": 74, "gold_income": 156, "food_income": 412, "funds": 1240, "development": 5210, "commerce": 61, "farming": 63, "technology": 56, "public_order": 70, "loyalty": 81, "danger": 19 } },
-      { "name": "오", "faction_index": 2, "profile": { "population": 86000, "defense": 76, "gold_income": 164, "food_income": 426, "funds": 1320, "development": 5562, "commerce": 63, "farming": 64, "technology": 58, "public_order": 71, "loyalty": 82, "danger": 17 } },
-      { "name": "강릉", "faction_index": 2, "profile": { "population": 78000, "defense": 72, "gold_income": 150, "food_income": 396, "funds": 1160, "development": 4989, "commerce": 59, "farming": 60, "technology": 54, "public_order": 69, "loyalty": 80, "danger": 20 } }
+      {
+        "name": "청두",
+        "faction_index": 0,
+        "profile": {
+          "population": 96000,
+          "defense": 80,
+          "gold_income": 180,
+          "food_income": 466,
+          "funds": 1560,
+          "development": 6278,
+          "commerce": 66,
+          "farming": 74,
+          "technology": 63,
+          "public_order": 77,
+          "loyalty": 88,
+          "danger": 13
+        }
+      },
+      {
+        "name": "장안",
+        "faction_index": 1,
+        "profile": {
+          "population": 88000,
+          "defense": 78,
+          "gold_income": 168,
+          "food_income": 436,
+          "funds": 1400,
+          "development": 5724,
+          "commerce": 64,
+          "farming": 66,
+          "technology": 60,
+          "public_order": 72,
+          "loyalty": 82,
+          "danger": 17
+        }
+      },
+      {
+        "name": "허창",
+        "faction_index": 1,
+        "profile": {
+          "population": 94000,
+          "defense": 82,
+          "gold_income": 178,
+          "food_income": 458,
+          "funds": 1520,
+          "development": 6181,
+          "commerce": 66,
+          "farming": 70,
+          "technology": 62,
+          "public_order": 75,
+          "loyalty": 84,
+          "danger": 15
+        }
+      },
+      {
+        "name": "진류",
+        "faction_index": 1,
+        "profile": {
+          "population": 81000,
+          "defense": 74,
+          "gold_income": 156,
+          "food_income": 412,
+          "funds": 1240,
+          "development": 5210,
+          "commerce": 61,
+          "farming": 63,
+          "technology": 56,
+          "public_order": 70,
+          "loyalty": 81,
+          "danger": 19
+        }
+      },
+      {
+        "name": "오",
+        "faction_index": 2,
+        "profile": {
+          "population": 86000,
+          "defense": 76,
+          "gold_income": 164,
+          "food_income": 426,
+          "funds": 1320,
+          "development": 5562,
+          "commerce": 63,
+          "farming": 64,
+          "technology": 58,
+          "public_order": 71,
+          "loyalty": 82,
+          "danger": 17
+        }
+      },
+      {
+        "name": "강릉",
+        "faction_index": 2,
+        "profile": {
+          "population": 78000,
+          "defense": 72,
+          "gold_income": 150,
+          "food_income": 396,
+          "funds": 1160,
+          "development": 4989,
+          "commerce": 59,
+          "farming": 60,
+          "technology": 54,
+          "public_order": 69,
+          "loyalty": 80,
+          "danger": 20
+        }
+      }
     ],
     "special_conditions": {
       "victory": "북벌 성공 시 한실 부흥",
@@ -164,21 +829,461 @@
     "description": "사자오의 삼국 정립 이후, 유비와 손권의 죽음으로 바뀐 균형 속에서 각 세력은 새로운 생존 수단을 찾습니다.",
     "difficulty": 4,
     "factions": [
-      { "name": "위", "capital": "낙양", "leader_id": "cao_pi", "color": "#2a5a8a", "city_profile": { "population": 128000, "defense": 78, "gold_income": 165, "food_income": 390, "funds": 1450, "development": 8325, "commerce": 64, "farming": 52, "technology": 72, "public_order": 68, "loyalty": 74, "danger": 18 } },
-      { "name": "촉", "capital": "청두", "leader_id": "liu_shan", "color": "#4a9a5a", "city_profile": { "population": 96000, "defense": 72, "gold_income": 142, "food_income": 420, "funds": 1180, "development": 6140, "commerce": 55, "farming": 68, "technology": 65, "public_order": 76, "loyalty": 82, "danger": 12 } },
-      { "name": "오", "capital": "부경", "leader_id": "sun_hao", "color": "#b04a2a", "city_profile": { "population": 88000, "defense": 69, "gold_income": 151, "food_income": 448, "funds": 1260, "development": 5581, "commerce": 70, "farming": 61, "technology": 58, "public_order": 71, "loyalty": 79, "danger": 15 } }
+      {
+        "name": "위",
+        "capital": "낙양",
+        "leader_id": "cao_pi",
+        "color": "#2a5a8a",
+        "city_profile": {
+          "population": 128000,
+          "defense": 78,
+          "gold_income": 165,
+          "food_income": 390,
+          "funds": 1450,
+          "development": 8325,
+          "commerce": 64,
+          "farming": 52,
+          "technology": 72,
+          "public_order": 68,
+          "loyalty": 74,
+          "danger": 18
+        }
+      },
+      {
+        "name": "촉",
+        "capital": "청두",
+        "leader_id": "liu_shan",
+        "color": "#4a9a5a",
+        "city_profile": {
+          "population": 96000,
+          "defense": 72,
+          "gold_income": 142,
+          "food_income": 420,
+          "funds": 1180,
+          "development": 6140,
+          "commerce": 55,
+          "farming": 68,
+          "technology": 65,
+          "public_order": 76,
+          "loyalty": 82,
+          "danger": 12
+        }
+      },
+      {
+        "name": "오",
+        "capital": "부경",
+        "leader_id": "sun_hao",
+        "color": "#b04a2a",
+        "city_profile": {
+          "population": 88000,
+          "defense": 69,
+          "gold_income": 151,
+          "food_income": 448,
+          "funds": 1260,
+          "development": 5581,
+          "commerce": 70,
+          "farming": 61,
+          "technology": 58,
+          "public_order": 71,
+          "loyalty": 79,
+          "danger": 15
+        }
+      }
     ],
     "cities": [
-      { "name": "서주", "faction_index": 0, "profile": { "population": 82000, "defense": 72, "gold_income": 148, "food_income": 390, "funds": 1080, "development": 5245, "commerce": 58, "farming": 60, "technology": 50, "public_order": 68, "loyalty": 76, "danger": 21 } },
-      { "name": "진류", "faction_index": 0, "profile": { "population": 79000, "defense": 70, "gold_income": 142, "food_income": 376, "funds": 1020, "development": 5024, "commerce": 56, "farming": 58, "technology": 48, "public_order": 66, "loyalty": 75, "danger": 23 } },
-      { "name": "강릉", "faction_index": 1, "profile": { "population": 76000, "defense": 68, "gold_income": 138, "food_income": 364, "funds": 980, "development": 4806, "commerce": 55, "farming": 57, "technology": 47, "public_order": 70, "loyalty": 80, "danger": 19 } },
-      { "name": "성도", "faction_index": 1, "profile": { "population": 64000, "defense": 64, "gold_income": 124, "food_income": 330, "funds": 820, "development": 4001, "commerce": 50, "farming": 52, "technology": 44, "public_order": 64, "loyalty": 78, "danger": 24 } },
-      { "name": "동정", "faction_index": 2, "profile": { "population": 84000, "defense": 74, "gold_income": 150, "food_income": 396, "funds": 1120, "development": 5403, "commerce": 59, "farming": 61, "technology": 51, "public_order": 69, "loyalty": 78, "danger": 20 } },
-      { "name": "진주", "faction_index": 2, "profile": { "population": 71000, "defense": 67, "gold_income": 132, "food_income": 350, "funds": 920, "development": 4477, "commerce": 54, "farming": 56, "technology": 47, "public_order": 67, "loyalty": 76, "danger": 22 } }
+      {
+        "name": "서주",
+        "faction_index": 0,
+        "profile": {
+          "population": 82000,
+          "defense": 72,
+          "gold_income": 148,
+          "food_income": 390,
+          "funds": 1080,
+          "development": 5245,
+          "commerce": 58,
+          "farming": 60,
+          "technology": 50,
+          "public_order": 68,
+          "loyalty": 76,
+          "danger": 21
+        }
+      },
+      {
+        "name": "진류",
+        "faction_index": 0,
+        "profile": {
+          "population": 79000,
+          "defense": 70,
+          "gold_income": 142,
+          "food_income": 376,
+          "funds": 1020,
+          "development": 5024,
+          "commerce": 56,
+          "farming": 58,
+          "technology": 48,
+          "public_order": 66,
+          "loyalty": 75,
+          "danger": 23
+        }
+      },
+      {
+        "name": "강릉",
+        "faction_index": 1,
+        "profile": {
+          "population": 76000,
+          "defense": 68,
+          "gold_income": 138,
+          "food_income": 364,
+          "funds": 980,
+          "development": 4806,
+          "commerce": 55,
+          "farming": 57,
+          "technology": 47,
+          "public_order": 70,
+          "loyalty": 80,
+          "danger": 19
+        }
+      },
+      {
+        "name": "한중",
+        "faction_index": 1,
+        "profile": {
+          "population": 64000,
+          "defense": 64,
+          "gold_income": 124,
+          "food_income": 330,
+          "funds": 820,
+          "development": 4001,
+          "commerce": 50,
+          "farming": 52,
+          "technology": 44,
+          "public_order": 64,
+          "loyalty": 78,
+          "danger": 24
+        }
+      },
+      {
+        "name": "동정",
+        "faction_index": 2,
+        "profile": {
+          "population": 84000,
+          "defense": 74,
+          "gold_income": 150,
+          "food_income": 396,
+          "funds": 1120,
+          "development": 5403,
+          "commerce": 59,
+          "farming": 61,
+          "technology": 51,
+          "public_order": 69,
+          "loyalty": 78,
+          "danger": 20
+        }
+      },
+      {
+        "name": "진주",
+        "faction_index": 2,
+        "profile": {
+          "population": 71000,
+          "defense": 67,
+          "gold_income": 132,
+          "food_income": 350,
+          "funds": 920,
+          "development": 4477,
+          "commerce": 54,
+          "farming": 56,
+          "technology": 47,
+          "public_order": 67,
+          "loyalty": 76,
+          "danger": 22
+        }
+      }
     ],
     "special_conditions": {
       "victory": "사육의 재정의와 안정된 국경을 수립한다",
       "historical_mode": true
+    },
+    "status": "active"
+  },
+  {
+    "id": "08",
+    "title_kr": "群雄割拠 — 전장태세",
+    "title_en": "All Heroes, All Lands",
+    "start_date": "220-01",
+    "description": "특전 시나리오. 어느 한 시기도 따르지 않는 전장태세다. 삼국지 PK장수목록의 실명 무장 337명이 모두 살아 있고, 전국 57개 주요 도시가 모두 세력의 손에 들어와 있다. 관우와 조조가 같은 시대에 서 있고, 장수와 원로가 나이도 신분도 따지지 않고 한 자리에 선다. 누가 어느 시기의 누구인지는 중요하지 않다 — 전원이 이 자리에 서 있는 상황이다.",
+    "difficulty": 5,
+    "factions": [
+      {
+        "name": "위",
+        "capital": "낙양",
+        "leader_id": "off_0521",
+        "color": "#2a5a8a",
+        "map_x": 0.5748,
+        "map_y": 0.3977
+      },
+      {
+        "name": "한",
+        "capital": "장안",
+        "leader_id": "off_0279",
+        "color": "#7a4a9a",
+        "map_x": 0.523,
+        "map_y": 0.4089
+      },
+      {
+        "name": "연",
+        "capital": "북평",
+        "leader_id": "off_0625",
+        "color": "#c07a2a",
+        "map_x": 0.633,
+        "map_y": 0.1515
+      },
+      {
+        "name": "요",
+        "capital": "평양",
+        "leader_id": "off_0844",
+        "color": "#2a8a8a",
+        "map_x": 0.7709,
+        "map_y": 0.1961
+      },
+      {
+        "name": "강하",
+        "capital": "강하",
+        "leader_id": "off_0243",
+        "color": "#5a8a5a",
+        "map_x": 0.6005,
+        "map_y": 0.5507
+      },
+      {
+        "name": "남양",
+        "capital": "남양",
+        "leader_id": "off_0334",
+        "color": "#8a2a4a",
+        "map_x": 0.5759,
+        "map_y": 0.4604
+      },
+      {
+        "name": "동정",
+        "capital": "오",
+        "leader_id": "off_1043",
+        "color": "#8a7a2a",
+        "map_x": 0.6946,
+        "map_y": 0.5203
+      },
+      {
+        "name": "양주",
+        "capital": "여남",
+        "leader_id": "off_0782",
+        "color": "#4a7a9a",
+        "map_x": 0.6029,
+        "map_y": 0.4613
+      },
+      {
+        "name": "천수",
+        "capital": "천수",
+        "leader_id": "off_0208",
+        "color": "#9a6a4a",
+        "map_x": 0.4756,
+        "map_y": 0.3994
+      }
+    ],
+    "cities": [
+      {
+        "name": "허창",
+        "faction_index": 0
+      },
+      {
+        "name": "업",
+        "faction_index": 2
+      },
+      {
+        "name": "진양",
+        "faction_index": 2
+      },
+      {
+        "name": "한중",
+        "faction_index": 1
+      },
+      {
+        "name": "성도",
+        "faction_index": 8
+      },
+      {
+        "name": "건업",
+        "faction_index": 6
+      },
+      {
+        "name": "강릉",
+        "faction_index": 4
+      },
+      {
+        "name": "서주",
+        "faction_index": 7
+      },
+      {
+        "name": "양양",
+        "faction_index": 5
+      },
+      {
+        "name": "신야",
+        "faction_index": 5
+      },
+      {
+        "name": "장사",
+        "faction_index": 4
+      },
+      {
+        "name": "계양",
+        "faction_index": 4
+      },
+      {
+        "name": "남중",
+        "faction_index": 4
+      },
+      {
+        "name": "광한",
+        "faction_index": 8
+      },
+      {
+        "name": "단양",
+        "faction_index": 6
+      },
+      {
+        "name": "상용",
+        "faction_index": 5
+      },
+      {
+        "name": "무창",
+        "faction_index": 4
+      },
+      {
+        "name": "파동",
+        "faction_index": 4
+      },
+      {
+        "name": "영릉",
+        "faction_index": 4
+      },
+      {
+        "name": "교지",
+        "faction_index": 4
+      },
+      {
+        "name": "선안",
+        "faction_index": 3
+      },
+      {
+        "name": "지안",
+        "faction_index": 3
+      },
+      {
+        "name": "낙랑",
+        "faction_index": 3
+      },
+      {
+        "name": "사비",
+        "faction_index": 3
+      },
+      {
+        "name": "한산",
+        "faction_index": 3
+      },
+      {
+        "name": "웅진",
+        "faction_index": 3
+      },
+      {
+        "name": "경주",
+        "faction_index": 3
+      },
+      {
+        "name": "대야성",
+        "faction_index": 3
+      },
+      {
+        "name": "가락",
+        "faction_index": 3
+      },
+      {
+        "name": "안동",
+        "faction_index": 3
+      },
+      {
+        "name": "야마토",
+        "faction_index": 3
+      },
+      {
+        "name": "구주",
+        "faction_index": 6
+      },
+      {
+        "name": "오키나와",
+        "faction_index": 6
+      },
+      {
+        "name": "대만",
+        "faction_index": 6
+      },
+      {
+        "name": "무위",
+        "faction_index": 8
+      },
+      {
+        "name": "무도",
+        "faction_index": 8
+      },
+      {
+        "name": "자동",
+        "faction_index": 8
+      },
+      {
+        "name": "영안",
+        "faction_index": 4
+      },
+      {
+        "name": "건녕",
+        "faction_index": 4
+      },
+      {
+        "name": "홍농",
+        "faction_index": 0
+      },
+      {
+        "name": "청주",
+        "faction_index": 0
+      },
+      {
+        "name": "제남",
+        "faction_index": 0
+      },
+      {
+        "name": "소패",
+        "faction_index": 0
+      },
+      {
+        "name": "초",
+        "faction_index": 6
+      },
+      {
+        "name": "상당",
+        "faction_index": 0
+      },
+      {
+        "name": "남피",
+        "faction_index": 2
+      },
+      {
+        "name": "평원",
+        "faction_index": 0
+      },
+      {
+        "name": "광릉",
+        "faction_index": 6
+      }
+    ],
+    "special_conditions": {
+      "victory": "전장태세를 수습해 전국의 절반 이상을 차지한다",
+      "historical_mode": false
     },
     "status": "active"
   }

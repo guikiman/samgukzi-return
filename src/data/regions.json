@@ -1,16 +1,8 @@
 {
   "version": 1,
-  "count": 46,
+  "count": 57,
   "populationEntryCount": 338,
   "regions": {
-    "양평": {
-      "name": "양평",
-      "gold": 1550,
-      "food": 6390,
-      "population": 116100,
-      "areaCode": 6,
-      "totalOutput": 15380
-    },
     "북평": {
       "name": "북평",
       "gold": 2370,
@@ -18,14 +10,6 @@
       "population": 126000,
       "areaCode": 7,
       "totalOutput": 24596
-    },
-    "계": {
-      "name": "계",
-      "gold": 2590,
-      "food": 8570,
-      "population": 315000,
-      "areaCode": 6,
-      "totalOutput": 23592
     },
     "진양": {
       "name": "진양",
@@ -59,22 +43,6 @@
       "areaCode": 6,
       "totalOutput": 25974
     },
-    "북해": {
-      "name": "북해",
-      "gold": 2360,
-      "food": 12250,
-      "population": 309600,
-      "areaCode": 6,
-      "totalOutput": 25938
-    },
-    "하비": {
-      "name": "하비",
-      "gold": 2360,
-      "food": 14280,
-      "population": 226800,
-      "areaCode": 8,
-      "totalOutput": 27968
-    },
     "소패": {
       "name": "소패",
       "gold": 1410,
@@ -90,38 +58,6 @@
       "population": 160200,
       "areaCode": 5,
       "totalOutput": 15958
-    },
-    "수춘": {
-      "name": "수춘",
-      "gold": 2050,
-      "food": 10410,
-      "population": 318600,
-      "areaCode": 9,
-      "totalOutput": 22300
-    },
-    "여강": {
-      "name": "여강",
-      "gold": 1990,
-      "food": 6990,
-      "population": 135900,
-      "areaCode": 7,
-      "totalOutput": 18532
-    },
-    "복양": {
-      "name": "복양",
-      "gold": 5020,
-      "food": 18290,
-      "population": 225000,
-      "areaCode": 10,
-      "totalOutput": 47406
-    },
-    "진류": {
-      "name": "진류",
-      "gold": 4960,
-      "food": 21370,
-      "population": 323100,
-      "areaCode": 11,
-      "totalOutput": 50138
     },
     "허창": {
       "name": "허창",
@@ -147,14 +83,6 @@
       "areaCode": 13,
       "totalOutput": 59485
     },
-    "완": {
-      "name": "완",
-      "gold": 3450,
-      "food": 11780,
-      "population": 261000,
-      "areaCode": 7,
-      "totalOutput": 31790
-    },
     "장안": {
       "name": "장안",
       "gold": 6910,
@@ -170,14 +98,6 @@
       "population": 170100,
       "areaCode": 5,
       "totalOutput": 12192
-    },
-    "안정": {
-      "name": "안정",
-      "gold": 2260,
-      "food": 13870,
-      "population": 120600,
-      "areaCode": 6,
-      "totalOutput": 26978
     },
     "천수": {
       "name": "천수",
@@ -210,38 +130,6 @@
       "population": 268200,
       "areaCode": 7,
       "totalOutput": 17140
-    },
-    "회계": {
-      "name": "회계",
-      "gold": 1925,
-      "food": 14250,
-      "population": 278100,
-      "areaCode": 8,
-      "totalOutput": 25415
-    },
-    "시상": {
-      "name": "시상",
-      "gold": 1455,
-      "food": 6770,
-      "population": 196200,
-      "areaCode": 8,
-      "totalOutput": 15209
-    },
-    "건안": {
-      "name": "건안",
-      "gold": 965,
-      "food": 7810,
-      "population": 107100,
-      "areaCode": 6,
-      "totalOutput": 13407
-    },
-    "남해": {
-      "name": "남해",
-      "gold": 1560,
-      "food": 5330,
-      "population": 157500,
-      "areaCode": 5,
-      "totalOutput": 14378
     },
     "교지": {
       "name": "교지",
@@ -291,14 +179,6 @@
       "areaCode": 6,
       "totalOutput": 14810
     },
-    "무릉": {
-      "name": "무릉",
-      "gold": 1800,
-      "food": 8850,
-      "population": 228600,
-      "areaCode": 7,
-      "totalOutput": 19290
-    },
     "계양": {
       "name": "계양",
       "gold": 1420,
@@ -339,14 +219,6 @@
       "areaCode": 7,
       "totalOutput": 14972
     },
-    "강주": {
-      "name": "강주",
-      "gold": 1925,
-      "food": 11230,
-      "population": 171000,
-      "areaCode": 7,
-      "totalOutput": 22395
-    },
     "성도": {
       "name": "성도",
       "gold": 3260,
@@ -363,61 +235,288 @@
       "areaCode": 7,
       "totalOutput": 18943
     },
-    "운남": {
-      "name": "운남",
-      "gold": 1600,
-      "food": 6290,
-      "population": 137700,
+    "남양": {
+      "name": "남양",
+      "gold": 3420,
+      "food": 17345,
+      "population": 428400,
+      "areaCode": 5,
+      "totalOutput": 36906
+    },
+    "서주": {
+      "name": "서주",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 5,
+      "totalOutput": 15958
+    },
+    "남중": {
+      "name": "남중",
+      "gold": 3420,
+      "food": 17345,
+      "population": 428400,
+      "areaCode": 7,
+      "totalOutput": 36906
+    },
+    "광한": {
+      "name": "광한",
+      "gold": 3420,
+      "food": 17345,
+      "population": 428400,
+      "areaCode": 9,
+      "totalOutput": 36906
+    },
+    "단양": {
+      "name": "단양",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 5,
+      "totalOutput": 15958
+    },
+    "무창": {
+      "name": "무창",
+      "gold": 3420,
+      "food": 17345,
+      "population": 428400,
       "areaCode": 6,
-      "totalOutput": 15570
+      "totalOutput": 36906
+    },
+    "파동": {
+      "name": "파동",
+      "gold": 1710,
+      "food": 7860,
+      "population": 155700,
+      "areaCode": 5,
+      "totalOutput": 16038
+    },
+    "평양": {
+      "name": "평양",
+      "gold": 3420,
+      "food": 17345,
+      "population": 428400,
+      "areaCode": 8,
+      "totalOutput": 36906
+    },
+    "선안": {
+      "name": "선안",
+      "gold": 3420,
+      "food": 17345,
+      "population": 428400,
+      "areaCode": 7,
+      "totalOutput": 36906
+    },
+    "지안": {
+      "name": "지안",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 7,
+      "totalOutput": 15958
+    },
+    "낙랑": {
+      "name": "낙랑",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 5,
+      "totalOutput": 15958
+    },
+    "사비": {
+      "name": "사비",
+      "gold": 3420,
+      "food": 17345,
+      "population": 428400,
+      "areaCode": 7,
+      "totalOutput": 36906
+    },
+    "한산": {
+      "name": "한산",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 7,
+      "totalOutput": 15958
+    },
+    "웅진": {
+      "name": "웅진",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 7,
+      "totalOutput": 15958
+    },
+    "경주": {
+      "name": "경주",
+      "gold": 3420,
+      "food": 17345,
+      "population": 428400,
+      "areaCode": 7,
+      "totalOutput": 36906
+    },
+    "대야성": {
+      "name": "대야성",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 5,
+      "totalOutput": 15958
+    },
+    "가락": {
+      "name": "가락",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 7,
+      "totalOutput": 15958
+    },
+    "안동": {
+      "name": "안동",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 7,
+      "totalOutput": 15958
+    },
+    "야마토": {
+      "name": "야마토",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 7,
+      "totalOutput": 15958
+    },
+    "구주": {
+      "name": "구주",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 7,
+      "totalOutput": 15958
+    },
+    "오키나와": {
+      "name": "오키나와",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 7,
+      "totalOutput": 15958
+    },
+    "대만": {
+      "name": "대만",
+      "gold": 1710,
+      "food": 7860,
+      "population": 155700,
+      "areaCode": 6,
+      "totalOutput": 16038
+    },
+    "무도": {
+      "name": "무도",
+      "gold": 1710,
+      "food": 7860,
+      "population": 155700,
+      "areaCode": 7,
+      "totalOutput": 16038
+    },
+    "홍농": {
+      "name": "홍농",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 13,
+      "totalOutput": 15958
+    },
+    "청주": {
+      "name": "청주",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 6,
+      "totalOutput": 15958
+    },
+    "제남": {
+      "name": "제남",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 6,
+      "totalOutput": 15958
+    },
+    "초": {
+      "name": "초",
+      "gold": 1710,
+      "food": 7860,
+      "population": 155700,
+      "areaCode": 8,
+      "totalOutput": 16038
+    },
+    "상당": {
+      "name": "상당",
+      "gold": 1490,
+      "food": 7460,
+      "population": 202500,
+      "areaCode": 13,
+      "totalOutput": 15958
     }
   },
   "populationByCity": {
-    "양평": 116100,
     "북평": 126000,
-    "계": 315000,
     "진양": 220500,
     "남피": 350100,
     "업": 436500,
     "평원": 155700,
-    "북해": 309600,
-    "하비": 226800,
     "소패": 112500,
     "광릉": 160200,
-    "수춘": 318600,
-    "여강": 135900,
-    "복양": 225000,
-    "진류": 323100,
     "허창": 492300,
     "여남": 258300,
     "낙양": 684900,
-    "완": 261000,
     "장안": 428400,
     "상용": 170100,
-    "안정": 120600,
     "천수": 146700,
     "무위": 202500,
     "건업": 396900,
     "오": 268200,
-    "회계": 278100,
-    "시상": 196200,
-    "건안": 107100,
-    "남해": 157500,
     "교지": 213300,
     "강하": 192600,
     "신야": 233100,
     "양양": 387900,
     "강릉": 411300,
     "장사": 304200,
-    "무릉": 228600,
     "계양": 168300,
     "영릉": 270900,
     "영안": 114300,
     "한중": 275400,
     "자동": 153000,
-    "강주": 171000,
     "성도": 446400,
     "건녕": 256500,
-    "운남": 137700
+    "남양": 428400,
+    "서주": 202500,
+    "남중": 428400,
+    "광한": 428400,
+    "단양": 202500,
+    "무창": 428400,
+    "파동": 155700,
+    "평양": 428400,
+    "선안": 428400,
+    "지안": 202500,
+    "낙랑": 202500,
+    "사비": 428400,
+    "한산": 202500,
+    "웅진": 202500,
+    "경주": 428400,
+    "대야성": 202500,
+    "가락": 202500,
+    "안동": 202500,
+    "야마토": 202500,
+    "구주": 202500,
+    "오키나와": 202500,
+    "대만": 155700,
+    "무도": 155700,
+    "홍농": 202500,
+    "청주": 202500,
+    "제남": 202500,
+    "초": 155700,
+    "상당": 202500
   }
 }

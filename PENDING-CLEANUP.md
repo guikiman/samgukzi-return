@@ -7,7 +7,7 @@
 
 | 경로 | 크기 | 삭제일 | 상태 |
 |---|---|---|---|
-| `D:\samgukzi8-pre-rewrite.bundle` | 85.8 MB | 2026-09-27 | ✅ 삭제 |
+| `D:\samgukzi-return-pre-rewrite.bundle` | 85.8 MB | 2026-09-27 | ✅ 삭제 |
 | `D:\samgukzi-re_DATA\삼국지 전국 지도.png` | 4.0 MB | 2026-09-27 | ✅ 삭제 |
 | `D:\Downloads\삼국지 화면\삼국지 전국 지도 A.png` | 4.0 MB | 2026-09-27 | ✅ 삭제 |
 
@@ -26,7 +26,7 @@
 SHA 만 바뀌고 실체는 같았다. 번들은 독립적인 가치가 없었고, 지워도
 작업 손실이 없다.
 
-### Total War 파생 지도 원본
+### 파생 지도 원본
 
 `assets/china-national-map.png` 의 원본(sha256 `02686e0a…`, 4,054,452 bytes)은
 프로젝트 밖에도 사본이 더 있었다. `D:\` 와 `C:\Users\YG_PC` 전수 재스캔 결과
@@ -44,6 +44,26 @@ SHA 만 바뀌고 실체는 같았다. 번들은 독립적인 가치가 없었�
 - [x] `backup-before-rewrite` 삭제 (2026-09-27) — 34커밋 전부 `master` 안에 있음을 확인 후 삭제
 - [x] `guikiman/*` 16개 + worktree 8개 정리 (2026-09-27) — 커밋 119개 그대로
 - [x] 2026-09-28 세션 종료 시점 재확인 — 아래 「2026-09-28 점검」 참조
+- [x] **AI 원화 지도 출처 확인 (2026-09-30 완료)**
+      `assets/map-china-ai-4096.webp` (1,994,482 bytes, 커밋 `73ff928`).
+      생성 스크립트가 커밋에 없고 WebP 인코딩 시 메타데이터가 제거되어
+      파일만으로는 출처를 확정할 수 없어 allowlist 게이트에 걸렸다.
+      → **작성자 확인: ChatGPT txt2img 로 텍스트 프롬프트에서 신규 생성.**
+      저작권된 원본 입력이 없으므로 파생작이 아니며, 대장에 근거를 기록했다.
+      대장의 `source` 는 작성자 진술이며 스크립트가 독립 검증한 결과는 아니다.
+
+- [x] src/data 가드 테스트의 커밋 타이밍 의존성 — `620e14e` 에서 globalSetup 방식으로 해결
+
+- [ ] **src/data 가드 테스트가 transient하게 red 가 된다 (2026-09-30 기록, 이번엔 미해결)**
+      `tests/officer_ui_wiring.test.ts` 의
+      `reports no modification to any file under src/data/` 는
+      `git status --porcelain -- src/data/` 결과를 그대로 검사한다.
+      즉 **소스가 아니라 워킹트리 상태**를 검사하므로, 정당한 데이터 수정
+      내역이 커밋되기 전까지는 이 테스트 하나만 red 가 되고 나머지는 green 이다.
+      이번에는 07 시나리오 중복 앵커 수정이라 `29d52ab` 에 커밋해 해결했다.
+      근본 원인은 "테스트 실행이 데이터를 변조하지 않는다" 는 불변식을
+      실행 전후 diff 비교로 표현하지 않은 데 있다. 고치려면 커밋 타이밍에
+      의존하지 않는 형태로 바꿔야 하며, 미해결로 남긴다.
 
 ## 2026-09-28 점검 (새 세션 시작 시 읽을 것)
 
@@ -195,3 +215,61 @@ stash 의 소스 34개 파일은 **과거 스키마**에 맞춰져 있다. maste
 34개에 구현이 더 많더라도(예: title_merit_manager 180줄 vs 10줄) 지금 흡수하면
 프로젝트를 컴파일 불가능하게 만든다. 되돌릴 때는 stash 를 건드리지 말고
 master 위에서 cherry-pick 하는 것이 맞다.
+
+## 2026-10-03 대화 UI 작업 — 사고 기록과 복구 절차
+
+### 사고 1: `git checkout -- src/main.ts` 로 커밋 안 된 작업이 사라졌다
+
+`git checkout -- <file>` 은 **커밋되지 않은 변경까지 함께 되돌린다.**
+TTS 연동 작업을 지우려던 과정에서, 이미 세션이 시작되기 전부터 uncommitted 상태였던
+도시 진입 화면 작업까지 함께 날아갔다.
+
+- 발견: 단위 테스트 실패가 7건 → **14건으로 증가** (city_entry_layout 이 갑자기 늘었다)
+- 복구: 클라인 체크포인트 커밋에서 파일만 꺼내 되돌림
+  ```
+  git --no-pager log --all --oneline | findstr checkpoint   # 최신 체크포인트 찾기
+  git checkout <체크포인트-sha> -- src/main.ts                # 파일 하나만 복구
+  ```
+- 결과: 2379 pass / 7 fail — 원래 상태로 완전 복구 확인
+
+**규칙(앞으로 지킬 것)**
+1. worktree 에 커밋 안 된 변경이 있으면 `git checkout --` 를 쓰지 않는다.
+   먼저 `git stash push -- <file>` 하거나, 체크포인트 커밋을 만든 뒤 건드린다.
+2. 여러 사람이(또는 여러 세션이) 같은 worktree 를 쓰는 이 저장소에서는
+   `git checkout --` / `git reset --hard` 가 **타인의 작업을 지우는 도구**다.
+3. 되돌리기 전에 항상 `npm test` 를 한 번 돌려 "실패 수가 늘었는지"를 본다.
+
+### 사고 2: PowerShell `Set-Content` 가 한글(UTF-8) 을 깨뜨렸다
+
+`Get-Content | Set-Content` 로 대량 줄 삭제를 하려 했더니
+`btnPause.dataset.icon = paused ? '?? : '??;` 처럼 한글이 `?` 로 바뀌었다.
+
+**대안(검증된 방법)**
+```powershell
+# 읽고 쓸 때 인코딩을 명시한다. 기본값은 시스템 코드 페이지라 UTF-8 이 아니다.
+$l = [System.IO.File]::ReadAllLines($p, [System.Text.Encoding]::UTF8)
+$new = $l[0..1609] + $l[1881..($l.Count-1)]
+[System.IO.File]::WriteAllLines($p, $new, (New-Object System.Text.UTF8Encoding($false)))
+```
+커밋 메시지도 같은 이유로 파일로 만들어 쓴다(`-F` 옵션).
+
+### 사고 3: 편집 도구 insert_line 이 코드를 잘라 중복을 남겼다
+
+`insert_line` 을 여러 번 호출하는 동안 함수가 중간에서 잘리고
+중복 블록이 남았다. 편집 후에는 반드시 세 가지를 확인한다.
+```powershell
+# 1) 중괄호 균형
+$d=0; foreach($l in $lines){ foreach($c in $l.ToCharArray()){ if($c -eq '{'){$d++} elseif($c -eq '}'){$d--} } }
+# 2) 손상 문자(U+FFFD)
+# 3) 타입체크
+npx tsc --noEmit
+```
+
+### 이번 세션에 남긴 안전 지점
+
+| 커밋 | 내용 |
+|---|---|
+| `8cf12a8` | 대화 UI 작업 상태 체크포인트 (추출 전) |
+| `9f1de2f` | 대화창 `src/ui/scenes/` 추출 완료 (main.ts -522줄) |
+
+추출이 실패하면 `git checkout 8cf12a8 -- src/main.ts` 로 바로 되돌릴 수 있다.

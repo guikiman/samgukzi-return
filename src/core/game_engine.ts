@@ -1,5 +1,5 @@
 /**
- * 삼국지 8 리메이크 — 통합 게임 엔진 (FSM 오케스트레이터)
+ * 삼국지리턴 — 통합 게임 엔진 (FSM 오케스트레이터)
  * 파일: src/core/game_engine.ts
  *
  * 모든 시스템을 통합하는 중앙 오케스트레이터
@@ -9,7 +9,7 @@
 
 import {
     GamePhase, PhaseTransition, GlobalState, NormalizedState,
-    Officer, Faction, City, Army, OfficerID, CityID, FactionID,
+    Officer, Faction, City, Army, OfficerID, CityID, FactionID, MapFeature,
     ICommand, CommandResult, CommandContext, SerializedCommand,
     AIDecision, SchedulerProgress,
     GameEvent, EventListener, WorkerRequest, WorkerResponse,
@@ -25,6 +25,8 @@ import { OfficerLoyaltySystem } from './officer_loyalty_system.js';
 import { DiplomacyEngine, FactionRelation } from './diplomacy_engine.js';
 import { FactionDiplomacyAI } from './faction_diplomacy_ai.js';
 import { ChronicleManager } from './chronicle_system.js';
+import { DialogueEngine, type DialogueContext, type DialogueLine } from './dialogue_engine.js';
+import { SpecializedEventSystem, type SpecializedEvent } from './specialized_event_system.js';
 import { processHellConstraints } from './hell_constraint_system.js';
 import { processMonthlyCaptiveEvents } from './captive_escape_system.js';
 import { processMonthlyVengeance } from './vengeance_system.js';
@@ -32,6 +34,11 @@ import { processMonthlyRoamingEvents } from './roaming_event_system.js';
 import { processMonthlyFreeOfficerVisits } from './free_officer_visit_system.js';
 import { processMonthlySwornBrotherRescues } from './sworn_brother_rescue_system.js';
 import { processMonthlySwornBrotherPacts } from './sworn_brother_pact_system.js';
+import { planMonthlyTribeAffairs, demandsAbandonedBy, activeDemands } from './migration_tribe_system.js';
+import {
+    monthlyProgress, advanceMission, checkMissionExpiry, computeAudienceReward,
+} from './imperial_audience_system.js';
+import { advanceSiege } from './map_feature_siege_system.js';
 // Python 시스템 모듈 TS 포팅 통합 [76-85][213-214][321-340][341-360][421-438][431-432][441-460]
 import { StrategicCommandManager, StrategicPolicy, type IPolicyBridge } from './strategic_command_system.js';
 import { DomesticScheduler } from './domestic_scheduler.js';
@@ -58,6 +65,8 @@ import {
 import { AIStreamManager } from '../ai/ai_stream_manager.js';
 import type { FactionDecisionBatch } from '../ai/ai_worker_simulator.js';
 import type { ReplayCommandEvent } from './replay_share_manager.js';
+// 턴 실행 트레이스 [디버그] — executeTurn 의 단계를 번호가 붙은 트리로 기록
+import { TurnTrace } from './turn_trace.js';
 
 type PhaseEnterHandler = () => void | Promise<void>;
 type PhaseExitHandler = () => void;
@@ -87,6 +96,9 @@ export class GameEngine {
     private loyaltySystem: OfficerLoyaltySystem;
     private diplomacy: DiplomacyEngine;
     private diplomacyAI: FactionDiplomacyAI;
+    /** 대화 엔진 — 무장별 특화 대화 AI */
+    readonly dialogueEngine: DialogueEngine;
+    readonly specializedEvents: SpecializedEventSystem;
     /** 연대기 관리자 [Y-메타][441-460] — 서사적 이벤트 기록, 세이브에 포함 */
     readonly chronicle: import('./chronicle_system.js').ChronicleManager;
     /** 포팅 시스템: 군단/평정 [76-85] */
@@ -122,6 +134,19 @@ export class GameEngine {
         starvations: Array<{ cityId: string; cityName: string; losses: number }>;
     } = { riots: [], starvations: [] };
     private isProcessingTurn = false;
+    /**
+     * 턴 실행 트레이스 [디버그] — executeTurn 의 각 단계를 번호가 붙은
+     * 트리로 기록한다. 기본값은 항상 켜져 있다(계측 비용이 무시할 만하고,
+     * 꺼 두면 "왜 안 되는지" 를 볼 수단이 없다).
+     *
+     * [설계] 이벤트로 추적하지 않는다. 이벤트는 큐에 쌓였다가
+     * processEventQueue() 에서 나중에 배수되므로, 구독만 하면 이 이벤트가
+     * 어느 단계에서 났는지 복원할 수 없다(전부 마지막 배수 지점에 붙는다).
+     * 그래서 각 단계를 명시적으로 연다.
+     */
+    private turnTrace: TurnTrace = new TurnTrace();
+    /** UI/콘솔에서 마지막 턴 트리를 읽을 때 쓰는 공개 접근자 */
+    getTurnTrace(): TurnTrace { return this.turnTrace; }
     /** AI 스트리밍 매니저 [201] — Worker 기반 세력별 스트리밍 AI (실패 시 메인 스레드 폴백) */
     private aiStream: AIStreamManager | null = null;
     /** 스트리밍 AI 영구 실패 플래그 — 워커 오류 이후 폴백 고정 */
@@ -179,6 +204,8 @@ export class GameEngine {
         this.loyaltySystem.diplomacy = this.diplomacy;
         this.factionAI.diplomacy = this.diplomacy;
         this.diplomacyAI = new FactionDiplomacyAI(this.store, this.diplomacy);
+        this.dialogueEngine = new DialogueEngine(this.store);
+        this.specializedEvents = new SpecializedEventSystem(this.store);
         this.chronicle = new ChronicleManager();
         this.chronicle.attachStore(this.store);
         // 포팅 시스템 초기화 [76-85][213-214][321-340][341-360][421-438][431-432][441-460]
@@ -303,6 +330,14 @@ export class GameEngine {
 
     getCurrentPhase(): GamePhase { return this.currentPhase; }
     getPhaseHistory(): PhaseTransition[] { return [...this.phaseHistory]; }
+
+    generateDialogue(context: DialogueContext): DialogueLine {
+        return this.dialogueEngine.generateDialogue(context);
+    }
+
+    getSpecializedEvents(officerId: string): readonly SpecializedEvent[] {
+        return this.specializedEvents.getEventsForOfficer(officerId);
+    }
 
     private onEnterWorldMap(): void {
         console.log('[Engine] WORLD_MAP enter');
@@ -466,27 +501,48 @@ export class GameEngine {
         try {
             const gs = this.store.getGlobalState();
             console.log(`[Engine] === Turn ${gs.turnCount} | ${gs.time.year}yr ${gs.time.month}mo ===`);
+            // [트레이스] 이번 턴의 계측 시작 — 0번 루트 아래에 1, 2, 3… 이 쌓인다.
+            this.turnTrace.beginTurn(gs.turnCount, gs.time.year, gs.time.month);
 
-            this.resetTurnFlags();
-            this.transition('COUNCIL_START');
-            await this.delay(10);
-            this.transition('COUNCIL_END');
-            await this.delay(10);
+            this.turnTrace.step('무장 상태 초기화', 'setup')
+                .endLazy(() => {
+                    this.resetTurnFlags();
+                    return `전 무장 행동력 회복`;
+                });
+            this.turnTrace.step('평정(议事) 페이즈', 'fsm')
+                .endLazy(() => {
+                    this.transition('COUNCIL_START');
+                    return `${GamePhase[this.currentPhase] ?? this.currentPhase}`;
+                });
+            this.turnTrace.step('개인 행동 페이즈 진입', 'fsm')
+                .endLazy(() => {
+                    this.transition('COUNCIL_END');
+                    return `${GamePhase[this.currentPhase] ?? this.currentPhase}`;
+                });
 
             // AI 턴 — Worker 스트리밍 엔진 [201] 우선, 실패/미지원 시 기존
             // Time-Slicing 스케줄러 폴백. 두 경로 모두 동일한 커맨드 변환 파이프라인 사용.
+            // [트레이스] async 단계를 맡기 위해 핸들을 먼저 연다.
+            // endLazy 에 async 를 넘길 수는 없으므로, await 한 뒤 end() 로 닫는다.
+            const aiStep = this.turnTrace.step('AI 턴 결정', 'ai');
             const decisions = await this.executeAITurnWithStreaming(onProgress);
+            aiStep.end(`결정 ${decisions.length}건`);
             console.log(`[Engine] AI decisions: ${decisions.length}`);
 
+            const convertStep = this.turnTrace.step('AI 결정 → 명령 변환', 'command');
             for (const decision of decisions) {
                 this.convertDecisionToCommand(decision);
             }
+            convertStep.end(`명령 ${this.commandQueue.getPendingCount()}건 대기`);
 
+            const execStep = this.turnTrace.step('명령 일괄 실행', 'command');
             const results = this.executeAllCommands();
             const successCount = results.filter(r => r.success).length;
             console.log(`[Engine] Commands: ${successCount}/${results.length} ok`);
+            execStep.end(`성공 ${successCount} / 전체 ${results.length}`);
 
             // 플레이어가 등록한 자동 내정 임무는 AI/커맨드 처리와 동일한 턴 종료를 거친다. [49][76-85]
+            const domesticStep = this.turnTrace.step('플레이어 자동 내정 실행', 'domestic');
             const domesticResults = this.domesticScheduler.executeAll();
             for (const result of domesticResults) {
                 this.emitEvent({
@@ -504,18 +560,36 @@ export class GameEngine {
                     turn: this.store.getGlobalState().turnCount,
                 });
             }
+            domesticStep.end(domesticResults.length > 0
+                ? `임무 ${domesticResults.length}건 완료`
+                : '대기 중인 임무 없음');
 
-            this.processEventQueue();
-            if (this.bootstrap) {
-                this.bootstrap.processTurnStart();
-            }
+            this.turnTrace.step('이벤트 큐 1차 배수', 'event')
+                .endLazy(() => {
+                    this.processEventQueue();
+                    return `누적 이벤트 ${this.eventQueue.length}건`;
+                });
+            this.turnTrace.step('부트스트랩 턴 시작 훅', 'system')
+                .endLazy(() => {
+                    if (this.bootstrap) this.bootstrap.processTurnStart();
+                    return this.bootstrap ? '24개 서브시스템' : '부트스트랩 없음(테스트 환경)';
+                });
             // 월간 보고서 로그 리셋 — 새 달 동향만 담도록 [148]
             this.securityMonthlyLog.riots = [];
             this.securityMonthlyLog.starvations = [];
             // 세력 AI 월간 자율 행동 (내정/징병/출진) [201]
+            // [트레이스] 세력별로 하위 단계를 연다 — "AI 가 무엇을 했나" 의 핵심.
+            const factionStep = this.turnTrace.step('세력 AI 월간 행동', 'faction');
             const aiReports = this.factionAI.runMonthly({ skipCityDevelopment: this.streamTurnCompleted });
             for (const r of aiReports) {
                 if (r.actions.length > 0) {
+                    const factionHandle = this.turnTrace.step(r.factionName, 'faction');
+                    for (const action of r.actions) {
+                        this.turnTrace.note(action, '', 'faction-action');
+                    }
+                    factionHandle.end(
+                        r.conqueredCityId ? `점령 성공 · ${r.actions.length}행동` : `${r.actions.length}행동`,
+                    );
                     console.log(`[FactionAI] ${r.factionName}: ${r.actions.join(', ')}`);
                     this.emitEvent({
                         id: `faction_ai_${r.factionId}_${Date.now()}`,
@@ -531,19 +605,46 @@ export class GameEngine {
                     });
                 }
             }
+            const activeFactions = aiReports.filter(r => r.actions.length > 0).length;
+            factionStep.end(activeFactions > 0
+                ? `${activeFactions}개 세력이 행동 · 점령 ${aiReports.filter(r => r.conqueredCityId).length}건`
+                : '이번 달 행동한 세력 없음');
             // 도시 안정 월간 판정 [148] — 아사/민란 위험도/민란 발생
             // 주의: 월 수입 유입(processMonthlyMaintenance) *전*에 판정한다.
             // Python city_manager.py 규격: 소비 반영 후 재고 0 이하 → 아사.
             // 수입을 먼저 반영하면 군량 고갈 세력이 수입 한 번에 회복되어 아사가 영원히 발생하지 않는다.
-            this.processCitySecurityMonthly();
-            this.processMonthlyMaintenance();
-            this.processMonthlyUpkeep();
+            this.turnTrace.step('도시 안정 판정', 'economy')
+                .endLazy(() => {
+                    this.processCitySecurityMonthly();
+                    const riots = this.securityMonthlyLog.riots.length;
+                    const starv = this.securityMonthlyLog.starvations.length;
+                    return riots + starv > 0 ? `민란 ${riots} · 아사 ${starv}` : '이상 없음';
+                });
+            this.turnTrace.step('월 수입 유입', 'economy')
+                .endLazy(() => {
+                    this.processMonthlyMaintenance();
+                    return '도시·세력 수입 반영';
+                });
+            this.turnTrace.step('월 세출', 'economy')
+                .endLazy(() => {
+                    this.processMonthlyUpkeep();
+                    return '군사·관료 유지비';
+                });
             // 연의전 이벤트 체인 스캔/발동 [300][106-114]
-            this.processEventChainMonthly();
+            this.turnTrace.step('연의전 이벤트 체인', 'event-chain')
+                .endLazy(() => {
+                    this.processEventChainMonthly();
+                    return '조건 스캔 · 발동 처리';
+                });
             // 포팅 시스템 월간 훅 [76-85][321-340][341-360][421-438] — 전략 명령 진행, 첩보망 유지비,
             // 지역 기후 전이, 계절 기반 수확 보정, 고령 무장 은퇴
-            this.processPortedSystemsMonthly();
+            this.turnTrace.step('포팅 시스템 월간 훅', 'ported')
+                .endLazy(() => {
+                    this.processPortedSystemsMonthly();
+                    return '군단·첩보·기후·은퇴';
+                });
             // AI 세력 월간 자율 외교도 CommandQueue를 경유해 단일 diplomacy 원자를 사용한다. [341-360]
+            const diploStep = this.turnTrace.step('세력 자율 외교', 'diplomacy');
             const diploReports = this.diplomacyAI.runMonthly((factionId, targetFactionId, action) => {
                 const faction = this.store.getFaction(factionId);
                 if (!faction) return { success: false, message: '행동 세력 없음' };
@@ -558,7 +659,10 @@ export class GameEngine {
                 return { success: result?.success ?? false, message: result?.message ?? '외교 명령 실행 실패' };
             });
             for (const r of diploReports) {
+                if (r.messages.length === 0) continue;
+                const diploFactionStep = this.turnTrace.step(r.factionName, 'diplomacy');
                 for (const msg of r.messages) {
+                    this.turnTrace.note(msg, '', 'diplomacy-action');
                     console.log(`[Diplomacy] ${r.factionName}: ${msg}`);
                     this.emitEvent({
                         id: `diplomacy_${r.factionId}_${Date.now()}_${r.messages.indexOf(msg)}`,
@@ -568,10 +672,16 @@ export class GameEngine {
                         turn: this.store.getGlobalState().turnCount,
                     });
                 }
+                diploFactionStep.end(`${r.messages.length}건`);
             }
+            diploStep.end(diploReports.length > 0
+                ? `${diploReports.length}개 세력 검토`
+                : '외교 행동 없음');
             // 무장 배신 판정 (AI 세력 무장) [24]
+            const defectionStep = this.turnTrace.step('무장 배신 판정', 'social');
             const defections = this.loyaltySystem.processMonthlyDefections();
             for (const d of defections) {
+                this.turnTrace.note(d.officerName, d.reason, 'social-action');
                 console.log(`[Engine] 배신: ${d.officerName} (${d.reason})`);
                 this.emitEvent({
                     id: `defection_${d.officerId}_${Date.now()}`,
@@ -581,9 +691,14 @@ export class GameEngine {
                     turn: this.store.getGlobalState().turnCount,
                 });
             }
+            defectionStep.end(defections.length > 0
+                ? `배신 ${defections.length}명`
+                : '배신 없음');
             // 포로 월간 탈출 판정 + 의형제 구출 [131-145][C-인간관계]
+            const socialStep = this.turnTrace.step('인간관계 월간 사건', 'social');
             const rescueReport = processMonthlySwornBrotherRescues(this.store);
             for (const rec of rescueReport.rescued) {
+                this.turnTrace.note('의형제 구출', rec.message, 'social-action');
                 console.log(`[Engine] ${rec.message}`);
                 this.emitEvent({
                     id: `sworn_rescue_${rec.officerId}_${Date.now()}`,
@@ -595,6 +710,7 @@ export class GameEngine {
             }
             const captiveReport = processMonthlyCaptiveEvents(this.store);
             for (const rec of captiveReport.escaped) {
+                this.turnTrace.note('포로 탈출', rec.message, 'social-action');
                 console.log(`[Engine] ${rec.message}`);
                 this.emitEvent({
                     id: `captive_escape_${rec.officerId}_${Date.now()}`,
@@ -607,6 +723,7 @@ export class GameEngine {
             // 월간 복수 이벤트 — 같은 도시/전장의 원수 무장 간 설전·단기접전 [32][33][C-인간관계]
             const vengeanceOutcomes = processMonthlyVengeance(this.store);
             for (const v of vengeanceOutcomes) {
+                this.turnTrace.note('복수', v.message, 'social-action');
                 console.log(`[Engine] ${v.message}`);
                 this.emitEvent({
                     id: `vengeance_${v.actorId}_${Date.now()}`,
@@ -619,6 +736,7 @@ export class GameEngine {
             // 월간 의형제 결의 — 깊은 우호도 무장 간 결의 [C-인간관계][25]
             const pactReport = processMonthlySwornBrotherPacts(this.store);
             for (const pact of pactReport.pacts) {
+                this.turnTrace.note('의형제 결의', pact.message, 'social-action');
                 console.log(`[Engine] ${pact.message}`);
                 this.emitEvent({
                     id: `sworn_pact_${pact.officerAId}_${pact.officerBId}_${Date.now()}`,
@@ -628,9 +746,15 @@ export class GameEngine {
                     turn: this.store.getGlobalState().turnCount,
                 });
             }
+            socialStep.end(
+                `구출 ${rescueReport.rescued.length} · 탈출 ${captiveReport.escaped.length}`
+                + ` · 복수 ${vengeanceOutcomes.length} · 결의 ${pactReport.pacts.length}`,
+            );
             // 월간 로밍 이벤트 — 재야 명사 방문 (현자/은자/상인/행상인/산적) [25][441-460]
+            const roamingStep = this.turnTrace.step('재야 명사 로밍', 'roaming');
             const roamingReport = processMonthlyRoamingEvents(this.store);
             for (const ev of roamingReport.events) {
+                this.turnTrace.note(ev.type, ev.message, 'roaming-action');
                 console.log(`[Engine] ${ev.message}`);
                 this.emitEvent({
                     id: `roaming_${ev.type}_${ev.cityId}_${Date.now()}`,
@@ -640,9 +764,14 @@ export class GameEngine {
                     turn: this.store.getGlobalState().turnCount,
                 });
             }
+            roamingStep.end(roamingReport.events.length > 0
+                ? `사건 ${roamingReport.events.length}건`
+                : '방문 없음');
             // 재야 무장 출사 타진 — 자발적 방문 등용 [24][421-440]
+            const visitStep = this.turnTrace.step('재야 무장 방문', 'visit');
             const visitReport = processMonthlyFreeOfficerVisits(this.store);
             for (const visit of visitReport) {
+                this.turnTrace.note(visit.officerName, visit.message, 'visit-action');
                 console.log(`[Engine] ${visit.message}`);
                 this.emitEvent({
                     id: `free_visit_${visit.officerId}_${Date.now()}`,
@@ -673,10 +802,60 @@ export class GameEngine {
                     turn: this.store.getGlobalState().turnCount,
                 });
             }
+            visitStep.end(visitReport.length > 0
+                ? `방문 ${visitReport.length}건`
+                : '방문 없음');
+            const tribeStep = this.turnTrace.step('이민족 월간 affairs', 'tribe');
+            const tribeUpdates = planMonthlyTribeAffairs(
+                this.store.getAllMigrationTribes(),
+                this.store.getAllInvasionDemands(),
+            );
+            for (const u of tribeUpdates) {
+                const tribe = this.store.getMigrationTribe(u.id);
+                if (!tribe) continue;
+                const abandoned = demandsAbandonedBy(u, tribe, this.store.getAllInvasionDemands());
+                for (const demandId of abandoned) {
+                    this.store.updateInvasionDemand(demandId, { withdrawn: true });
+                }
+                // 남은 요구의 기한을 한 달 줄인다. 기한이 0 이 되면 demandRetraction 이
+                // '이미 철회된 요구' 로 보므로, 남은 기간이 에러 없이 소진된다.
+                for (const demand of activeDemands(this.store.getAllInvasionDemands())) {
+                    this.store.updateInvasionDemand(demand.id, {
+                        monthsRemaining: Math.max(0, demand.monthsRemaining - 1),
+                    });
+                }
+                this.store.updateMigrationTribe(u.id, {
+                    negotiatedThisMonth: u.negotiatedThisMonth,
+                    affinity: u.affinity,
+                    settlement: u.settlement,
+                });
+                if (!u.message) continue;
+                this.turnTrace.note(tribe.name, u.message, 'tribe-action');
+                console.log(`[Engine] ${u.message}`);
+                this.emitEvent({
+                    id: `tribe_departed_${u.id}_${this.store.getGlobalState().turnCount}`,
+                    type: 'TRIBE_DEPARTED',
+                    payload: {
+                        tribeId: u.id, tribeName: tribe.name,
+                        affinity: u.affinity, abandonedDemandIds: abandoned,
+                        message: u.message,
+                    },
+                    timestamp: Date.now(),
+                    turn: this.store.getGlobalState().turnCount,
+                });
+            }
+            const departedCount = tribeUpdates.filter(u => u.departed).length;
+            tribeStep.end(departedCount > 0
+                ? `이탈 ${departedCount}부족`
+                : `교섭 잠금 해제 ${tribeUpdates.length}부족`);
+            this.processMonthlyImperialAudience();
+            this.processMonthlySieges();
             // 세력 운명 판정 — 멸망/통일/방랑군 재기 [83][213]
             // 무장이 남은 세력은 제거 대신 방랑군으로 전환 — playerFactionId 유효성 보장
+            const fateStep = this.turnTrace.step('세력 운명 판정', 'fate');
             const fateReport = this.fateSystem.checkFatesWithVagrantRevival(true);
             for (const v of fateReport.vagrantConversions ?? []) {
+                this.turnTrace.note('방랑군 전환', v.factionName, 'fate-action');
                 console.log(`[Engine] 방랑군 전환: ${v.factionName} (직속 ${v.keptOfficers}, 이탈 ${v.releasedOfficers})`);
                 this.portedMonthlyLog.vagrant.push({ factionName: v.factionName, kind: 'CONVERT', success: true, message: v.message });
                 this.emitEvent({
@@ -688,6 +867,7 @@ export class GameEngine {
                 });
             }
             for (const name of fateReport.destroyedFactionNames) {
+                this.turnTrace.note('세력 멸망', name, 'fate-action');
                 console.log(`[Engine] 세력 멸망: ${name}`);
                 this.emitEvent({
                     id: `faction_destroyed_${Date.now()}`,
@@ -717,8 +897,17 @@ export class GameEngine {
                     turn: this.store.getGlobalState().turnCount,
                 });
             }
-            this.store.advanceTime();
+            fateStep.end(fateReport.ending
+                ? `엔딩: ${fateReport.ending}`
+                : `방랑 전환 ${fateReport.vagrantConversions?.length ?? 0} · 멸망 ${fateReport.destroyedFactionNames.length}`);
+            this.turnTrace.step('시간 경과', 'time')
+                .endLazy(() => {
+                    this.store.advanceTime();
+                    const t = this.store.getGlobalState().time;
+                    return `${t.year}년 ${t.month}월`;
+                });
             // 지옥 난이도 제약 — 수입 유실/탈영/반란 [X-난이도]
+            const hellStep = this.turnTrace.step('지옥 난이도 제약', 'hell');
             const hellReport = processHellConstraints(this.store);
             if (hellReport.taxLeaked > 0) {
                 console.log(`[Engine] 지옥: 세수 유실 ${hellReport.taxLeaked}`);
@@ -752,14 +941,30 @@ export class GameEngine {
             }
             // [결함 수정] 턴 중반 유지보수 이벤트(재야 방문/로밍/복수/구출 등)가
             // 다음 턴 시작까지 배출되지 않아 UI가 1턴 늦게 반응하는 문제 해소
-            this.processEventQueue();
-            // 턴 종료 시 개인 행동 페이즈를 지도 페이즈로 되돌린다.
-            // executeTurn()은 월간 자동 진행이므로 다음 턴의 COUNCIL_START가
-            // 반드시 WORLD_MAP에서 시작되도록 FSM 경계를 닫는다.
-            if (this.currentPhase === GamePhase.PERSONAL_ACTION) {
-                this.transition('ACTION_END');
-            }
+            this.turnTrace.step('이벤트 큐 최종 배수', 'event')
+                .endLazy(() => {
+                    const queued = this.eventQueue.length;
+                    this.processEventQueue();
+                    return `배수 ${queued}건`;
+                });
+            hellStep.end(
+                `유실 ${hellReport.taxLeaked} · 탈영 ${hellReport.deserted.length}`
+                + ` · 반란 ${hellReport.revolted.length}`,
+            );
+            this.turnTrace.step('턴 종료 (FSM 복귀)', 'fsm')
+                .endLazy(() => {
+                    // 턴 종료 시 개인 행동 페이즈를 지도 페이즈로 되돌린다.
+                    // executeTurn()은 월간 자동 진행이므로 다음 턴의 COUNCIL_START가
+                    // 반드시 WORLD_MAP에서 시작되도록 FSM 경계를 닫는다.
+                    const wasPersonal = this.currentPhase === GamePhase.PERSONAL_ACTION;
+                    if (wasPersonal) this.transition('ACTION_END');
+                    return wasPersonal
+                        ? `PERSONAL_ACTION → ${GamePhase[this.currentPhase] ?? this.currentPhase}`
+                        : `${GamePhase[this.currentPhase] ?? this.currentPhase} 유지`;
+                });
+            this.turnTrace.endTurn();
             console.log('[Engine] === Turn end ===');
+            console.log(`[Engine] 턴 트레이스:\n${this.turnTrace.toText(2)}`);
         } finally {
             this.isProcessingTurn = false;
         }
@@ -1039,6 +1244,99 @@ export class GameEngine {
      * 실제로 발동시키기 위한 지출선. 수입만 있고 이 지출이 없으면 굶주림이
      * 영영 불가능해진다. 상수를 임의 튜닝값으로 보고 지우면 그 버그가 되살아난다.
      */
+    /** 요충지 포위 월간 진행 — 개월 감소, 수비군 감소, 성공/파산 판정. */
+    private processMonthlySieges(): void {
+        const sieges = this.store.getAllSieges();
+        if (sieges.length === 0) return;
+        const step = this.turnTrace.step('요충지 포위 진행', 'siege');
+        const turn = this.store.getGlobalState().turnCount;
+        for (const operation of sieges) {
+            const feature = this.store.getMapFeature(operation.featureId);
+            if (!feature) {
+                this.store.clearSiege(operation.factionId);
+                continue;
+            }
+            const before = feature.ownerId;
+            const result = advanceSiege(operation, feature, turn);
+            this.store.updateMapFeature(feature.id, result.feature);
+            if (result.status === 'ACTIVE') {
+                this.store.setSiege(result.operation);
+            } else {
+                this.store.clearSiege(operation.factionId);
+            }
+            this.turnTrace.note(feature.name, result.message, 'siege-action');
+            console.log(`[Engine] ${result.message}`);
+            this.emitEvent({
+                id: `feature_siege_${feature.id}_${turn}`,
+                type: 'MAP_FEATURE_SIEGE',
+                payload: {
+                    featureId: feature.id, featureName: feature.name,
+                    factionId: operation.factionId, status: result.status,
+                    previousOwnerId: before, newOwnerId: result.feature.ownerId,
+                    message: result.message,
+                },
+                timestamp: Date.now(),
+                turn,
+            });
+        }
+        step.end(`포위 ${sieges.length}건 진행`);
+    }
+
+    private processMonthlyImperialAudience(): void {
+        const step = this.turnTrace.step('황제 임무 월간', 'audience');
+        const court = this.store.getImperialCourt();
+        const turn = this.store.getGlobalState().turnCount;
+        const activeId = court?.activeMissionId ?? null;
+        const active = activeId ? court?.missions[activeId] : null;
+        if (!active || active.status !== 'ACTIVE') {
+            step.end(court ? '진행 중인 임무 없음' : '황제 미설정');
+            return;
+        }
+
+        const officer = this.store.getOfficer(active.officerId);
+        if (!officer || !officer.runtime.isAlive) {
+            this.store.updateAudienceMission(active.id, { status: 'FAILED' });
+            this.store.updateImperialCourt({ activeMissionId: null, lastAudienceTurn: turn });
+            step.end('담당 무장 사망으로 실패');
+            return;
+        }
+
+        const expiry = checkMissionExpiry(active, turn);
+        const advanced = advanceMission(expiry.mission, monthlyProgress(officer, active.kind));
+        this.store.updateAudienceMission(active.id, advanced.mission);
+
+        if (advanced.succeeded) {
+            const reward = computeAudienceReward(officer, advanced.mission);
+            this.store.updateOfficer(officer.id, { rank: reward.rank });
+            const faction = officer.factionId ? this.store.getFaction(officer.factionId) : null;
+            if (faction) this.store.updateFaction(faction.id, { gold: faction.gold + reward.gold });
+            this.store.updateImperialCourt({ activeMissionId: null, lastAudienceTurn: turn });
+            console.log(`[Engine] ${reward.message}`);
+            this.emitEvent({
+                id: `imperial_mission_succeeded_${active.id}_${turn}`,
+                type: 'IMPERIAL_MISSION_SUCCEEDED',
+                payload: {
+                    officerId: officer.id, officerName: officer.name,
+                    kind: active.kind, rank: reward.rank, promoted: reward.promoted,
+                    gold: reward.gold, message: reward.message,
+                },
+                timestamp: Date.now(),
+                turn,
+            });
+            step.end(`성공 · ${officer.name} 관직 ${reward.rank} · ${reward.gold}金`);
+            return;
+        }
+
+        if (expiry.expired) {
+            this.store.updateImperialCourt({ activeMissionId: null, lastAudienceTurn: turn });
+            console.log(`[Engine] ${expiry.message} (${officer.name})`);
+            step.end(`기한 만료 · ${officer.name}`);
+            return;
+        }
+
+        step.end(`${officer.name} 진척 ${advanced.mission.progress}/${advanced.mission.targetAmount}`);
+    }
+
     private processMonthlyUpkeep(): void {
         const factions = this.store.getAllFactions();
         for (const faction of factions) {
@@ -1588,7 +1886,9 @@ export class GameEngine {
     } {
         return {
             state: this.store.createSnapshot(),
-            globalState: this.store.getGlobalState(),
+            // [2026-10-04] 저장 시각 — 오프라인 진행용. globalState 안에 두면
+            //   저장 파이프라인을 건드리지 않고 로드에서 바로 읽는다.
+            globalState: { ...this.store.getGlobalState(), savedAt: Date.now() },
             // 실행된 커맨드는 현재 상태에 이미 반영되므로 저장 후 재실행하지 않는다. [17]
             commands: this.commandQueue.serializePending(),
             diplomacy: this.diplomacy.serialize(),
@@ -1713,8 +2013,15 @@ export class GameEngine {
         console.log('[Engine] Save loaded');
     }
 
-    initWorld(officers: Officer[], factions: Faction[], cities: City[], armies: Army[], scenarioId?: string): void {
-        this.store.initWorld(officers, factions, cities, armies);
+    initWorld(
+        officers: Officer[],
+        factions: Faction[],
+        cities: City[],
+        armies: Army[],
+        scenarioId?: string,
+        mapFeatures: MapFeature[] = [],
+    ): void {
+        this.store.initWorld(officers, factions, cities, armies, mapFeatures);
         // 시나리오의 세력 treaty를 관계 엔진에 적재해 초기 상태부터 단일 원자를 유지한다. [341-360]
         this.diplomacy.restore([]);
         for (const faction of factions) {
