@@ -583,6 +583,7 @@ async function main() {
             "var facilityOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
             "var facilityTitle=document.getElementById('dialogue-title').textContent;" +
             "document.getElementById('dialogue-close').click();" +
+            "var _ob=document.querySelector('#city-scene-badges .city-badge');if(_ob)_ob.click();" +
             "var officer=document.querySelector('#cdp-officers .cdp-officer-clickable');if(officer)officer.click();" +
             "var officerOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
             "var officerTitle=document.getElementById('dialogue-title').textContent;" +
@@ -677,7 +678,7 @@ async function main() {
             + "bleedMode:document.getElementById('city-detail-panel').classList.contains('city-bleed'),"
             // 모드 전환 버튼(🏛 도시 관리)이 더 이상 없는지 + 반투명 HUD 가 실제로 보이는지.
             + "backButton:!!document.querySelector('.city-bleed-toggle'),"
-            + "layoutPanes:(function(){function vis(e){if(!e)return false;var r=e.getBoundingClientRect();return r.width>40&&r.height>20;}return {"
+            + "layoutPanes:(function(){document.getAnimations().forEach(function(a){try{a.finish();}catch(e){}});function vis(e){if(!e)return false;var r=e.getBoundingClientRect();return r.width>40&&r.height>20;}return {"
             + "side:!document.querySelector('#city-detail-panel .cdp-side-pane'),"
             + "head:vis(document.querySelector('#city-detail-panel .cdp-header')),"
             // [2026-10-03] 좌·우 레일을 걷어내 그림 위 시트로 대체했다. 레일 내용은 시트 안에
@@ -1102,7 +1103,7 @@ async function main() {
         };
         console.log('REGRESSION_CHECKS:', JSON.stringify(regressionChecks));
         const cityChecks = {
-            sceneSize: dialogueProbe.citySceneWidth === 480 && dialogueProbe.citySceneHeight === 240,
+            sceneSize: dialogueProbe.citySceneWidth === dialogueProbe.stageBox.w && dialogueProbe.citySceneHeight === dialogueProbe.stageBox.h,
             // 진입 화면 단일 구성: 모드 전환 버튼이 없고, 배경 그림이 실제로 로드됐으며,
             // 16:9 무대가 화면 안에 들어가며, 유리 패널(상단 바·우측 통제 열·하단 무장
             // 스트립)이 그림 위에 겹쳐 보인다. artReady 를 확인하지 않으면 그림이 404
@@ -1205,8 +1206,8 @@ async function main() {
             && dialogueProbe.giftPreview.includes('+14')
             && dialogueProbe.giftAfterGold === dialogueProbe.giftBeforeGold - 500
             && dialogueProbe.giftAfterAffinity !== dialogueProbe.giftBeforeAffinity
-            && dialogueProbe.citySceneWidth === 480
-            && dialogueProbe.citySceneHeight === 240
+            && dialogueProbe.citySceneWidth === dialogueProbe.stageBox.w
+            && dialogueProbe.citySceneHeight === dialogueProbe.stageBox.h
             && dialogueProbe.removedBlock.hint === true
             && dialogueProbe.removedBlock.summary === true
             && dialogueProbe.removedBlock.detail === true
