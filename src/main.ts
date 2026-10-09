@@ -44,11 +44,19 @@ import { composeDialogue, composeResponse } from './core/dialogue_composer.js';
 import type { DialogueTopic } from './core/dialogue_composer.js';
 import {
     ScriptRunner,
-    buildMarketScript,
     buildTradeOffer,
     buildTradeScript,
     hasTradePost,
 } from './core/dialogue_script.js';
+import {
+    MARKET_ORDER_COST,
+    marketMood,
+    moodBar,
+    pickRumorTarget,
+    rumorLine,
+    pickTalent,
+    talentLine,
+} from './core/market_command.js';
 import type { DialogueEffect, ScriptNode, TradeOfferRow } from './core/dialogue_script.js';
 import { MonthlyReportSystem } from './core/monthly_report.js';
 // 턴 실행 트레이스 패널 렌더러 [디버그] — 번호가 붙은 트리를 HTML 로
@@ -140,7 +148,7 @@ import {
     RUFFIAN_BRIBE_COST,
 } from './core/ruffian_event_system.js';
 import { getCaptivesInCity } from './core/captive_escape_system.js';
-import { FacilityType, type CityBuildingState, type OfficerID, type CityID, type Personality } from './core/types.js';
+import { FacilityType, type CityBuildingState, type OfficerID, type CityID, type Personality, type OfficerStatus } from './core/types.js';
 import type { GameStore } from './core/game_store.js';
 import { DomesticTaskType } from './core/domestic_scheduler.js';
 // [Auth] 계약 + 백엔드 스토어 + UI 흐름을 조립하는 통합 글루
@@ -1007,27 +1015,24 @@ function enterCity(cityId: string): void {
     });
     syncChinaMapCities();
     showCityInfo(cityId);
-    // 마을 진입 안내 대화를 먼저 띄우고, 닫히면 알현/부족/요충지 창을 이어서 연다.
+    // 마을 진입 안내 대화를 먼저 띄우고, 닫히면 알현/부족 창을 이어서 연다.
     // 알현이 떴으면 그 선택이 끝나고 부족 창을 띄운다.
     openCityEntryDialogue(cityId);
     queueAfterDialogueChained(() => {
         if (maybeOpenImperialAudience(cityId)) {
             queueCityWindowsAfterDialogue(cityId);
-        } else if (!maybeOpenTribeNegotiation(cityId)) {
-            maybeOpenFeatureSiege(cityId);
         } else {
-            queueCityWindowsAfterDialogue(cityId, true);
+            maybeOpenTribeNegotiation(cityId);
         }
     });
 }
 
 /**
- * 마을 진입 안내 대화 — 호칭 인사 + 도시 간략 안내 + 조건 선택지 [49]
+ * 마을 진입 안내 대화 — 간단한 인사말 한 줄만 표시한다 [49]
  *
- * - 진입 즉시 호칭을 넣어 인사하고 도시 간략 안내를 3단계로 표시한다.
- * - 성벽 내구도가 100% 가 아니면 성벽 보수 선택지를 활성화한다.
- * - 선택지는 고른 뒤 ▶ 로 확정한다(선택 확정 모드).
- * - 도시 방문을 확정하면 전국 지도가 바로 열려 목적지를 고를 수 있다.
+ * - 진입 즉시 호칭을 넣어 인사한다. 선택지·단계 없이 한 화면이다.
+ * - 닫기(ESC·자동 종료) 뒤 알현/부족 창을 이어서 연다.
+ * - 본격적인 용무(성벽 보수·도시 방문)는 성문지기 대화에서 처리한다.
  */
 function openCityEntryDialogue(cityId: string): void {
     const store = engine['store'];
@@ -1046,51 +1051,6 @@ function openCityEntryDialogue(cityId: string): void {
 
     const title = caller ? `${caller.name}님` : '주군';
 
-    const wallPct = city.maxDefense > 0 ? Math.round((city.defense / city.maxDefense) * 100) : 100;
-    const wallLine = wallPct >= 100
-        ? `성벽은 완전하다 (${city.defense}/${city.maxDefense}).`
-        : `성벽이 완전하지 않다 (${city.defense}/${city.maxDefense}, ${wallPct}%).`;
-
-    // [대화창 단계 표시] 인사 · 도시 현황 · 안내를 3단계로 나눠
-    // 클릭·◀▶ 로 교체하며 진행한다. 첫 단계에서 ◀ 는 비활성이다.
-    const stepGreeting = `성문지기 ${title}, ${city.name}땅에 이르셨구려.`;
-    const stepStatus = `백성은 ${city.population.toLocaleString()}명, 주둔 병력은 ${city.development.toLocaleString()}명이라오. ${wallLine}`;
-    const stepGuide = `살림살이는 제법 안정되어 있으니, 한번 둘러보시지요.`;
-    const text = `${stepGreeting} ${stepStatus} ${stepGuide}`;
-
-    // [선택 확정 모드] 성벽 보수 · 도시 방문을 고른 뒤 ▶ 로 확정한다.
-    const repairChoice: DialogueSceneChoice = {
-        id: 'repair_wall',
-        label: '성벽 보수',
-        description: '',
-        disabled: wallPct >= 100,
-        onSelect: () => {
-            const cost = 200 + Math.round((city.maxDefense - city.defense) * 2);
-            if (city.funds < cost) {
-                return `자금이 부족하다 (필요 ${cost}金, 보유 ${city.funds}金).`;
-            }
-            store.updateCity(cityId, {
-                funds: city.funds - cost,
-                defense: Math.min(city.maxDefense, city.defense + Math.max(5, Math.round((city.maxDefense - city.defense) * 0.4))),
-            });
-            addLog(`${city.name} 성벽을 보수했다 (비용 ${cost}金).`);
-            return `성벽을 보수했다. 이제 방어력이 더 단단해졌다.`;
-        },
-    };
-    const visitChoice: DialogueSceneChoice = {
-        id: 'visit_city',
-        label: '도시 방문',
-        description: '',
-        // ▶ 확정 뒤 전국 지도를 바로 연다.
-        onSelect: () => {
-            // 도시를 떠나므로 알현·부족·요충지 창은 열지 않는다.
-            clearQueuedDialogue();
-            closeDialogue();
-            setTimeout(() => openWorldMapForTravel(cityId), 180);
-            return `${city.name}을 떠나 다른 도시로 향한다.`;
-        },
-    };
-
     openDialogue({
         pages: [
             {
@@ -1099,12 +1059,10 @@ function openCityEntryDialogue(cityId: string): void {
                 speaker: title,
                 placeMark: '邑',
                 speakerPortrait: !!caller,
-                text,
-                steps: [stepGreeting, stepStatus, stepGuide],
-                selectChoice: true,
+                text: `성문지기 ${title}, ${city.name}땅에 이르셨구려.`,
                 hideFooter: true,
-                choicePrompt: `${title}, 업무 또는 다른 도시 방문 계획이 있으신 가요`,
-                choices: [repairChoice, visitChoice],
+                autoCloseMs: 3000,
+                dismissOnClick: true,
             },
         ],
         index: 0,
@@ -1113,13 +1071,10 @@ function openCityEntryDialogue(cityId: string): void {
 
 /**
  * 알현 창이 닫힌 뒤 이어서 열 도시 창들을 띄운다.
- *
- * @param skipTribe 부족 교섭을 건너뛸 때 true (요충지 출진 창만 연다)
  */
-function queueCityWindowsAfterDialogue(cityId: CityID, skipTribe = false): void {
+function queueCityWindowsAfterDialogue(cityId: CityID): void {
     const run = (): void => {
-        if (skipTribe) { maybeOpenFeatureSiege(cityId); return; }
-        if (!maybeOpenTribeNegotiation(cityId)) maybeOpenFeatureSiege(cityId);
+        maybeOpenTribeNegotiation(cityId);
     };
     // 앞선 대기 콜백이 있으면 먼저 돌린 뒤 우리 것을 건다 — 순서가 뒤집히면 엉뚱한 창이 먼저 열린다.
     queueAfterDialogueChained(run);
@@ -1353,79 +1308,6 @@ function maybeOpenTribeNegotiation(cityId: CityID): boolean {
 /** 요충지 인접 판정 거리 — 도시 인접 판정(ADJACENT_DIST)과 같은 기준을 쓴다. */
 const FEATURE_ADJACENT_DIST = 0.16;
 
-/**
- * 인접 요충지 포위 개시 — 도시 병력을 묶어 인접 요충지로 보낸다.
- *
- * [E2E 안전]
- * 테스트 훅은 openCity → showCityInfo 로 직접 도시를 열기 때문에 이 경로를 타지 않는다.
- */
-function maybeOpenFeatureSiege(cityId: CityID): void {
-    const store = engine['store'];
-    const gs = store.getGlobalState();
-    const playerFactionId = gs.playerFactionId;
-    if (!playerFactionId) return;
-    const city = store.getCity(cityId);
-    if (!city) return;
-    if (store.getSiege(playerFactionId)) return;
-    const candidates = store.getAllMapFeatures().filter(f => f.ownerId !== playerFactionId);
-    if (candidates.length === 0) return;
-
-    const rows = candidates.map(f => {
-        const elig = checkSiegeEligibility(f, playerFactionId, {
-            ownerId: f.ownerId,
-            cityMapX: city.mapX ?? 0,
-            cityMapY: city.mapY ?? 0,
-            adjacentDist: FEATURE_ADJACENT_DIST,
-        });
-        const dist = Math.hypot((f.mapX ?? 0) - (city.mapX ?? 0), (f.mapY ?? 0) - (city.mapY ?? 0));
-        const spec = DEFAULT_SIEGE_MONTHS[f.kind];
-        return {
-            feature: f,
-            ok: elig.ok,
-            reason: elig.reason,
-            adjacent: dist <= FEATURE_ADJACENT_DIST,
-            label: `${f.name} · ${f.kind} · 수비군 ${f.garrison}명 · 포위 ${spec}개월 · 거리 ${dist.toFixed(3)}`,
-        };
-    });
-    const adjacent = rows.filter(r => r.adjacent);
-    if (adjacent.length === 0) return;
-
-    const hasSupply = (target: MapFeature): boolean =>
-        store.getMapFeaturesByFaction(playerFactionId).some(
-            owned => owned.id !== target.id
-                && Math.hypot((owned.mapX ?? 0) - (target.mapX ?? 0), (owned.mapY ?? 0) - (target.mapY ?? 0)) <= (owned.supplyRadius ?? 0.09),
-        );
-
-    openDialogue({
-        pages: [{
-            title: `${city.name} — 요충지 출진`,
-            speaker: '군사',
-            text: `어느 요충지로 보낼지 고른다. 병력은 도시 병력을 넘길 수 없다 (현재 ${city.development}명).`,
-            choices: [
-                ...adjacent.map(row => ({
-                    id: `siege_${row.feature.id}`,
-                    label: row.feature.name,
-                    description: `${row.label} · 출진 가능 병력 ${Math.min(city.development, SIEGE_MIN_COMMIT_TROOPS)}+`,
-                    disabled: city.development < SIEGE_MIN_COMMIT_TROOPS,
-                    onSelect: () => {
-                        const committed = Math.min(city.development, Math.max(SIEGE_MIN_COMMIT_TROOPS, Math.round(city.development * 0.5)));
-                        const started = startSiege(
-                            row.feature, playerFactionId, city.id, committed,
-                            gs.turnCount, { hasSupplyFeature: hasSupply(row.feature), maxTroops: city.development },
-                            `siege_${playerFactionId}_${row.feature.id}`,
-                        );
-                        store.setSiege(started.operation);
-                        store.updateMapFeature(row.feature.id, started.feature);
-                        return started.message;
-                    },
-                })),
-                { id: 'leave', label: '출진하지 않는다', description: '병력을 움직이지 않는다', onSelect: () => '병력은 그대로 둔다.' },
-            ],
-        }],
-        index: 0,
-    });
-}
-
 /** 성문 검문 대화 — 뇌물·잠입·철수 중 선택, 통과하면 입장한다. */
 function openGateDialogue(cityId: string, strict: boolean): void {
     const store = engine['store'];
@@ -1542,53 +1424,64 @@ function travelTargetCities(originId?: string | null): Array<import('./core/type
 }
 
 /**
- * 성문지기 대화 — 선택지 2개.
+ * 성문지기 대화 — 도시 진입 풀 대화가 열리는 곳이다.
  *
- * 1) 성문지기와 이야기한다 (현재 도시 정보)
- * 2) 다른 도시 방문하기 (지도 활성화 → 도시 선택)
- *
- * [왜 기존 openGateDialogue 와 다른가]
- * openGateDialogue 는 **타 도시로 들어갈 때** 문지기를 통과하는 절차라 선택지가
- * 뇌물·잠입·철수로 게임 규칙(금화·악명)을 건드린다. 여기서는 **내 도시 성문에서
- * 떠나는** 대화라 규칙 변화 없이 정보 제공과 이동 선택만 한다. 성문지기를 공유할
- * 뿐 목적이 다르므로 분리했다.
+ * 진입 시에는 인사말만 보이고, 성벽 보수·도시 방문 같은 용무는 여기서 처리한다.
+ * 1) 인사·안내 2단계를 읽고 2) 선택지를 고른 뒤 ▶ 로 확정한다.
+ * 도시 방문을 확정하면 전국 지도가 바로 열린다.
  */
 function openCityGatekeeperDialogue(city: import('./core/types.js').City | null | undefined): void {
     if (!engine || !city) return;
     const store = engine['store'];
     const gs = store.getGlobalState();
-    const faction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
-    const officerCount = countCityOfficers(city);
-    // [대화창 단계 표시·선택 확정 모드] 입성 대화와 같은 구조 — 3단계로 읽고
-    // 선택지를 고른 뒤 ▶ 로 확정한다. 첫 단계에서 ◀ 는 비활성이다.
-    const stepGreeting = `문은 열려 있소. ${city.name}의 일은 언제든 말씀하시지.`;
-    const stepStatus = `지금 치안은 ${city.developmentStats.publicOrder}이고, 병영에 무장 ${officerCount}명이 있습니다.`;
-    const stepGuide = `바깥은 넓으니 다른 도시로도 얼마든지 다닐 수 있지요.`;
-    const text = `${stepGreeting} ${stepStatus} ${stepGuide}`;
+    const faction = city.ownerId ? store.getFaction(city.ownerId) : null;
 
-    // [이동 화면] ▶ 로 다른 도시 방문을 확정하면 뜬다. 전국 지도에서 목적지를 고른다.
-    const travelPage: DialogueScenePage = {
-        title: `도시 이동 — ${city.name}`,
-        subtitle: faction ? `${faction.name} · ${city.name} 성문` : `${city.name} 성문`,
-        speaker: '성문지기',
-        placeMark: '門',
-        speakerPortrait: true,
-        text: `성문은 열어 두겠소. 다른 도시로 가려거든 지도에서 목적지를 고르시지.`,
-        hideFooter: true,
-        choices: [
-            {
-                id: 'travel',
-                label: '다른 도시로 이동한다',
-                description: '전국 지도에서 목적지 도시를 고른다',
-                onSelect: () => {
-                    // 도시를 떠나므로 대기 중인 다른 창은 열지 않는다.
-                    clearQueuedDialogue();
-                    closeDialogue();
-                    setTimeout(() => openWorldMapForTravel(city.id), 180);
-                    return `${city.name} 성문을 나선다.`;
-                },
-            },
-        ],
+    const selected = store.getOfficer(gs.selectedOfficerId ?? '');
+    const leader = faction ? store.getOfficer(faction.leaderId) : null;
+    const caller = (selected && selected.factionId === gs.playerFactionId)
+        ? selected
+        : leader
+        ?? store.getAllOfficers().find(o => o.factionId === gs.playerFactionId && o.runtime.isAlive)
+        ?? null;
+
+    const title = caller ? `${caller.name}님` : '주군';
+    const wallPct = city.maxDefense > 0 ? Math.round((city.defense / city.maxDefense) * 100) : 100;
+
+    const stepGreeting = `성문지기 ${title}, ${city.name}땅에 이르셨구려.`;
+    const stepGuide = `살림살이는 제법 안정되어 있으니, 한번 둘러보시지요.`;
+    const text = `${stepGreeting} ${stepGuide}`;
+
+    // [선택 확정 모드] 성벽 보수 · 도시 방문을 고른 뒤 ▶ 로 확정한다.
+    const repairChoice: DialogueSceneChoice = {
+        id: 'repair_wall',
+        label: '성벽 보수',
+        description: '',
+        disabled: wallPct >= 100,
+        onSelect: () => {
+            const cost = 200 + Math.round((city.maxDefense - city.defense) * 2);
+            if (city.funds < cost) {
+                return `자금이 부족하다 (필요 ${cost}金, 보유 ${city.funds}金).`;
+            }
+            store.updateCity(city.id, {
+                funds: city.funds - cost,
+                defense: Math.min(city.maxDefense, city.defense + Math.max(5, Math.round((city.maxDefense - city.defense) * 0.4))),
+            });
+            addLog(`${city.name} 성벽을 보수했다 (비용 ${cost}金).`);
+            return `성벽을 보수했다. 이제 방어력이 더 단단해졌다.`;
+        },
+    };
+    const visitChoice: DialogueSceneChoice = {
+        id: 'visit_city',
+        label: '도시 방문',
+        description: '',
+        // ▶ 확정 뒤 전국 지도를 바로 연다.
+        onSelect: () => {
+            // 도시를 떠나므로 대기 중인 다른 창은 열지 않는다.
+            clearQueuedDialogue();
+            closeDialogue();
+            setTimeout(() => openWorldMapForTravel(city.id), 180);
+            return `${city.name}을 떠나 다른 도시로 향한다.`;
+        },
     };
 
     openDialogue({
@@ -1596,44 +1489,19 @@ function openCityGatekeeperDialogue(city: import('./core/types.js').City | null 
             {
                 title: `성문 — ${city.name}`,
                 subtitle: faction ? `${faction.name} · ${city.name} 성문` : `${city.name} 성문`,
-                speaker: '성문지기',
+                speaker: title,
                 placeMark: '門',
-                speakerPortrait: true,
+                speakerPortrait: !!caller,
                 text,
-                steps: [stepGreeting, stepStatus, stepGuide],
+                steps: [stepGreeting, stepGuide],
                 selectChoice: true,
                 hideFooter: true,
-                choicePrompt: '성문지기에게 용무를 전하시오',
-                choices: [
-                    {
-                        id: 'talk',
-                        label: '성문지기와 이야기 한다',
-                        description: '',
-                        onSelect: () => `${city.name}은 지금 크게 번영하고 있소. 무장들 얼굴도 다 알고 있지.`,
-                    },
-                    {
-                        id: 'travel',
-                        label: '다른 도시로 이동한다',
-                        description: '',
-                        // ▶ 확정 뒤 이동 화면(다음 장면)으로 넘어간다.
-                        advanceOnConfirm: true,
-                    },
-                ],
+                choicePrompt: `${title}, 업무 또는 다른 도시 방문 계획이 있으신 가요`,
+                choices: [repairChoice, visitChoice],
             },
-            travelPage,
         ],
         index: 0,
     });
-}
-
-/** 이 도시에 주둔한 무장 수 — 시트의 무장 목록과 **같은 기준**을 쓴다. */
-function countCityOfficers(city: import('./core/types.js').City): number {
-    if (!engine) return 0;
-    const store = engine['store'];
-    const cityOfficers = city.officerIds
-        .map(id => store_getOfficerSafe(id))
-        .filter((o): o is NonNullable<typeof o> => o !== null);
-    return mergeCityAndFreeOfficers(cityOfficers, store.getAllOfficers(), city.id).length;
 }
 
 /**
@@ -2510,200 +2378,107 @@ function runTrade(goodId: string, mode: 'buy' | 'sell'): void {
    ============================================================ */
 
 /** 시장 클릭 -> 불량배 사건 대화. */
+/**
+ * 시장 명령 패널 — 민심·상업 확인 + 견문·인재탐색·매매 3개 명령.
+ *
+ * - 민심은 충성·치안에서 유도한 표시 전용 수치다 (저장 불필요).
+ * - 명령 1회는 令MARKET_ORDER_COST 행동력을 쓴다. 부족하면 그 자리에서 막는다.
+ * - 매매는 교역소 대화로 편도 이동한다 (돌아오려면 시장을 다시 누른다).
+ * - 예전 불량배 사건·시장 대본 경로는 이 진입점을 잃어 삭제했다.
+ */
 function openMarketDialogue(cityId: string): void {
     if (!engine) return;
     const store = engine['store'];
     const city = store.getCity(cityId);
     if (!city) return;
     const gs = store.getGlobalState();
-    const isPlayerCity = city.ownerId === gs.playerFactionId;
-    const seed = `${city.id}|${gs.time.year}|${gs.time.month}|ruffian`;
-    if (shouldTriggerRuffian({
-        publicOrder: city.developmentStats.publicOrder,
-        isPlayerCity,
-        seed,
-    })) {
-        openRuffianIntro(cityId);
-        return;
-    }
-    openMarketScript(cityId);
-}
-
-function openMarketScript(cityId: string): void {
-    if (!engine) return;
-    const store = engine['store'];
-    const city = store.getCity(cityId);
-    if (!city) return;
-    const gs = store.getGlobalState();
-    const time = gs.time;
-
-    const script = buildMarketScript({
-        cityName: city.name,
-        commerce: city.developmentStats.commerce,
-        publicOrder: city.developmentStats.publicOrder,
-        danger: city.danger,
-        gold: city.funds,
-        population: city.population,
-        isCapital: city.isCapital,
-        seed: `${city.id}|${time.year}|${time.month}`,
-    });
-    activeRunner = new ScriptRunner(script);
-    activeScriptContext = { cityId };
-    renderScriptNode();
-}
-
-/** 시장 불량배 조우 — 연쇄 대화 1장면. 일기토 신청은 2장면으로 이어진다. */
-function openRuffianIntro(cityId: string): void {
-    if (!engine) return;
-    const store = engine['store'];
-    const city = store.getCity(cityId);
-    if (!city) return;
-    const gs = store.getGlobalState();
     const faction = gs.playerFactionId ? store.getFaction(gs.playerFactionId) : null;
-    const cityOfficers = city.officerIds
-        .map(id => store.getOfficer(id))
-        .filter(o => o !== null && o.factionId === gs.playerFactionId);
+    const inCity = city.officerIds
+        .map(id => store_getOfficerSafe(id))
+        .filter((o): o is NonNullable<typeof o> => o !== null);
     const selected = store.getOfficer(gs.selectedOfficerId ?? '');
-    const actor = (selected && selected.factionId === gs.playerFactionId && selected.cityId === cityId)
+    const actor = (selected && selected.factionId === gs.playerFactionId)
         ? selected
-        : cityOfficers[0] ?? (faction ? store.getOfficer(faction.leaderId) : null);
-    if (!actor) {
-        openMarketScript(cityId);
-        return;
-    }
-    const encounterText = `시장 한복판에서 불량배 두목이 상인들을 둘러싸고 삥을 뜯고 있다. ` +
-        `${actor.name}을(를) 보자 비웃으며 소리친다. “이봐, ${city.name}이 네 놈들의 구역이냐?”`;
-    const intelText = `두목의 패거리는 ${Math.max(3, Math.min(12, Math.floor(city.danger / 8) + 3))}명. ` +
-        `치안이 낮은 틈을 타 시장을 장악하려는 속셈이다. ${actor.name}(武力 ${actor.stats.might})이 나서면 일기토로 끝낼 수 있다.`;
+        : inCity.find(o => o.factionId === gs.playerFactionId)
+        ?? (faction ? store.getOfficer(faction.leaderId) : null);
+    if (!actor) return;
+    const ds = city.developmentStats;
+    const mood = marketMood(city.loyalty, ds.publicOrder);
+    const spend = (): boolean => {
+        const cur = store.getOfficer(actor.id);
+        if (!cur || cur.actionPoints < MARKET_ORDER_COST) return false;
+        store.updateOfficer(actor.id, { actionPoints: cur.actionPoints - MARKET_ORDER_COST });
+        return true;
+    };
+    const lackMsg = `행동력이 부족하다 (令${MARKET_ORDER_COST} 필요).`;
     openDialogue({
-        pages: [
-            {
-                title: `시장 소동 — ${city.name}`,
-                subtitle: '불량배 두목의 행패',
-                speaker: '불량배 두목',
-                placeMark: '惡',
-                text: encounterText,
-                detail: [`치안 ${city.developmentStats.publicOrder} · 상업 ${city.developmentStats.commerce}`],
-                choices: [
-                    {
-                        id: 'ruffian-duel',
-                        label: '일기토를 신청한다',
-                        description: `${actor.name}이(가) 나선다`,
-                        onSelect: () => {
-                            openDialogue({
-                                pages: [{
-                                    title: `일기토 — ${actor.name} vs 불량배 두목`,
-                                    subtitle: `${city.name} 시장 한복판`,
-                                    speaker: actor.name,
-                                    speakerId: actor.id,
-                                    text: `${actor.name}이(가) 앞으로 나선다. “장사하는 사람들을 괴롭히다니, 나랑 붙어보자!” 두목이 칼을 뽑았다.`,
-                                    choices: [
-                                        {
-                                            id: 'ruffian-fight',
-                                            label: '결투 시작',
-                                            description: '단기접전 미니게임으로 승부를 가린다',
-                                            onSelect: () => {
-                                                openRuffianDuelModal(cityId, actor.id);
-                                                return '결투장으로 향한다.';
-                                            },
-                                        },
-                                        {
-                                            id: 'ruffian-flee',
-                                            label: '도망친다',
-                                            description: '체면을 구기지만 몸은 성하다',
-                                            onSelect: () => {
-                                                closeDialogue();
-                                                addLog(`${actor.name}이(가) 불량배 앞에서 물러났다.`);
-                                                return '물러났다.';
-                                            },
-                                        },
-                                    ],
-                                }],
-                                index: 0,
+        pages: [{
+            title: `시장 — ${city.name}`,
+            subtitle: faction ? `${faction.name} · ${city.name} 시장` : `${city.name} 시장`,
+            speaker: actor.name,
+            speakerId: actor.id,
+            text: `장사꾼들의 소리로 북적이는구려. 한 귀를 기울이면 천하의 소식이, 눈을 크게 뜨면 인재가 보인다오.`,
+            detail: [
+                `민심 ${moodBar(mood)} ${mood}/100`,
+                `상업 ${ds.commerce}/${ds.maxCommerce}`,
+                `행동력 ${actor.actionPoints}/${actor.maxActionPoints} · 명령 1회 令${MARKET_ORDER_COST}`,
+            ],
+            choices: [
+                {
+                    id: 'market-hear',
+                    label: '견문한다',
+                    description: `시장 소문을 듣는다 · 令${MARKET_ORDER_COST}`,
+                    disabled: actor.actionPoints < MARKET_ORDER_COST,
+                    onSelect: () => {
+                        if (!spend()) return lackMsg;
+                        const cands = [
+                            ...inCity,
+                            ...store.getAllOfficers().filter(o => o.factionId === null && o.runtime.isAlive),
+                        ].map(o => ({ name: o.name, fame: o.fame, infamy: o.infamy }));
+                        const target = pickRumorTarget(cands);
+                        const msg = target ? rumorLine(target) : '오늘은 별다른 소문이 없다.';
+                        addLog(`👂 ${city.name} 시장에서 견문 — ${msg}`);
+                        return msg;
+                    },
+                },
+                {
+                    id: 'market-seek',
+                    label: '인재를 찾는다',
+                    description: `재야 무장 탐색 · 令${MARKET_ORDER_COST}`,
+                    disabled: actor.actionPoints < MARKET_ORDER_COST,
+                    onSelect: () => {
+                        if (!spend()) return lackMsg;
+                        const free = store.getAllOfficers()
+                            .filter(o => o.factionId === null && o.runtime.isAlive)
+                            .map(o => {
+                                const entries = [
+                                    { label: '통솔', value: o.stats.leadership },
+                                    { label: '무력', value: o.stats.might },
+                                    { label: '지력', value: o.stats.intelligence },
+                                    { label: '정치', value: o.stats.politics },
+                                    { label: '매력', value: o.stats.charisma },
+                                ];
+                                const best = entries.reduce((a, b) => (b.value > a.value ? b : a));
+                                return { name: o.name, bestLabel: best.label, bestValue: best.value };
                             });
-                            return '두목이 칼을 뽑았다.';
-                        },
+                        const msg = talentLine(pickTalent(free));
+                        addLog(`🔎 ${city.name} 시장에서 인재 탐색 — ${msg}`);
+                        return msg;
                     },
-                    {
-                        id: 'ruffian-bribe',
-                        label: `돈을 준다 (${RUFFIAN_BRIBE_COST}金)`,
-                        description: '도시 자금으로 불량배를 돌려보낸다',
-                        disabled: city.funds < RUFFIAN_BRIBE_COST,
-                        onSelect: () => {
-                            const result = applyRuffianBribe(store, cityId);
-                            addLog(result.message);
-                            const updated = store.getCity(cityId);
-                            if (updated) renderCityDetailPanel(updated, updated.ownerId ? store.getFaction(updated.ownerId) : null, false);
-                            return result.message;
-                        },
+                },
+                {
+                    id: 'market-trade',
+                    label: '매매한다',
+                    description: '교역소 거래로 이동한다',
+                    onSelect: () => {
+                        openTradeDialogue(cityId);
+                        return '교역소로 향한다.';
                     },
-                    {
-                        id: 'ruffian-ignore',
-                        label: '못 본 척 시장을 본다',
-                        description: '사건은 덮고 장사를 계속한다',
-                        onSelect: () => {
-                            closeDialogue();
-                            openMarketScript(cityId);
-                            return '시장으로 향한다.';
-                        },
-                    },
-                ],
-            },
-            {
-                title: `불량배 정보 — ${city.name}`,
-                subtitle: '패거리 규모와 대처법',
-                speaker: '시장 상인',
-                placeMark: '商',
-                text: intelText,
-                detail: [`치안 ${city.developmentStats.publicOrder} · 위험도 ${city.danger}`],
-                choices: [
-                    {
-                        id: 'ruffian-duel-2',
-                        label: '일기토를 신청한다',
-                        description: `${actor.name}이(가) 나선다`,
-                        onSelect: () => {
-                            openRuffianDuelModal(cityId, actor.id);
-                            return '결투장으로 향한다.';
-                        },
-                    },
-                ],
-            },
-        ],
+                },
+            ],
+        }],
         index: 0,
     });
-}
-
-/** 불량배 결투 모달 — 승리하면 치안·무력이 오르고 시장 대화로 복귀한다. */
-function openRuffianDuelModal(cityId: string, actorId: string): void {
-    if (!engine) return;
-    const store = engine['store'];
-    const city = store.getCity(cityId);
-    const actor = store.getOfficer(actorId);
-    if (!city || !actor) return;
-    const game = new DuelMinigame();
-    game.startDuel(actor.id, `ruffian_${city.id}`, actor.stats, buildThugStats(city.danger), actor.name, '불량배 두목');
-    vmState = {
-        store, actorId: actor.id, targetId: `ruffian_${city.id}`, kind: 'DUEL',
-        game, enemyUnits: [], deployable: [], done: false,
-        onFinish: (actorWon: boolean) => {
-            const outcome = applyRuffianDuelOutcome(store, cityId, actorId, actorWon);
-            addLog(outcome.message);
-            fireFeedback(actorWon ? 'VENGEANCE_SUCCESS' : 'VENGEANCE_FAIL');
-            if (currentPanelCityId === cityId) {
-                const updated = store.getCity(cityId);
-                if (updated) renderCityDetailPanel(updated, updated.ownerId ? store.getFaction(updated.ownerId) : null, false);
-            }
-        },
-        afterClose: () => openMarketScript(cityId),
-    };
-    document.getElementById('vm-title')!.textContent = '市井 — 불량배 소탕';
-    document.getElementById('vm-subtitle')!.textContent = `${actor.name} vs 불량배 두목 (${city.name})`;
-    document.getElementById('vm-player-name')!.textContent = actor.name;
-    document.getElementById('vm-enemy-name')!.textContent = '불량배 두목';
-    document.getElementById('vm-close')!.style.display = 'none';
-    document.getElementById('vengeance-modal')!.style.display = 'flex';
-    addLog(`⚔️ ${city.name} 시장 — ${actor.name}이(가) 불량배 두목과 일기토를 벌인다!`);
-    renderVengeanceModal();
 }
 
 /** 교역소/시장 클릭 -> 교역 대화. 대도시면 교역소가 있다. */
@@ -4220,17 +3995,48 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
     cdpCityName.textContent = city.name;
     renderCityScene(city);
 
-    // 진입 헤더 요약 — 핵심 수치를 한눈에 (이름 요소는 E2E 대조용으로 순수 유지)
+    // 진입 헤더 요약 — 고전식 2단 바 (1단: 날짜·수치 / 2단: 나의 정보, 값만 표시)
+    // 도시명·세력·평판은 타이틀 줄(cdp-faction-badge)에 이미 있다.
     const cdpSummary = document.getElementById('cdp-summary')!;
-    const summaryChip = (label: string, value: string, accent = false) =>
-        `<span class="cdp-chip${accent ? ' cdp-chip-accent' : ''}"><b>${label}</b> ${value}</span>`;
-    cdpSummary.innerHTML =
-        summaryChip(city.isCapital ? '🏯 首都' : '🏘️ 일반', city.isCapital ? '수도' : '도시', city.isCapital) +
-        summaryChip('👥 인구', city.population.toLocaleString()) +
-        summaryChip('⚔️ 병력', city.development.toLocaleString()) +
-        summaryChip('💰 자금', city.funds.toLocaleString()) +
-        summaryChip('📈 月入', `金+${city.goldIncome} · 粮+${city.foodIncome}`) +
-        summaryChip('🛡️ 방어', `${city.defense}/${city.maxDefense}`);
+    const gs1 = engine['store'].getGlobalState();
+    const seasonKo = { spring: '봄', summer: '여름', autumn: '가을', winter: '겨울' }[monthToSeason(gs1.time.month)];
+    const flagOf = (color: string | null) =>
+        `<span class="cdp-flag" style="background:${color ? factionColor(color) : 'var(--gold-dim)'}"></span>`;
+    const plainChip = (html: string) => `<span class="cdp-chip">${html}</span>`;
+    const numPair = (cur: number, max: number) => `${cur.toLocaleString()}/${max.toLocaleString()}`;
+    const cds = city.developmentStats;
+    const topRow =
+        plainChip(`📅 ${gs1.time.year}년 ${gs1.time.month}월 ${seasonKo}`) +
+        plainChip(`🌾 ${numPair(cds.farming, cds.maxFarming)}`) +
+        plainChip(`⚖️ ${numPair(cds.commerce, cds.maxCommerce)}`) +
+        plainChip(`🏺 ${numPair(cds.technology, cds.maxTechnology)}`) +
+        plainChip(`🛡️ ${numPair(city.defense, city.maxDefense)}`) +
+        plainChip(`🏮 ${numPair(cds.publicOrder, cds.maxPublicOrder)}`);
+    // 2단: 나의 정보 — 플레이 무장의 소속·신분·행동력·세력 자금·명성 3종
+    const STATUS_KO: Record<OfficerStatus, string> = {
+        LORD: '군주', VICEROY: '도독', STRATEGIST: '군사', GOVERNOR: '태수',
+        OFFICER: '무장', FREE: '재야', REBEL: '반군',
+    };
+    const me = store_getOfficerSafe(gs1.selectedOfficerId ?? '')
+        ?? (faction ? store_getOfficerSafe(faction.leaderId) : null);
+    let myRow = '';
+    if (me) {
+        const myFac = me.factionId ? engine['store'].getFaction(me.factionId) : null;
+        myRow = `<div class="cdp-myrow">` +
+            plainChip(`${flagOf(myFac?.color ?? null)}${myFac ? myFac.name : '재야'}`) +
+            plainChip(`${STATUS_KO[me.status]} ${me.rank}품`) +
+            plainChip(`🎖️ ${me.actionPoints}/${me.maxActionPoints}`) +
+            plainChip(`💰 ${myFac ? myFac.gold.toLocaleString() : '—'}`) +
+            plainChip(`명성 ${me.fame} · 공적 ${me.merit} · 악명 ${me.infamy}`) +
+            `</div>`;
+    }
+    // 타이틀 노드 안에 1단 칩들을 합친다 — toprow 껍데기를 타이틀 자식으로 옮긴다.
+    // innerHTML 교체 전에 참조를 잡아야 한다 — 교체되면 옛 행째로 떨어져 조회가 안 된다.
+    // 노드를 옮기는 것이라 id가 유지되어 E2E·aria가 깨지지 않는다.
+    const titleWrap = document.querySelector('#city-detail-panel .cdp-title-wrap');
+    cdpSummary.innerHTML = `<div class="cdp-toprow">${topRow}</div>` + myRow;
+    const topRowEl = cdpSummary.querySelector('.cdp-toprow');
+    if (titleWrap && topRowEl) titleWrap.appendChild(topRowEl);
 
     // 세력 배지 (세력색 테두리 + 군주 평판 등급 [11][27])
     if (faction) {
@@ -4310,9 +4116,10 @@ function renderCityDetailPanel(city: import('./core/types.js').City, faction: im
     cityDetailPanel.classList.add('city-entry-mode');
     // 인라인 display 를 지워 CSS(.city-entry-mode 의 grid) 가 레이아웃을 결정하게 한다.
     cityDetailPanel.style.display = '';
-    // [2026-10-03] 레일을 걷어냈으므로 접힘 재계산은 없다. 대신 시트를 닫는다 —
-    //   도시를 바꿀 때 이전 도시의 정보가 남아 있으면 어느 도시 것인지 헷갈린다.
-    closeCitySceneSheet();
+    // [2026-10-03] 레일을 걷어냈으므로 접힘 재계산은 없다. 도시를 바꿀 때만 시트를 닫는다 —
+    //   이전 도시의 정보가 남아 있으면 어느 도시 것인지 헷갈린다. 같은 도시 새로고침
+    //   (명령 실행 등)에서는 열어 둔다 — 닫으면 결과 요소까지 함께 지워진다.
+    if (switched) closeCitySceneSheet();
 }
 
 /**
@@ -7124,7 +6931,7 @@ function renderOfficerList(world: BuiltWorld, factionIdx: number): void {
                 grade: Math.max(0, Math.min(9, o.rank)),
             })}</span>
             <span class="officer-info">
-                <span class="officer-card-name">${o.name}${isLeader ? '<span class="officer-lord-mark">군주</span>' : ''}<span class="officer-card-trait">${PERSONALITY_KO[o.personality]} · ${o.rank}품</span></span>
+                <span class="officer-card-name">${o.name}${isLeader ? '<span class="officer-lord-mark">군주</span>' : ''}<span class="officer-card-trait">${PERSONALITY_KO[o.personality]}</span></span>
                 <span class="officer-card-stats">統${o.stats.leadership} 武${o.stats.might} 智${o.stats.intelligence} 政${o.stats.politics} 魅${o.stats.charisma}</span>
             </span>
         </button>`;

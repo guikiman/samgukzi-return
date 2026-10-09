@@ -57,6 +57,10 @@ export interface DialogueScenePage {
     readonly choicePrompt?: string;
     /** 하단 이동 바(◀ 이전·페이지·다음 ▶)를 숨긴다. 단계 이동은 본문 클릭·키보드로 한다. */
     readonly hideFooter?: boolean;
+    /** 무조작 자동 종료까지의 밀리초. 없으면 기본값(30초). 0 이하면 자동 종료 안 함. */
+    readonly autoCloseMs?: number;
+    /** 볼 것도 고를 것도 없는 인사말 — 본문 클릭이 곧 닫기다. */
+    readonly dismissOnClick?: boolean;
     /** 우측(상대편) 무장 id. 없으면 빈 슬롯이 된다. */
     readonly rightOfficerId?: string;
     readonly rightSpeaker?: string;

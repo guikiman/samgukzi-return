@@ -634,15 +634,15 @@ async function main() {
             "document.getElementById('dialogue-close').click();" +
             "var city2=s.getAllCities().find(function(c){return c.ownerId===s.getGlobalState().playerFactionId;})||s.getAllCities()[0];" +
             "city2.developmentStats.publicOrder=8;city2.developmentStats.commerce=12;g.openCity(city2.id);" +
+            "s.getAllOfficers().forEach(function(o){try{s.updateOfficer(o.id,{actionPoints:100});}catch(e){}});" +
             "var mk=document.querySelector('[data-facility=MARKET]');if(mk)mk.click();" +
             "var mktOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
-            "var mktVisit1=document.getElementById('dialogue-page').textContent;" +
+            "var mktTitle=document.getElementById('dialogue-title').textContent;" +
             "var mktCh1=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
             "var mktFirst=document.querySelectorAll('#dialogue-choices .dlg-choice')[0]||{disabled:true};" +
             "if(!mktFirst.disabled)mktFirst.click();" +
-            "var mktVisit2=document.getElementById('dialogue-page').textContent;" +
-            "var mktText2=document.getElementById('dialogue-text').textContent;" +
-            "var mktCh2=document.querySelectorAll('#dialogue-choices .dlg-choice').length;" +
+            "var mktResult=document.getElementById('dialogue-result').textContent;" +
+            "var mktResultShown=document.getElementById('dialogue-result').style.display!=='none';" +
             "document.getElementById('dialogue-close').click();" +
             "g.openTradeDialogue(city2.id);" +
             "var trOpen=document.getElementById('dialogue-modal').style.display==='flex';" +
@@ -664,10 +664,10 @@ async function main() {
             "dlgBodyText:dlgBodyText,dlgChoiceIdx:dlgChoiceIdx,dlgStepText:dlgStepText,dlgPrevDisabled:dlgPrevDisabled," +
             "kbdBefore:kbdBefore,kbdNext:kbdNext,kbdPrev:kbdPrev,kbdChoiceShown:kbdChoiceShown,kbdChoiceResult:kbdChoiceResult," +
             "accent:accent,placeGlyph:placeGlyph,placeIsGlyph:placeIsGlyph,dlgRightHidden:dlgRightHidden," +
-            "mktOpen:mktOpen,mktVisit1:mktVisit1,mktVisit2:mktVisit2,mktCh1:mktCh1,mktCh2:mktCh2,mktText2:mktText2," +
+            "mktOpen:mktOpen,mktTitle:mktTitle,mktCh1:mktCh1,mktResult:mktResult,mktResultShown:mktResultShown," +
             "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice," +
             "accent:accent,placeGlyph:placeGlyph,placeIsGlyph:placeIsGlyph,dlgRightHidden:dlgRightHidden," +
-            "mktOpen:mktOpen,mktVisit1:mktVisit1,mktVisit2:mktVisit2,mktCh1:mktCh1,mktCh2:mktCh2,mktText2:mktText2," +
+            "mktOpen:mktOpen,mktTitle:mktTitle,mktCh1:mktCh1,mktResult:mktResult,mktResultShown:mktResultShown," +
             "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice," +
             "trOpen:trOpen,trRows:trRows,trGold0:trGold0,trGold1:trGold1,trNote:trNote,trPrice:trPrice,removedBlock:removedBlock,citySceneWidth:scene.width,citySceneHeight:scene.height,entryMode:document.getElementById('city-detail-panel').classList.contains('city-entry-mode'),"
             // 배경 그림이 실제로 로드됐는지 — 조용히 절차 렌더로 물러나면 검증이 통과해 버린다.
@@ -741,8 +741,11 @@ async function main() {
         const domesticProbe = await cdp.evalJson(
             "(function(){var g=window.__game,s=g.getStore(),gs=s.getGlobalState(),e=g.getEngine();" +
             "var city=s.getAllCities().find(function(c){return c.ownerId===gs.playerFactionId;});" +
-            "g.openCity(city.id);document.querySelector('[data-action=auto-domestic]').click();" +
-            "return {pending:e.domesticScheduler.pendingCount,result:document.getElementById('cdp-action-result').textContent};})()");
+            "g.openCity(city.id);" +
+            "var _bdg=document.querySelector('#city-scene-badges .city-badge');if(_bdg)_bdg.click();" +
+            "var _btn=document.querySelector('[data-action=auto-domestic]');if(_btn)_btn.click();" +
+            "var _res=document.getElementById('cdp-action-result');" +
+            "return {pending:e.domesticScheduler.pendingCount,result:_res?_res.textContent:''};})()");
 
         // 시나리오별 검증 후 기존 05 회귀 흐름을 위해 페이지 초기화
         await cdp.call('Page.reload');
@@ -1231,14 +1234,13 @@ async function main() {
             && dialogueProbe.kbdChoiceResult.length > 0
             // 상대 슬롯이 비어 있으면 숨겨진다
             && dialogueProbe.dlgRightHidden === true
-            // 시장 클릭 -> 불량배 사건 대화가 열린다
+            // 시장 클릭 -> 명령 패널이 열린다 (민심·상업 + 견문·인재탐색·매매)
             && dialogueProbe.mktOpen === true
-            && dialogueProbe.mktCh1 >= 2
-            // 선택하면 이어지는 장면으로 넘어간다 (방문 수 증가 + 새 대사)
-            && dialogueProbe.mktVisit2 !== dialogueProbe.mktVisit1
-            && dialogueProbe.mktText2.length > 0
-            // 그 장면에서 다시 선택할 수 있다
-            && dialogueProbe.mktCh2 >= 1
+            && dialogueProbe.mktTitle.indexOf('시장') >= 0
+            && dialogueProbe.mktCh1 === 3
+            // 첫 명령(견문)을 고르면 결과가 표시된다
+            && dialogueProbe.mktResultShown === true
+            && dialogueProbe.mktResult.length > 0
             // 교역소는 물자 5종을 사고팔 수 있다
             && dialogueProbe.trOpen === true
             && dialogueProbe.trRows >= 3

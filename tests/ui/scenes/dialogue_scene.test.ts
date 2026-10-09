@@ -36,6 +36,7 @@ function mountFixture(): void {
             <button id="dialogue-close"></button>
           </div>
           <div id="dialogue-history" style="display:none;"></div>
+          <span class="dlg-speaker-face" id="dlg-speaker-face" style="display:none;"></span>
           <div id="dialogue-text"></div>
           <div id="dialogue-notes" style="display:none;"></div>
           <div id="dialogue-detail"></div>
@@ -823,5 +824,106 @@ describe('선택 확정 모드 (selectChoice)', () => {
         choiceBtns()[0].click();
         modal.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
         expect(repairFn).toHaveBeenCalledTimes(1);
+    });
+});
+
+// ---------------------------------------------------------------- 무조작 자동 닫기
+
+describe('무조작 자동 닫기', () => {
+    let scene: DialogueScene;
+    beforeEach(() => { mountFixture(); scene = makeScene(); vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('30초 동안 조작이 없으면 닫힌다', () => {
+        scene.open(simpleState());
+        expect(scene.isOpen()).toBe(true);
+        vi.advanceTimersByTime(30_000);
+        expect(scene.isOpen()).toBe(false);
+        expect(el('dialogue-modal').style.display).toBe('none');
+    });
+
+    it('조작하면 타이머가 리셋된다', () => {
+        scene.open(simpleState());
+        vi.advanceTimersByTime(20_000);
+        el('dialogue-modal').dispatchEvent(new Event('pointerdown', { bubbles: true }));
+        vi.advanceTimersByTime(20_000);
+        expect(scene.isOpen()).toBe(true);
+        vi.advanceTimersByTime(10_000);
+        expect(scene.isOpen()).toBe(false);
+    });
+
+    it('닫으면 타이머가 멈춘다', () => {
+        scene.open(simpleState());
+        scene.close();
+        vi.advanceTimersByTime(60_000);
+        expect(scene.isOpen()).toBe(false);
+    });
+
+    it('autoCloseMs 가 있으면 그 시간으로 닫힌다', () => {
+        scene.open({ pages: [{ title: '입성', speaker: 's', text: '어서 오시오', autoCloseMs: 3000 }], index: 0 });
+        vi.advanceTimersByTime(2_999);
+        expect(scene.isOpen()).toBe(true);
+        vi.advanceTimersByTime(1);
+        expect(scene.isOpen()).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------- 닫기 전용 인사말
+
+describe('닫기 전용 인사말 (dismissOnClick)', () => {
+    let scene: DialogueScene;
+    beforeEach(() => { mountFixture(); scene = makeScene(); });
+
+    const greeting = (): DialogueSceneState => ({
+        pages: [{ title: '입성', speaker: 's', text: '어서 오시오', hideFooter: true, dismissOnClick: true }],
+        index: 0,
+    });
+
+    it('본문을 클릭하면 닫힌다', () => {
+        scene.open(greeting());
+        el('dialogue-text').click();
+        expect(scene.isOpen()).toBe(false);
+    });
+
+    it('플래그가 없으면 본문 클릭에 닫히지 않는다', () => {
+        scene.open(simpleState());
+        el('dialogue-text').click();
+        expect(scene.isOpen()).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------- 화자 화상
+
+describe('화자 화상 (dlg-speaker-face)', () => {
+    const officerHooks = (): DialogueSceneHooks => ({
+        lookupOfficer: (id: string) => id === 'off_1'
+            ? { id: 'off_1', name: '장수', gender: 'M', rank: 5, status: '장수', factionName: '위', factionColor: '#123456' }
+            : null,
+        renderPortrait: (args: { id: string }) => `<svg data-face="${args.id}"></svg>`,
+    });
+
+    it('speakerId 실존 무장이면 화상이 보인다', () => {
+        mountFixture();
+        const faceScene = makeScene(officerHooks());
+        faceScene.open({ pages: [{ title: '시장', speaker: '장수', speakerId: 'off_1', text: '어서 오시오' }], index: 0 });
+        const face = document.getElementById('dlg-speaker-face') as HTMLElement;
+        expect(face.style.display).toBe('');
+        expect(face.innerHTML).toContain('data-face="off_1"');
+    });
+
+    it('speakerId 가 없으면 화상이 숨는다', () => {
+        mountFixture();
+        const faceScene = makeScene(officerHooks());
+        faceScene.open(simpleState());
+        const face = document.getElementById('dlg-speaker-face') as HTMLElement;
+        expect(face.style.display).toBe('none');
+        expect(face.innerHTML).toBe('');
+    });
+
+    it('훅이 없어도 죽지 않는다', () => {
+        mountFixture();
+        const bare = makeScene();
+        bare.open({ pages: [{ title: '시장', speaker: '장수', speakerId: 'off_1', text: '어서 오시오' }], index: 0 });
+        expect((document.getElementById('dlg-speaker-face') as HTMLElement).style.display).toBe('none');
     });
 });

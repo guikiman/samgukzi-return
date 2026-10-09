@@ -26,6 +26,8 @@ import { stopSpeech } from '../../core/ai_tts_pipeline.js';
 
 /** 글자가 몇 글자씩 드러나는지. 1 틱 = 이 밀리초. */
 export const REVEAL_INTERVAL_MS = 22;
+/** 무조작 자동 종료까지의 밀리초. 창 안의 모든 조작(클릭·키)이 타이머를 리셋한다. */
+export const AUTO_CLOSE_MS = 30_000;
 
 /** 대화창이 무장 슬롯에 그리는 최소 정보. */
 export interface DialogueSceneOfficer {
@@ -169,6 +171,8 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
     /** 하단 이동 바 — hideFooter 페이지에서 숨긴다. 없으면(구 고정본) 그냥 둔다. */
     const foot = modal.querySelector<HTMLElement>('.dlg-foot');
     const closeBtn = must<HTMLButtonElement>(modal, '#dialogue-close');
+    /** 본문 왼쪽 작은 화상 — speakerId 실존 무장일 때만 씬이 채운다. 없으면(구 고정본) 그냥 둔다. */
+    const speakerFace = modal.querySelector<HTMLElement>('#dlg-speaker-face');
     const bandSpeaker = modal.querySelector<El>('#dlg-band-speaker');
     const leftFigure = must<El>(modal, '#dlg-left-figure');
     const rightFigure = must<El>(modal, '#dlg-right-figure');
@@ -189,6 +193,8 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
     let pendingAfter: (() => void) | null = null;
     let reveal: { cursor: number; total: number } | null = null;
     let revealTimer: ReturnType<typeof setInterval> | null = null;
+    /** 무조작 자동 종료 타이머 — 열려 있는 동안만 돈다. */
+    let autoCloseTimer: ReturnType<typeof setTimeout> | null = null;
     let revealSource = '';
     let forceInstant = false;
     let giftItems: readonly DialogueGiftItem[] = [];
@@ -230,6 +236,21 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         if (revealTimer === null) return;
         clearInterval(revealTimer);
         revealTimer = null;
+    }
+
+    function stopAutoClose(): void {
+        if (autoCloseTimer === null) return;
+        clearTimeout(autoCloseTimer);
+        autoCloseTimer = null;
+    }
+
+    /** 자동 종료 타이머를 처음부터 다시 잰다. 닫혀 있으면 아무 일도 하지 않는다. */
+    function pokeAutoClose(): void {
+        stopAutoClose();
+        if (!state) return;
+        const ms = state.pages[state.index]?.autoCloseMs ?? AUTO_CLOSE_MS;
+        if (ms <= 0) return;
+        autoCloseTimer = setTimeout(() => { close(); }, ms);
     }
 
     /** 글자를 다 보여준다. 이번에 실제로 건너뛰었으면 true. */
@@ -381,6 +402,18 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         if (!page) return;
         title.textContent = page.title;
         paintStage(page);
+        // 본문 왼쪽 작은 화상 — speakerId 실존 무장일 때만 채운다.
+        if (speakerFace) {
+            const faceOfficer = page.speakerId ? hooks.lookupOfficer?.(page.speakerId) ?? null : null;
+            const faceSvg = faceOfficer && hooks.renderPortrait
+                ? hooks.renderPortrait({
+                    id: faceOfficer.id, name: faceOfficer.name, gender: faceOfficer.gender,
+                    grade: Math.max(0, Math.min(9, faceOfficer.rank)),
+                })
+                : '';
+            speakerFace.innerHTML = faceSvg;
+            speakerFace.style.display = faceSvg !== '' ? '' : 'none';
+        }
 
         if (page.steps && page.steps.length > 0) {
             // 단계 모드: 현재 단계 하나만 보여준다. 클릭·◀▶ 로 교체한다(누적하지 않는다).
@@ -482,6 +515,7 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         renderPage();
         modal.style.display = 'flex';
         modal.focus({ preventScroll: true });
+        pokeAutoClose();
     }
 
     function close(): void {
@@ -496,6 +530,7 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         stopRevealTimer();
         reveal = null;
         revealSource = '';
+        stopAutoClose();
         stopSpeech();
         resetTranscript();
         onClose?.();
@@ -536,6 +571,8 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
     prevBtn.addEventListener('click', () => step(-1));
     nextBtn.addEventListener('click', () => step(1));
     closeBtn.addEventListener('click', () => close());
+    // 창 안의 모든 조작이 무조작 타이머를 리셋한다.
+    modal.addEventListener('pointerdown', () => pokeAutoClose());
     if (cont) cont.addEventListener('click', () => {
         if (cont.disabled) return;
         const page = state?.pages[state.index];
@@ -571,6 +608,8 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
         if (!state) { skipReveal(); return; }
         const page = state.pages[state.index];
         if (!page) { skipReveal(); return; }
+        // 닫기 전용 인사말 — 볼 것도 고를 것도 없으면 클릭이 곧 닫기다.
+        if (page.dismissOnClick) { close(); return; }
         if (page.steps && page.steps.length) {
             const next = Math.min(revealStep + 1, page.steps.length);
             if (next === revealStep) return; // 마지막 단계에선 멈춘다
@@ -584,6 +623,7 @@ export function createDialogueScene(root: ParentNode, hooks: DialogueSceneHooks 
 
     modal.addEventListener('keydown', (event) => {
         if (!state) return;
+        pokeAutoClose();
         const t = event.target as HTMLElement | null;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
         // 스페이스/엔터: 글자가 다 안 나왔으면 먼저 끝낸다.

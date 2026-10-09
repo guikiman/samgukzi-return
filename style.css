@@ -965,6 +965,36 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 }
 .cdp-close:hover { color: var(--gold-bright); border-color: var(--gold-dim); }
 .cdp-summary { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.cdp-toprow, .cdp-myrow { display: flex; flex-wrap: wrap; gap: 5px; flex-basis: 100%; align-items: center; }
+.cdp-myrow { margin-top: 6px; }
+/* 1·2단: 칩 개별 배경을 걷고 단 전체에 반투명 띠를 두른다. 글자는 키워 가독성 확보. */
+#city-detail-panel .cdp-toprow, #city-detail-panel .cdp-myrow {
+    gap: 12px;
+    background: transparent;
+    border-radius: 6px;
+    padding: 2px 12px;
+}
+/* 1단은 타이틀 노드 안에 합친다 — toprow 껍데기는 contents 로 펴서 칩이 타이틀 행에 직접 붙는다. */
+#city-detail-panel .cdp-title-wrap {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    background: transparent;
+    border-radius: 6px;
+    padding: 2px 4px;
+}
+#city-detail-panel .cdp-toprow { display: contents; }
+#city-detail-panel .cdp-myrow { margin-top: 0; }
+#city-detail-panel .cdp-faction-badge { background: transparent; border-color: transparent; }
+/* 배경을 걷었으므로 글자에 그림자로 가독성 확보 (대화창과 같은 방식). */
+#city-detail-panel .cdp-chip {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: 15px;
+    color: var(--text);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .9), 0 0 10px rgba(0, 0, 0, .65);
+}
+.cdp-flag { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+.cdp-sep { color: var(--text-faint); }
 .cdp-chip {
     font-size: 11px;
     letter-spacing: 0.5px;
@@ -1270,6 +1300,16 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
     border-radius: 8px;
 }
 #city-detail-panel.city-entry-mode .cdp-header .cdp-summary { margin-bottom: 0; }
+/* 도시 진입 헤더는 세로 스택·좌측 정렬 — 1단(도시명+지표) 아래 2단(나의 정보)이 바로 붙는다.
+   진입 모드 규칙(위)보다 뒤에 두어야 align-items 전쟁에서 이긴다. */
+#city-detail-panel.city-entry-mode .cdp-header {
+    flex-direction: column;
+    align-items: stretch;
+    position: relative;
+    padding-right: 44px;
+}
+#city-detail-panel.city-entry-mode .cdp-summary { width: 100%; }
+#city-detail-panel.city-entry-mode .cdp-close { position: absolute; top: 2px; right: 4px; }
 /* 좁은 창 — 2026-10-02 개편.
    원래는 여기서 풀블리드(음수 마진 · grid-column/grid-row 1/-1)를 해제했다.
    해제하면 세 가지가 동시에 무너졌다.
@@ -2323,6 +2363,22 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
    display:none 이어도 closeDialogue 경로에 영향을 주지 않는다. */
 #dialogue-close { display: none; }
 
+/* 본문 왼쪽 작은 화상 — speakerId 실존 무장일 때만 씬이 채워 보여준다. */
+.dlg-speaker-face {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid rgba(212, 175, 55, .55);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .6);
+    pointer-events: none;
+}
+.dlg-speaker-face svg { width: 100%; height: 100%; display: block; }
+
 .dlg-body {
     font-size: 28px; line-height: 2.0; color: #f5efe6; white-space: pre-line;
     /* 레퍼런스(고전 삼국지 대사창) — 명조 굵게 + 각인식 외곽선. 웹폰트 없으면 바탕계열로 폴백. */
@@ -2371,8 +2427,8 @@ body[data-season="winter"] { --season-accent: #a8c8e8; --season-glow: rgba(168, 
 }
 
 /* ── 선택지: 가운데 모은 큰 버튼 + 계속 화살표 ── */
-.dlg-actions { display: flex; align-items: center; justify-content: center; gap: 16px; }
-.dlg-options { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; flex: 1; }
+.dlg-actions { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.dlg-options { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; flex: 0 1 auto; }
 .dlg-choice {
     display: inline-flex; align-items: baseline; gap: 10px; cursor: pointer; font-family: inherit;
     /* 선택지 채우기를 없앤다 — 테두리만 남긴다. */
